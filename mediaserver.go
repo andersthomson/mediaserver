@@ -37,19 +37,13 @@ type User struct {
 	LastUsed   time.Time
 }
 
-var (
-	// Global OAuth2 config
-	oauthConfig *oauth2.Config
-	// In-memory session store: sessionID -> email
-	sessions Sessions
-)
+// Global OAuth2 config
+var oauthConfig *oauth2.Config
+
+var sessions Sessions
 
 var logger *slog.Logger
 var Config config
-
-type MediaOrigin struct {
-	Format string
-}
 
 func ScanDir(dir string) []datasource.DataSource {
 	//slog.Info("Scanning", "dir", dir)
@@ -67,35 +61,6 @@ func ScanDir(dir string) []datasource.DataSource {
 		}
 	}
 	return res
-}
-
-type directoryRepo struct {
-	dsLck sync.Mutex
-	ds    []datasource.DataSource
-	dir   string
-}
-
-func (d *directoryRepo) Refresh() {
-	go func() {
-		for {
-			i := ScanDir(d.dir)
-			d.dsLck.Lock()
-			d.ds = i
-			d.dsLck.Unlock()
-			time.Sleep(time.Minute)
-		}
-	}()
-}
-
-func (d *directoryRepo) AllDataSources() []datasource.DataSource {
-	var r []datasource.DataSource
-	d.dsLck.Lock()
-	r = d.ds
-	d.dsLck.Unlock()
-	if r == nil {
-		return []datasource.DataSource{}
-	}
-	return r
 }
 
 func IsMP4File(s string) bool {
