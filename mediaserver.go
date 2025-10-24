@@ -27,6 +27,25 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
+type Tagser interface {
+	Tags() map[string][]string
+}
+
+type Seasoner interface {
+	Season() int
+}
+
+type Episoder interface {
+	Episode() int
+}
+type ShowNamer interface {
+	ShowName() string
+}
+
+type EpisodeTitler interface {
+	EpisodeTitle() string
+}
+
 type User struct {
 	IDProvider string
 	Email      string
@@ -95,44 +114,28 @@ func (a allReposT) AllDataSources() []datasource.DataSource {
 	a.reposMu.Unlock()
 	return res
 }
+func (a allReposT) DataSourceByID(id string) datasource.DataSource {
+	a.reposMu.Lock()
+	defer a.reposMu.Unlock()
+	for _, r := range a.repos {
+		if r != nil {
+			for _, src := range r.AllDataSources() {
+				if src.ID() == id {
+					return src
+				}
+			}
+		}
+	}
+	return nil
+}
 
 var allRepos allReposT
-
-type Tagser interface {
-	Tags() map[string][]string
-}
-
-type Seasoner interface {
-	Season() int
-}
-
-type Episoder interface {
-	Episode() int
-}
-type ShowNamer interface {
-	ShowName() string
-}
-
-type EpisodeTitler interface {
-	EpisodeTitle() string
-}
 
 type DataSourceServer struct {
 }
 
-func (d DataSourceServer) allItms() []datasource.DataSource {
-	return allRepos.AllDataSources()
-}
-
 func (d DataSourceServer) dataSourceByID(id string) datasource.DataSource {
-	itms := d.allItms()
-	idx := slices.IndexFunc(itms, func(ds datasource.DataSource) bool {
-		return ds.ID() == id
-	})
-	if idx != -1 {
-		return itms[idx]
-	}
-	return nil
+	return allRepos.DataSourceByID(id)
 }
 
 func (_ DataSourceServer) partNameMedia() string {
@@ -161,12 +164,11 @@ func (d *DataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctx = slogctx.Append(ctx, "idp", user.IDProvider)
 		ctx = slogctx.Append(ctx, "user", user.Email)
 	}
-	itms := d.allItms()
 	itm := r.PathValue("item")
 	part := r.PathValue("part")
 	if itm == "" {
 		logger.InfoContext(ctx, "No item exists", "itm", itm)
-		serveIndex(ctx, w, r, itms, "/") //FIXME: proper action URL
+		serveIndex(ctx, w, r, allRepos.AllDataSources(), "/") //FIXME: proper action URL
 		return
 	}
 	ds := d.dataSourceByID(itm)
