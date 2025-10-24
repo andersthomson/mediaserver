@@ -131,6 +131,45 @@ func (a allReposT) DataSourceByID(id string) datasource.DataSource {
 
 var allRepos allReposT
 
+type posterServer struct {
+}
+
+func (_ posterServer) partName() string {
+	return "poster"
+}
+func (p posterServer) PosterURL(id string) string {
+	ds := allRepos.DataSourceByID(id)
+	if ds == nil {
+		return ""
+	}
+	content, err := ds.OpenPoster()
+	if err != nil {
+		return ""
+	}
+	content.Close()
+	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + p.partName()
+}
+
+func (p *posterServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+	ctx := r.Context()
+	itm := r.PathValue("item")
+	ds := allRepos.DataSourceByID(itm)
+	if ds == nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.InfoContext(ctx, "datasource unkown", "id", itm)
+		return
+	}
+	content, err := ds.OpenPoster()
+	if err != nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.InfoContext(ctx, "read of poster", "failed", err)
+		return
+	}
+	http.ServeContent(w, r, "", time.Time{}, content)
+	content.Close()
+}
+
 type DataSourceServer struct {
 }
 
@@ -143,9 +182,6 @@ func (_ DataSourceServer) partNameMedia() string {
 }
 func (_ DataSourceServer) partNameSubs() string {
 	return "subs.vtt"
-}
-func (_ DataSourceServer) partNamePoster() string {
-	return "poster"
 }
 func (_ DataSourceServer) partNameBackdrop() string {
 	return "backdrop"
@@ -208,15 +244,6 @@ func (d *DataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.ServeContent(w, r, "foo.vtt", time.Time{}, content)
 			content.Close()
 			return
-		case d.partNamePoster():
-			content, err := ds.OpenPoster()
-			if err != nil {
-				errorHandler(ctx, w, r, http.StatusNotFound)
-				logger.InfoContext(ctx, "read of poster", "failed", err)
-				return
-			}
-			http.ServeContent(w, r, "", time.Time{}, content)
-			content.Close()
 		case d.partNameBackdrop():
 			dsT, ok := ds.(datasource.OpenBackdroper)
 			if !ok {
@@ -254,15 +281,6 @@ func (d DataSourceServer) SubsURL(id string) string {
 	if err == nil {
 		content.Close()
 		return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + d.partNameSubs()
-	}
-	return ""
-}
-func (d DataSourceServer) PosterURL(id string) string {
-	ds := d.dataSourceByID(id)
-	content, err := ds.OpenPoster()
-	if err == nil {
-		content.Close()
-		return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + d.partNamePoster()
 	}
 	return ""
 }
@@ -407,6 +425,7 @@ func main() {
 	mux.Handle(webRootURL.Path+"/login", ChainMiddleware(http.HandlerFunc(loginHandler), LoggingMiddleware))
 	mux.Handle(webRootURL.Path+"/auth/google/callback", ChainMiddleware(http.HandlerFunc(callbackHandler), LoggingMiddleware))
 
+	mux.Handle(webRootURL.Path+"/item/{item}/part/"+posterServer{}.partName(), ChainMiddleware(&posterServer{}, LoggingMiddleware, AuthMiddleware))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/{part}", &DataSourceServer{})
 
 	mux.Handle(webRootURL.Path+"/", ChainMiddleware(http.HandlerFunc(serveTopIndex), LoggingMiddleware, AuthMiddleware))
@@ -1043,7 +1062,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 		if hasSetTag(ds, FilterTags) {
 			dsObject := object{
 				MediaURL:      DataSourceServer{}.MediaURL(ds.ID()),
-				PosterURL:     DataSourceServer{}.PosterURL(ds.ID()),
+				PosterURL:     posterServer{}.PosterURL(ds.ID()),
 				BackdropURL:   DataSourceServer{}.BackdropURL(ds.ID()),
 				Title:         datasource.TitleOrZero(ds),
 				Html5URL:      DataSourceServer{}.Html5URL(ds.ID()),
