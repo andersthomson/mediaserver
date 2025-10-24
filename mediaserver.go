@@ -646,12 +646,12 @@ func (d *DataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	itms := d.allItms()
 	itm := r.PathValue("item")
 	part := r.PathValue("part")
-	ds := d.dataSourceByID(itm)
 	if itm == "" {
 		logger.InfoContext(ctx, "No item exists", "itm", itm)
 		serveIndex(ctx, w, r, itms, "/") //FIXME: proper action URL
 		return
 	}
+	ds := d.dataSourceByID(itm)
 	if ds == nil {
 		slog.InfoContext(ctx, "No ds exists", "itm", itm)
 		errorHandler(ctx, w, r, http.StatusNotFound)
