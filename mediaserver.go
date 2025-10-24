@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -61,17 +60,6 @@ func ScanDir(dir string) []datasource.DataSource {
 		}
 	}
 	return res
-}
-
-func IsMP4File(s string) bool {
-	switch {
-	case filepath.Ext(s) == ".mp4":
-		return true
-	case filepath.Ext(s) == ".MP4":
-		return true
-	default:
-		return false
-	}
 }
 
 type repo interface {

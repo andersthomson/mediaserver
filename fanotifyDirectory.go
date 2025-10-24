@@ -218,3 +218,14 @@ func (f *faNotifyDirectoryRepo) Refresh() {
 	}()
 
 }
+
+func IsMP4File(s string) bool {
+	switch {
+	case filepath.Ext(s) == ".mp4":
+		return true
+	case filepath.Ext(s) == ".MP4":
+		return true
+	default:
+		return false
+	}
+}
