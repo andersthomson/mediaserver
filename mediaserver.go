@@ -503,7 +503,7 @@ func main() {
 	mux.Handle(webRootURL.Path+"/login", Chain(LoggingMiddleware)(http.HandlerFunc(loginHandler)))
 	mux.Handle(webRootURL.Path+"/auth/google/callback", Chain(LoggingMiddleware)(http.HandlerFunc(callbackHandler)))
 
-	mux.Handle(webRootURL.Path+"/item/{item}/part/"+mediaServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&mediaServer{}))
+	mux.Handle(webRootURL.Path+"/item/{item}/part/"+mediaServer{}.partName(), Chain(LoggingMiddleware, CORS)(&mediaServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+posterServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&posterServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+backdropServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&backdropServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/{part}", &DataSourceServer{})
