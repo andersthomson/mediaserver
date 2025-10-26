@@ -248,90 +248,86 @@ func (p *mediaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-type DataSourceServer struct {
+type subsServer struct {
 }
 
-func (d DataSourceServer) dataSourceByID(id string) datasource.DataSource {
-	return allRepos.DataSourceByID(id)
-}
-
-func (_ DataSourceServer) partNameSubs() string {
+func (_ subsServer) partName() string {
 	return "subs.vtt"
 }
-func (_ DataSourceServer) partNameHtml5() string {
-	return "html5"
-}
-func (_ DataSourceServer) partNameChromeCast() string {
-	return "cast"
-}
-
-func (d *DataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	user, hasSession := GetUserSession(r)
-	if hasSession {
-		ctx = slogctx.Append(ctx, "idp", user.IDProvider)
-		ctx = slogctx.Append(ctx, "user", user.Email)
-	}
-	itm := r.PathValue("item")
-	part := r.PathValue("part")
-	if itm == "" {
-		logger.InfoContext(ctx, "No item exists", "itm", itm)
-		serveIndex(ctx, w, r, allRepos.AllDataSources(), "/") //FIXME: proper action URL
-		return
-	}
-	ds := d.dataSourceByID(itm)
-	if ds == nil {
-		slog.InfoContext(ctx, "No ds exists", "itm", itm)
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		return
-	}
-	enableCors(&w)
-	switch part {
-	default:
-		if !hasSession {
-			logger.Info("No session go to login")
-			LoginPage(w, r)
-			return
-		}
-		logger.InfoContext(ctx, "Serving", "URL", r.URL)
-		switch part {
-		case d.partNameSubs():
-			content, err := ds.OpenSubs()
-			if err != nil {
-				errorHandler(ctx, w, r, http.StatusNotFound)
-				logger.InfoContext(ctx, "read of subs", "failed", err)
-				return
-			}
-			http.ServeContent(w, r, "foo.vtt", time.Time{}, content)
-			content.Close()
-			return
-		case d.partNameHtml5():
-			serveItemHtml5(ctx, w, r, ds)
-			return
-		case d.partNameChromeCast():
-			serveItemCast(ctx, w, r, ds)
-			return
-
-		default:
-			logger.InfoContext(ctx, "Unsupported request", "part", part, "URL", r.URL, "header", r.Header)
-		}
-	}
-}
-
-func (d DataSourceServer) SubsURL(id string) string {
-	ds := d.dataSourceByID(id)
+func (s subsServer) SubsURL(id string) string {
+	ds := allRepos.DataSourceByID(id)
 	content, err := ds.OpenSubs()
 	if err == nil {
 		content.Close()
-		return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + d.partNameSubs()
+		return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + s.partName()
 	}
 	return ""
 }
-func (d DataSourceServer) Html5URL(id string) string {
-	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + d.partNameHtml5()
+
+func (_ *subsServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	itm := r.PathValue("item")
+	ds := allRepos.DataSourceByID(itm)
+	if ds == nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "datasource unkown", "id", itm)
+		return
+	}
+	content, err := ds.OpenSubs()
+	if err != nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.InfoContext(ctx, "read of subs", "failed", err)
+		return
+	}
+	http.ServeContent(w, r, "foo.vtt", time.Time{}, content)
+	content.Close()
+	return
 }
-func (d DataSourceServer) ChromeCastURL(id string) string {
-	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + d.partNameChromeCast()
+
+type html5Server struct {
+}
+
+func (_ html5Server) partName() string {
+	return "html5"
+}
+func (h html5Server) Html5URL(id string) string {
+	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + h.partName()
+}
+
+func (_ *html5Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	itm := r.PathValue("item")
+	ds := allRepos.DataSourceByID(itm)
+	if ds == nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "datasource unkown", "id", itm)
+		return
+	}
+	serveItemHtml5(ctx, w, r, ds)
+	return
+}
+
+type castServer struct {
+}
+
+func (_ castServer) partName() string {
+	return "cast"
+}
+func (h castServer) CastURL(id string) string {
+	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + h.partName()
+}
+
+func (_ *castServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	itm := r.PathValue("item")
+	ds := allRepos.DataSourceByID(itm)
+	if ds == nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "datasource unkown", "id", itm)
+		return
+	}
+	serveItemCast(ctx, w, r, ds)
+	return
 }
 
 func enableCors(w *http.ResponseWriter) {
@@ -506,7 +502,9 @@ func main() {
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+mediaServer{}.partName(), Chain(LoggingMiddleware, CORS)(&mediaServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+posterServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&posterServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+backdropServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&backdropServer{}))
-	mux.Handle(webRootURL.Path+"/item/{item}/part/{part}", &DataSourceServer{})
+	mux.Handle(webRootURL.Path+"/item/{item}/part/"+subsServer{}.partName(), Chain(LoggingMiddleware, CORS)(&subsServer{}))
+	mux.Handle(webRootURL.Path+"/item/{item}/part/"+html5Server{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&html5Server{}))
+	mux.Handle(webRootURL.Path+"/item/{item}/part/"+castServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&castServer{}))
 
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, AuthMiddleware)(http.HandlerFunc(serveTopIndex)))
 
@@ -649,7 +647,7 @@ func serveItemCast(ctx context.Context, w http.ResponseWriter, r *http.Request, 
 	data := dataT{
 		DS:       ds,
 		MediaURL: mediaServer{}.MediaURL(ds.ID()),
-		SubsURL:  DataSourceServer{}.SubsURL(ds.ID()),
+		SubsURL:  subsServer{}.SubsURL(ds.ID()),
 	}
 	htmltempl := `
 <!DOCTYPE html>
@@ -950,7 +948,7 @@ func serveItemHtml5(ctx context.Context, w http.ResponseWriter, r *http.Request,
 	//itm := r.PathValue("item")
 	data := dataT{}
 	data.MediaURL = mediaServer{}.MediaURL(ds.ID())
-	data.SubsURL = DataSourceServer{}.SubsURL(ds.ID())
+	data.SubsURL = subsServer{}.SubsURL(ds.ID())
 	data.SeasonEpisode = seasonEpisode(ds)
 	data.Overview = datasource.OverviewOrZero(ds)
 	data.Title = datasource.TitleOrZero(ds)
@@ -1129,8 +1127,8 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 				PosterURL:     posterServer{}.PosterURL(ds.ID()),
 				BackdropURL:   backdropServer{}.BackdropURL(ds.ID()),
 				Title:         datasource.TitleOrZero(ds),
-				Html5URL:      DataSourceServer{}.Html5URL(ds.ID()),
-				CastURL:       DataSourceServer{}.ChromeCastURL(ds.ID()),
+				Html5URL:      html5Server{}.Html5URL(ds.ID()),
+				CastURL:       castServer{}.CastURL(ds.ID()),
 				Overview:      datasource.OverviewOrZero(ds),
 				Plot:          datasource.PlotOrZero(ds),
 				SeasonEpisode: seasonEpisode(ds),
