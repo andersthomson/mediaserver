@@ -506,7 +506,7 @@ func main() {
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+html5Server{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&html5Server{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+castServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&castServer{}))
 
-	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, AuthMiddleware)(http.HandlerFunc(serveTopIndex)))
+	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, AuthMiddleware, CORS)(http.HandlerFunc(serveTopIndex)))
 
 	logger.Info("Listening...")
 	err = http.ListenAndServe(":3000", mux)
