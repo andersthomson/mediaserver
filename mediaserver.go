@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"log"
 	"log/slog"
 	"math/rand"
 	"net/http"
@@ -131,6 +130,55 @@ func (a allReposT) DataSourceByID(id string) datasource.DataSource {
 
 var allRepos allReposT
 
+type backdropServer struct {
+}
+
+func (_ backdropServer) partName() string {
+	return "backdrop"
+}
+func (p backdropServer) BackdropURL(id string) string {
+	ds := allRepos.DataSourceByID(id)
+	if ds == nil {
+		return ""
+	}
+	dsT, ok := ds.(datasource.OpenBackdroper)
+	if !ok {
+		logger.Warn("ds does not support backdrops", "id", ds.ID())
+		return ""
+	}
+	content, err := dsT.OpenBackdrop()
+	if err != nil {
+		return ""
+	}
+	content.Close()
+	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + p.partName()
+}
+
+func (p *backdropServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	itm := r.PathValue("item")
+	ds := allRepos.DataSourceByID(itm)
+	if ds == nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "datasource unkown", "id", itm)
+		return
+	}
+	dsT, ok := ds.(datasource.OpenBackdroper)
+	if !ok {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "ds does not support backdrops", "id", ds.ID())
+		return
+	}
+	content, err := dsT.OpenBackdrop()
+	if err != nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "read of backdrop", "failed", err)
+		return
+	}
+	http.ServeContent(w, r, "", time.Time{}, content)
+	content.Close()
+}
+
 type posterServer struct {
 }
 
@@ -151,23 +199,53 @@ func (p posterServer) PosterURL(id string) string {
 }
 
 func (p *posterServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	enableCors(&w)
 	ctx := r.Context()
 	itm := r.PathValue("item")
 	ds := allRepos.DataSourceByID(itm)
 	if ds == nil {
 		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.InfoContext(ctx, "datasource unkown", "id", itm)
+		logger.WarnContext(ctx, "datasource unkown", "id", itm)
 		return
 	}
 	content, err := ds.OpenPoster()
 	if err != nil {
 		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.InfoContext(ctx, "read of poster", "failed", err)
+		logger.WarnContext(ctx, "read of poster", "failed", err)
 		return
 	}
 	http.ServeContent(w, r, "", time.Time{}, content)
 	content.Close()
+}
+
+type mediaServer struct {
+}
+
+func (_ mediaServer) partName() string {
+	return "media"
+}
+func (p mediaServer) MediaURL(id string) string {
+	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + p.partName()
+}
+
+func (p *mediaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	itm := r.PathValue("item")
+	ds := allRepos.DataSourceByID(itm)
+	if ds == nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "datasource unkown", "id", itm)
+		return
+	}
+	content, err := ds.OpenMedia()
+	if err != nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.InfoContext(ctx, "media not found", "ds", ds.ID())
+		return
+	}
+	logger.InfoContext(ctx, "Serving", "URL", r.URL)
+	http.ServeContent(w, r, "foo.mp4", time.Time{}, content)
+	content.Close()
+	return
 }
 
 type DataSourceServer struct {
@@ -177,14 +255,8 @@ func (d DataSourceServer) dataSourceByID(id string) datasource.DataSource {
 	return allRepos.DataSourceByID(id)
 }
 
-func (_ DataSourceServer) partNameMedia() string {
-	return "media.mp4"
-}
 func (_ DataSourceServer) partNameSubs() string {
 	return "subs.vtt"
-}
-func (_ DataSourceServer) partNameBackdrop() string {
-	return "backdrop"
 }
 func (_ DataSourceServer) partNameHtml5() string {
 	return "html5"
@@ -215,17 +287,6 @@ func (d *DataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	enableCors(&w)
 	switch part {
-	case d.partNameMedia():
-		content, err := ds.OpenMedia()
-		if err != nil {
-			errorHandler(ctx, w, r, http.StatusNotFound)
-			logger.InfoContext(ctx, "media not found", "ds", ds.ID())
-			return
-		}
-		logger.InfoContext(ctx, "Serving", "URL", r.URL)
-		http.ServeContent(w, r, "foo.mp4", time.Time{}, content)
-		content.Close()
-		return
 	default:
 		if !hasSession {
 			logger.Info("No session go to login")
@@ -244,21 +305,6 @@ func (d *DataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.ServeContent(w, r, "foo.vtt", time.Time{}, content)
 			content.Close()
 			return
-		case d.partNameBackdrop():
-			dsT, ok := ds.(datasource.OpenBackdroper)
-			if !ok {
-				errorHandler(ctx, w, r, http.StatusNotFound)
-				logger.InfoContext(ctx, "ds does not support backdrops", "id", ds.ID())
-				return
-			}
-			content, err := dsT.OpenBackdrop()
-			if err != nil {
-				errorHandler(ctx, w, r, http.StatusNotFound)
-				logger.InfoContext(ctx, "read of backdrop", "failed", err)
-				return
-			}
-			http.ServeContent(w, r, "", time.Time{}, content)
-			content.Close()
 		case d.partNameHtml5():
 			serveItemHtml5(ctx, w, r, ds)
 			return
@@ -272,28 +318,12 @@ func (d *DataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (d DataSourceServer) MediaURL(id string) string {
-	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + d.partNameMedia()
-}
 func (d DataSourceServer) SubsURL(id string) string {
 	ds := d.dataSourceByID(id)
 	content, err := ds.OpenSubs()
 	if err == nil {
 		content.Close()
 		return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + d.partNameSubs()
-	}
-	return ""
-}
-func (d DataSourceServer) BackdropURL(id string) string {
-	ds := d.dataSourceByID(id)
-	dsT, ok := ds.(datasource.OpenBackdroper)
-	if !ok {
-		return ""
-	}
-	content, err := dsT.OpenBackdrop()
-	if err == nil {
-		content.Close()
-		return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + d.partNameBackdrop()
 	}
 	return ""
 }
@@ -347,12 +377,60 @@ func setupLogger() {
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		log.Printf("Started %s %s", r.Method, r.URL.Path)
-
-		next.ServeHTTP(w, r)
-
-		log.Printf("Completed %s in %v", r.URL.Path, time.Since(start))
+		ctx := r.Context()
+		reqid := NewRequestid()
+		ctx = slogctx.Append(ctx, "reqid", reqid)
+		logger.InfoContext(ctx, "Started", "URL", r.URL.Path)
+		next.ServeHTTP(w, r.WithContext(ctx))
+		logger.InfoContext(ctx, "Completed", "URL", r.URL.Path, "time", time.Since(start))
 	})
+}
+func AuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		user, hasSession := MustGetUserSession(w, r)
+		if !hasSession {
+			logger.InfoContext(ctx, "UNAUTHORIZED")
+			return
+		}
+
+		// Add user data to the request context
+		ctx = slogctx.Append(ctx, "idp", user.IDProvider)
+		ctx = slogctx.Append(ctx, "user", user.Email)
+		logger.InfoContext(ctx, "USER AUTHED")
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func CORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		// Handle preflight request quickly
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		logger.InfoContext(r.Context(), "Adding cors")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Middleware defines a function to process middleware.
+type Middleware func(http.Handler) http.Handler
+
+// Chain applies a list of middlewares to an http.Handler.
+// The first middleware in the list will be the outermost.
+func Chain(middlewares ...Middleware) Middleware {
+	return func(final http.Handler) http.Handler {
+		// Apply in reverse order so that the first middleware wraps the rest
+		for i := len(middlewares) - 1; i >= 0; i-- {
+			final = middlewares[i](final)
+		}
+		return final
+	}
 }
 
 func ChainMiddleware(handler http.Handler, middlewares ...func(http.Handler) http.Handler) http.Handler {
@@ -422,13 +500,15 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	mux.Handle(webRootURL.Path+"/login", ChainMiddleware(http.HandlerFunc(loginHandler), LoggingMiddleware))
-	mux.Handle(webRootURL.Path+"/auth/google/callback", ChainMiddleware(http.HandlerFunc(callbackHandler), LoggingMiddleware))
+	mux.Handle(webRootURL.Path+"/login", Chain(LoggingMiddleware)(http.HandlerFunc(loginHandler)))
+	mux.Handle(webRootURL.Path+"/auth/google/callback", Chain(LoggingMiddleware)(http.HandlerFunc(callbackHandler)))
 
-	mux.Handle(webRootURL.Path+"/item/{item}/part/"+posterServer{}.partName(), ChainMiddleware(&posterServer{}, LoggingMiddleware, AuthMiddleware))
+	mux.Handle(webRootURL.Path+"/item/{item}/part/"+mediaServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&mediaServer{}))
+	mux.Handle(webRootURL.Path+"/item/{item}/part/"+posterServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&posterServer{}))
+	mux.Handle(webRootURL.Path+"/item/{item}/part/"+backdropServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&backdropServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/{part}", &DataSourceServer{})
 
-	mux.Handle(webRootURL.Path+"/", ChainMiddleware(http.HandlerFunc(serveTopIndex), LoggingMiddleware, AuthMiddleware))
+	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, AuthMiddleware)(http.HandlerFunc(serveTopIndex)))
 
 	logger.Info("Listening...")
 	err = http.ListenAndServe(":3000", mux)
@@ -531,22 +611,6 @@ func MustGetUserSession(w http.ResponseWriter, r *http.Request) (User, bool) {
 
 type userKey struct{}
 
-func AuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, hasSession := MustGetUserSession(w, r)
-		if !hasSession {
-			return
-		}
-
-		// Add user data to the request context
-		ctx := context.WithValue(r.Context(), userKey{}, user)
-		ctx = slogctx.Append(ctx, "idp", user.IDProvider)
-		ctx = slogctx.Append(ctx, "user", user.Email)
-		logger.InfoContext(ctx, "USER AUTHED")
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
 func randomString(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, n)
@@ -584,7 +648,7 @@ func serveItemCast(ctx context.Context, w http.ResponseWriter, r *http.Request, 
 	}
 	data := dataT{
 		DS:       ds,
-		MediaURL: DataSourceServer{}.MediaURL(ds.ID()),
+		MediaURL: mediaServer{}.MediaURL(ds.ID()),
 		SubsURL:  DataSourceServer{}.SubsURL(ds.ID()),
 	}
 	htmltempl := `
@@ -885,7 +949,7 @@ func serveItemHtml5(ctx context.Context, w http.ResponseWriter, r *http.Request,
 	}
 	//itm := r.PathValue("item")
 	data := dataT{}
-	data.MediaURL = DataSourceServer{}.MediaURL(ds.ID())
+	data.MediaURL = mediaServer{}.MediaURL(ds.ID())
 	data.SubsURL = DataSourceServer{}.SubsURL(ds.ID())
 	data.SeasonEpisode = seasonEpisode(ds)
 	data.Overview = datasource.OverviewOrZero(ds)
@@ -1061,9 +1125,9 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 	for _, ds := range dss {
 		if hasSetTag(ds, FilterTags) {
 			dsObject := object{
-				MediaURL:      DataSourceServer{}.MediaURL(ds.ID()),
+				MediaURL:      mediaServer{}.MediaURL(ds.ID()),
 				PosterURL:     posterServer{}.PosterURL(ds.ID()),
-				BackdropURL:   DataSourceServer{}.BackdropURL(ds.ID()),
+				BackdropURL:   backdropServer{}.BackdropURL(ds.ID()),
 				Title:         datasource.TitleOrZero(ds),
 				Html5URL:      DataSourceServer{}.Html5URL(ds.ID()),
 				CastURL:       DataSourceServer{}.ChromeCastURL(ds.ID()),
