@@ -44,15 +44,6 @@ type EpisodeTitler interface {
 	EpisodeTitle() string
 }
 
-type User struct {
-	IDProvider string
-	Email      string
-	Name       string
-	GivenName  string
-	FamilyName string
-	LastUsed   time.Time
-}
-
 // Global OAuth2 config
 var oauthConfig *oauth2.Config
 
@@ -380,19 +371,45 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		logger.InfoContext(ctx, "Completed", "URL", r.URL.Path, "time", time.Since(start))
 	})
 }
+func GetUserSession(r *http.Request) (User, bool) {
+	sessionID, err := getSessionCookie(r)
+	if err != nil {
+		logger.Info("No session cookie", "err", err)
+		return nil, false
+	}
+	sessions.RLock()
+	u, ok := sessions.m[sessionID]
+	sessions.RUnlock()
+	if !ok {
+		logger.Info("Invalid session")
+		return nil, false
+	}
+	return u.User, true
+}
+
+func MustGetUserSession(w http.ResponseWriter, r *http.Request) (User, bool) {
+	u, ok := GetUserSession(r)
+	if !ok {
+		LoginPage(w, r)
+		return nil, false
+	}
+	return u, true
+}
+
+type userCtxKey struct{}
+
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		user, hasSession := MustGetUserSession(w, r)
 		if !hasSession {
-			logger.InfoContext(ctx, "UNAUTHORIZED")
+			logger.InfoContext(ctx, "NO SESSION")
 			return
 		}
 
 		// Add user data to the request context
-		ctx = slogctx.Append(ctx, "idp", user.IDProvider)
-		ctx = slogctx.Append(ctx, "user", user.Email)
-		logger.InfoContext(ctx, "USER AUTHED")
+		ctx = context.WithValue(ctx, userCtxKey{}, user)
+		logger.InfoContext(ctx, "Has Session", "userID", user.UserID(), "idp", user.IDProvider())
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -400,7 +417,8 @@ func AuthMiddleware(next http.Handler) http.Handler {
 func CORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		//w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		// Handle preflight request quickly
@@ -428,13 +446,6 @@ func Chain(middlewares ...Middleware) Middleware {
 	}
 }
 
-func ChainMiddleware(handler http.Handler, middlewares ...func(http.Handler) http.Handler) http.Handler {
-	for i := len(middlewares) - 1; i >= 0; i-- {
-		handler = middlewares[i](handler)
-	}
-	return handler
-}
-
 func serveTopIndex(w http.ResponseWriter, r *http.Request) {
 	webRootURL, err := url.Parse(Config.WebRoot)
 	if err != nil {
@@ -456,7 +467,7 @@ func main() {
 		Endpoint:     google.Endpoint,
 	}
 	sessions = Sessions{}
-	sessions.m = make(map[string]User, 16)
+	sessions.m = make(map[string]SessionEntry, 16)
 	buf, err := os.ReadFile("./sessions")
 	if err != nil {
 		logger.Warn("Failed to read sesson file", "err", err)
@@ -497,6 +508,7 @@ func main() {
 	}
 	mux.Handle(webRootURL.Path+"/auth/google/login", Chain(LoggingMiddleware)(http.HandlerFunc(googleLoginHandler)))
 	mux.Handle(webRootURL.Path+"/auth/google/callback", Chain(LoggingMiddleware)(http.HandlerFunc(googleOAuthCallbackHandler)))
+	mux.Handle(webRootURL.Path+"/auth/internalIDP/Authenticate", Chain(LoggingMiddleware)(internalIDP{}))
 
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+mediaServer{}.partName(), Chain(LoggingMiddleware, CORS)(&mediaServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+posterServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&posterServer{}))
@@ -515,32 +527,22 @@ func main() {
 }
 
 func LoginPage(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "<html><h2>Welcome</h2><a href=\""+"/ms"+"/auth/google/login\">Login with Google</a></html>")
-}
-
-func GetUserSession(r *http.Request) (User, bool) {
-	sessionID, err := getSessionCookie(r)
+	webRootURL, err := url.Parse(Config.WebRoot)
 	if err != nil {
-		logger.Info("No session cookie", "err", err)
-		return User{}, false
+		panic(err)
 	}
-	sessions.RLock()
-	u, ok := sessions.m[sessionID]
-	sessions.RUnlock()
-	if !ok {
-		logger.Info("Invalid session")
-		return User{}, false
+	spew.Dump(Config)
+	fmt.Fprintf(w, "<html><body><h2>Welcome</h2>\n")
+	if slices.Contains(Config.IDProviders, "GoogleOAuth") {
+		fmt.Fprintf(w, "<a href=\""+webRootURL.Path+"/auth/google/login\">Login with Google</a><p>\n")
 	}
-	return u, true
-}
-
-func MustGetUserSession(w http.ResponseWriter, r *http.Request) (User, bool) {
-	u, ok := GetUserSession(r)
-	if !ok {
-		LoginPage(w, r)
-		return User{}, false
+	if len(Config.IDProviders) > 1 {
+		fmt.Fprintf(w, "Or<p>\n")
 	}
-	return u, true
+	if slices.Contains(Config.IDProviders, "InternalIDP") {
+		fmt.Fprintf(w, internalIDP{}.loginPage(webRootURL.Path+"/auth/internalIDP/Authenticate"))
+	}
+	fmt.Fprintf(w, "</body></html>")
 }
 
 func setSessionCookie(w http.ResponseWriter, sessionID string) {

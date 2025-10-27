@@ -11,6 +11,23 @@ import (
 	"golang.org/x/oauth2"
 )
 
+type GoogleUser struct {
+	IDProvider_ string
+	Email       string
+	Name        string
+	GivenName   string
+	FamilyName  string
+	LastUsed    time.Time
+}
+
+func (g GoogleUser) UserID() string {
+	return g.Email
+}
+
+func (g GoogleUser) IDProvider() string {
+	return g.IDProvider_
+}
+
 func googleLoginHandler(w http.ResponseWriter, r *http.Request) {
 	url := oauthConfig.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
 	http.Redirect(w, r, url, http.StatusFound)
@@ -48,37 +65,36 @@ func googleOAuthCallbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	var user struct {
+	var googleUser struct {
 		Email      string `json:"email"`
 		Name       string `json:"name"`
 		GivenName  string `json:"given_name"`
 		FamilyName string `json:"family_name"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&googleUser); err != nil {
 		http.Error(w, "Failed to decode userinfo: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if !slices.Contains(Config.GoogleOAuth.AllowedUsers, user.Email) {
+	if !slices.Contains(Config.GoogleOAuth.AllowedUsers, googleUser.Email) {
 		LoginPage(w, r)
-		logger.Warn("User not authorized", "user", user)
+		logger.Warn("User not authorized", "user", googleUser)
 		return
 	}
-	logger.Info("Authorized user", "user", user)
 	// Create a new session
 	sessionID := randomString(32)
 	setSessionCookie(w, sessionID)
 
 	// Store session -> user mapping
-	sessions.Lock()
-	sessions.m[sessionID] = User{
-		IDProvider: "google",
-		Email:      user.Email,
-		Name:       user.Name,
-		GivenName:  user.GivenName,
-		FamilyName: user.FamilyName,
-		LastUsed:   time.Now(),
+	user := GoogleUser{
+		IDProvider_: "googleIDP",
+		Email:       googleUser.Email,
+		Name:        googleUser.Name,
+		GivenName:   googleUser.GivenName,
+		FamilyName:  googleUser.FamilyName,
+		LastUsed:    time.Now(),
 	}
-	sessions.Unlock()
+	sessions.Add(sessionID, user)
+	logger.Info("Session created for", "user", googleUser, "session", sessionID)
 
 	http.Redirect(w, r, Config.WebRoot, http.StatusFound)
 }

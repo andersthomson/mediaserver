@@ -22,11 +22,18 @@ type GoogleOAuth struct {
 	AllowedUsers []string
 }
 
+type InternalIDPAccount struct {
+	Username string
+	Password string
+}
+
 type config struct {
 	WebRoot     string
 	Tmdb        Tmdb
 	Directories []Directory
 	GoogleOAuth GoogleOAuth
+	InternalIDP []InternalIDPAccount
+	IDProviders []string
 }
 
 func (c *config) ReadFromFile(f string) {
