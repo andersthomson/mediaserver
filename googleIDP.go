@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"net/http"
 	"slices"
-	"time"
 
 	"golang.org/x/oauth2"
 )
@@ -17,7 +16,6 @@ type GoogleUser struct {
 	Name        string
 	GivenName   string
 	FamilyName  string
-	LastUsed    time.Time
 }
 
 func (g GoogleUser) UserID() string {
@@ -91,7 +89,6 @@ func googleOAuthCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		Name:        googleUser.Name,
 		GivenName:   googleUser.GivenName,
 		FamilyName:  googleUser.FamilyName,
-		LastUsed:    time.Now(),
 	}
 	sessions.Add(sessionID, user)
 	logger.Info("Session created for", "user", googleUser, "session", sessionID)

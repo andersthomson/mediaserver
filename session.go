@@ -25,6 +25,17 @@ func (s *Sessions) Add(sessionID string, u User) {
 	s.Unlock()
 }
 
+func (s *Sessions) UpdateLastUsed(sessionID string) {
+	s.Lock()
+	defer s.Unlock()
+	se, ok := s.m[sessionID]
+	if !ok {
+		return
+	}
+	se.LastUsed = time.Now()
+	s.m[sessionID] = se
+}
+
 func (s *Sessions) ToJson() []byte {
 	s.RLock()
 	defer s.RUnlock()

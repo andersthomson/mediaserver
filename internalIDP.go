@@ -3,15 +3,11 @@ package main
 import (
 	"net/http"
 	"slices"
-	"time"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
 type InternalIDPUser struct {
 	IdProvider_ string
 	Username    string
-	LastUsed    time.Time
 }
 
 func (i InternalIDPUser) UserID() string {
@@ -51,7 +47,6 @@ func (_ internalIDP) loginPage(postPath string) string {
 }
 
 func (_ internalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	spew.Dump(r)
 	r.ParseForm()
 	username := r.FormValue("username")
 	password := r.FormValue("password")
@@ -72,7 +67,6 @@ func (_ internalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	user := InternalIDPUser{
 		IdProvider_: "internalIDP",
 		Username:    username,
-		LastUsed:    time.Now(),
 	}
 	sessions.Add(sessionID, user)
 	logger.Info("Session created for", "user", username, "session", sessionID)

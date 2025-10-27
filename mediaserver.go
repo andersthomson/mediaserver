@@ -320,10 +320,6 @@ func (_ *castServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-func enableCors(w *http.ResponseWriter) {
-	(*w).Header().Set("Access-Control-Allow-Origin", "*")
-}
-
 func errorHandler(ctx context.Context, w http.ResponseWriter, r *http.Request, status int, args ...any) {
 	w.WriteHeader(status)
 	logger.With(
@@ -406,7 +402,12 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			logger.InfoContext(ctx, "NO SESSION")
 			return
 		}
-
+		sessionID, err := getSessionCookie(r)
+		if err != nil {
+			logger.WarnContext(ctx, "No session cookie", "err", err)
+			return
+		}
+		sessions.UpdateLastUsed(sessionID)
 		// Add user data to the request context
 		ctx = context.WithValue(ctx, userCtxKey{}, user)
 		logger.InfoContext(ctx, "Has Session", "userID", user.UserID(), "idp", user.IDProvider())
@@ -462,7 +463,7 @@ func main() {
 	oauthConfig = &oauth2.Config{
 		ClientID:     Config.GoogleOAuth.ClientID,
 		ClientSecret: Config.GoogleOAuth.ClientSecret,
-		RedirectURL:  "https://media.famthomson.se/ms/auth/google/callback",
+		RedirectURL:  Config.WebRoot + "/auth/google/callback",
 		Scopes:       []string{"openid", "email", "profile"},
 		Endpoint:     google.Endpoint,
 	}
@@ -531,7 +532,6 @@ func LoginPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
-	spew.Dump(Config)
 	fmt.Fprintf(w, "<html><body><h2>Welcome</h2>\n")
 	if slices.Contains(Config.IDProviders, "GoogleOAuth") {
 		fmt.Fprintf(w, "<a href=\""+webRootURL.Path+"/auth/google/login\">Login with Google</a><p>\n")
@@ -552,7 +552,7 @@ func setSessionCookie(w http.ResponseWriter, sessionID string) {
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   true, // Set to true in production (HTTPS)
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	}
 	http.SetCookie(w, cookie)
 }
