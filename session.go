@@ -2,17 +2,60 @@ package main
 
 import (
 	"encoding/json"
+	"math/rand"
+	"os"
 	"sync"
 	"time"
 )
+
+func randomString(n int) string {
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
+}
+func NewSessionID() string {
+	return randomString(32)
+}
 
 type SessionEntry struct {
 	User     User
 	LastUsed time.Time
 }
+
+func NewSessionEntry(u User) SessionEntry {
+	return SessionEntry{
+		User:     u,
+		LastUsed: time.Now(),
+	}
+}
+func NewSessionStoreFromFile(fname string) *Sessions {
+	s := NewSessionStore()
+	buf, err := os.ReadFile(fname)
+	if err != nil {
+		return s
+
+	}
+	s.FromJson(buf)
+	return s
+}
+
 type Sessions struct {
 	sync.RWMutex
 	m map[string]SessionEntry
+}
+
+func NewSessionStore() *Sessions {
+	return &Sessions{
+		m: make(map[string]SessionEntry, 16),
+	}
+}
+func (s *Sessions) AddSessionEntry(sessionID string, se SessionEntry) {
+	s.Lock()
+	s.m[sessionID] = se
+	s.Unlock()
 }
 
 func (s *Sessions) Add(sessionID string, u User) {
@@ -25,15 +68,15 @@ func (s *Sessions) Add(sessionID string, u User) {
 	s.Unlock()
 }
 
-func (s *Sessions) UpdateLastUsed(sessionID string) {
+func (s *Sessions) TouchLastUsed(sessionID string) {
 	s.Lock()
-	defer s.Unlock()
 	se, ok := s.m[sessionID]
 	if !ok {
-		return
+		logger.Warn("Session to touch does not exist in SessionStore: " + sessionID)
 	}
 	se.LastUsed = time.Now()
 	s.m[sessionID] = se
+	s.Unlock()
 }
 
 func (s *Sessions) ToJson() []byte {

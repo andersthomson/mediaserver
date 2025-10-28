@@ -46,8 +46,9 @@ type EpisodeTitler interface {
 
 // Global OAuth2 config
 var oauthConfig *oauth2.Config
+var googleIDP *GoogleIDP
 
-var sessions Sessions
+var sessions *Sessions
 
 var logger *slog.Logger
 var Config config
@@ -356,6 +357,17 @@ func setupLogger() {
 	customHandler := slogctx.NewHandler(slog.Default().Handler(), nil)
 	logger = slog.New(customHandler)
 }
+func BruteLoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ctx := r.Context()
+		reqid := NewRequestid()
+		ctx = slogctx.Append(ctx, "Brutereqid", reqid)
+		logger.InfoContext(ctx, "Brute Started", "URL", r.URL.Path)
+		next.ServeHTTP(w, r.WithContext(ctx))
+		logger.InfoContext(ctx, "Brute Completed", "URL", r.URL.Path, "time", time.Since(start))
+	})
+}
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -397,17 +409,18 @@ type userCtxKey struct{}
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		user, hasSession := MustGetUserSession(w, r)
+		user, hasSession := GetUserSession(r)
 		if !hasSession {
-			logger.InfoContext(ctx, "NO SESSION")
+			http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
 			return
 		}
 		sessionID, err := getSessionCookie(r)
 		if err != nil {
-			logger.WarnContext(ctx, "No session cookie", "err", err)
-			return
+			logger.Error("No session cookie", "err", err)
+			panic(1)
 		}
-		sessions.UpdateLastUsed(sessionID)
+		_ = sessionID
+		sessions.TouchLastUsed(sessionID)
 		// Add user data to the request context
 		ctx = context.WithValue(ctx, userCtxKey{}, user)
 		logger.InfoContext(ctx, "Has Session", "userID", user.UserID(), "idp", user.IDProvider())
@@ -467,14 +480,15 @@ func main() {
 		Scopes:       []string{"openid", "email", "profile"},
 		Endpoint:     google.Endpoint,
 	}
-	sessions = Sessions{}
-	sessions.m = make(map[string]SessionEntry, 16)
-	buf, err := os.ReadFile("./sessions")
+	sessions = NewSessionStoreFromFile("./sessions")
+
+	webRootURL, err := url.Parse(Config.WebRoot)
 	if err != nil {
-		logger.Warn("Failed to read sesson file", "err", err)
-	} else {
-		sessions.FromJson(buf)
+		panic(err)
 	}
+	IDPRoot := webRootURL.Path + "/auth"
+	googleIDP = NewGoogleIDP(sessions, oauthConfig, Config.WebRoot, IDPRoot+"/google")
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -503,13 +517,14 @@ func main() {
 	}
 	mux := http.NewServeMux()
 
-	webRootURL, err := url.Parse(Config.WebRoot)
-	if err != nil {
-		panic(err)
-	}
-	mux.Handle(webRootURL.Path+"/auth/google/login", Chain(LoggingMiddleware)(http.HandlerFunc(googleLoginHandler)))
-	mux.Handle(webRootURL.Path+"/auth/google/callback", Chain(LoggingMiddleware)(http.HandlerFunc(googleOAuthCallbackHandler)))
+	//mux.Handle(webRootURL.Path+"/auth/google/login", Chain(LoggingMiddleware)(http.HandlerFunc(googleIDP.googleLoginHandler)))
+	//mux.Handle(webRootURL.Path+"/auth/google/callback", Chain(LoggingMiddleware)(http.HandlerFunc(googleIDP.googleOAuthCallbackHandler)))
+
+	mux.Handle(webRootURL.Path+"/auth/google/", http.StripPrefix(webRootURL.Path+"/auth/google", googleIDP.ServeMux()))
+
 	mux.Handle(webRootURL.Path+"/auth/internalIDP/Authenticate", Chain(LoggingMiddleware)(internalIDP{}))
+
+	mux.Handle(webRootURL.Path+"/auth/login", Chain(LoggingMiddleware)(http.HandlerFunc(LoginPage)))
 
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+mediaServer{}.partName(), Chain(LoggingMiddleware, CORS)(&mediaServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+posterServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&posterServer{}))
@@ -534,7 +549,7 @@ func LoginPage(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, "<html><body><h2>Welcome</h2>\n")
 	if slices.Contains(Config.IDProviders, "GoogleOAuth") {
-		fmt.Fprintf(w, "<a href=\""+webRootURL.Path+"/auth/google/login\">Login with Google</a><p>\n")
+		googleIDP.LoginPageFragment(w)
 	}
 	if len(Config.IDProviders) > 1 {
 		fmt.Fprintf(w, "Or<p>\n")
