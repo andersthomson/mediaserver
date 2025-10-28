@@ -1,8 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"slices"
+<<<<<<< HEAD
+=======
+
+	"github.com/davecgh/go-spew/spew"
+>>>>>>> 8311ca1 (refactor IDPs into a registry structure)
 )
 
 type InternalIDPUser struct {
@@ -18,11 +24,30 @@ func (i InternalIDPUser) IDProvider() string {
 	return i.IdProvider_
 }
 
-type internalIDP struct {
+type InternalIDP struct {
+	postAuthenticateTargetURL string
+	idpRoot                   string
 }
 
-func (_ internalIDP) loginPage(postPath string) string {
-	return `Local login<p><form action="` + postPath + `" method="post">
+func NewInternalIDP(postAuthenticateTargetURL string, idpRoot string) *InternalIDP {
+	return &InternalIDP{
+		postAuthenticateTargetURL: postAuthenticateTargetURL,
+		idpRoot:                   idpRoot,
+	}
+}
+
+func (i InternalIDP) IDPName() string {
+	return "internalIDP"
+}
+
+func (i *InternalIDP) ServeMux() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/Authenticate", Chain(LoggingMiddleware)(i))
+	return mux
+}
+
+func (i *InternalIDP) LoginPageFragment(w http.ResponseWriter) {
+	fmt.Fprintf(w, `Local login<p><form action="`+i.idpRoot+"/"+i.IDPName()+`/Authenticate" method="post">
     <label for="username">Username:</label>
     <input
       type="text"
@@ -43,10 +68,11 @@ func (_ internalIDP) loginPage(postPath string) string {
     <br><br>
 
     <button type="submit">Log In</button>
-  </form>`
+  </form>`)
 }
 
-func (_ internalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (i *InternalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	spew.Dump(r)
 	r.ParseForm()
 	username := r.FormValue("username")
 	password := r.FormValue("password")
@@ -56,7 +82,7 @@ func (_ internalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Password: password,
 	}
 	if !slices.Contains(Config.InternalIDP, u) {
-		LoginPage(w, r)
+		http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
 		logger.WarnContext(ctx, "User not found", "user", username, "password", password)
 		return
 	}
@@ -70,5 +96,6 @@ func (_ internalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	sessions.Add(sessionID, user)
 	logger.Info("Session created for", "user", username, "session", sessionID)
-	http.Redirect(w, r, Config.WebRoot, http.StatusFound)
+	logger.Info("Redirecting to", "URL", i.postAuthenticateTargetURL)
+	http.Redirect(w, r, i.postAuthenticateTargetURL, http.StatusFound)
 }

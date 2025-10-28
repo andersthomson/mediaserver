@@ -30,20 +30,24 @@ type GoogleIDP struct {
 	sessionStore              *Sessions
 	oauthConfig               *oauth2.Config
 	postAuthenticateTargetURL string
-	serveMuxRoot              string
+	idpRoot                   string
 }
 
-func NewGoogleIDP(sessionStore *Sessions, oauthConfig *oauth2.Config, postAuthenticateTargetURL string, serveMuxRoot string) *GoogleIDP {
+func NewGoogleIDP(sessionStore *Sessions, oauthConfig *oauth2.Config, postAuthenticateTargetURL string, IDPRoot string) *GoogleIDP {
 	return &GoogleIDP{
 		sessionStore:              sessionStore,
 		oauthConfig:               oauthConfig,
 		postAuthenticateTargetURL: postAuthenticateTargetURL,
-		serveMuxRoot:              serveMuxRoot,
+		idpRoot:                   IDPRoot,
 	}
 }
 
+func (g GoogleIDP) IDPName() string {
+	return "google"
+}
+
 func (g *GoogleIDP) LoginPageFragment(w http.ResponseWriter) {
-	fmt.Fprintf(w, "<a href=\""+g.serveMuxRoot+"/login\">Login with Google</a><p>\n")
+	fmt.Fprintf(w, "<a href=\""+g.idpRoot+"/"+g.IDPName()+"/login\">Login with Google</a><p>\n")
 
 }
 
@@ -56,6 +60,7 @@ func (g *GoogleIDP) ServeMux() *http.ServeMux {
 
 func (g *GoogleIDP) googleLoginHandler(w http.ResponseWriter, r *http.Request) {
 	url := g.oauthConfig.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
+	logger.Info("Returing redirect", "url", url)
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
@@ -94,7 +99,7 @@ func (g *GoogleIDP) googleOAuthCallbackHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if !slices.Contains(Config.GoogleOAuth.AllowedUsers, returnedUser.Email) {
-		LoginPage(w, r)
+		http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
 		logger.Warn("User not authorized", "user", returnedUser)
 		return
 	}

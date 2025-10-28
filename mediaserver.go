@@ -47,6 +47,7 @@ type EpisodeTitler interface {
 // Global OAuth2 config
 var oauthConfig *oauth2.Config
 var googleIDP *GoogleIDP
+var internalIDP *InternalIDP
 
 var sessions *Sessions
 
@@ -398,7 +399,7 @@ func GetUserSession(r *http.Request) (User, bool) {
 func MustGetUserSession(w http.ResponseWriter, r *http.Request) (User, bool) {
 	u, ok := GetUserSession(r)
 	if !ok {
-		LoginPage(w, r)
+		http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
 		return nil, false
 	}
 	return u, true
@@ -487,8 +488,15 @@ func main() {
 		panic(err)
 	}
 	IDPRoot := webRootURL.Path + "/auth"
-	googleIDP = NewGoogleIDP(sessions, oauthConfig, Config.WebRoot, IDPRoot+"/google")
-
+	idpManager := NewIDPManager()
+	if slices.Contains(Config.IDProviders, "GoogleOAuth") {
+		googleIDP = NewGoogleIDP(sessions, oauthConfig, Config.WebRoot, IDPRoot)
+		idpManager.Register(googleIDP)
+	}
+	if slices.Contains(Config.IDProviders, "InternalIDP") {
+		internalIDP = NewInternalIDP(Config.WebRoot, IDPRoot)
+		idpManager.Register(internalIDP)
+	}
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -520,11 +528,11 @@ func main() {
 	//mux.Handle(webRootURL.Path+"/auth/google/login", Chain(LoggingMiddleware)(http.HandlerFunc(googleIDP.googleLoginHandler)))
 	//mux.Handle(webRootURL.Path+"/auth/google/callback", Chain(LoggingMiddleware)(http.HandlerFunc(googleIDP.googleOAuthCallbackHandler)))
 
-	mux.Handle(webRootURL.Path+"/auth/google/", http.StripPrefix(webRootURL.Path+"/auth/google", googleIDP.ServeMux()))
+	//mux.Handle(webRootURL.Path+"/auth/google/", http.StripPrefix(webRootURL.Path+"/auth/google", googleIDP.ServeMux()))
+	//mux.Handle(webRootURL.Path+"/auth/internalIDP/", http.StripPrefix(webRootURL.Path+"/auth/internalIDP", internalIDP.ServeMux()))
+	mux.Handle(webRootURL.Path+"/auth/", http.StripPrefix(webRootURL.Path+"/auth", idpManager.ServeMux()))
 
-	mux.Handle(webRootURL.Path+"/auth/internalIDP/Authenticate", Chain(LoggingMiddleware)(internalIDP{}))
-
-	mux.Handle(webRootURL.Path+"/auth/login", Chain(LoggingMiddleware)(http.HandlerFunc(LoginPage)))
+	mux.Handle(webRootURL.Path+"/auth/login", Chain(LoggingMiddleware)(idpManager))
 
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+mediaServer{}.partName(), Chain(LoggingMiddleware, CORS)(&mediaServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+posterServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&posterServer{}))
@@ -540,24 +548,6 @@ func main() {
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	}
-}
-
-func LoginPage(w http.ResponseWriter, r *http.Request) {
-	webRootURL, err := url.Parse(Config.WebRoot)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Fprintf(w, "<html><body><h2>Welcome</h2>\n")
-	if slices.Contains(Config.IDProviders, "GoogleOAuth") {
-		googleIDP.LoginPageFragment(w)
-	}
-	if len(Config.IDProviders) > 1 {
-		fmt.Fprintf(w, "Or<p>\n")
-	}
-	if slices.Contains(Config.IDProviders, "InternalIDP") {
-		fmt.Fprintf(w, internalIDP{}.loginPage(webRootURL.Path+"/auth/internalIDP/Authenticate"))
-	}
-	fmt.Fprintf(w, "</body></html>")
 }
 
 func setSessionCookie(w http.ResponseWriter, sessionID string) {
