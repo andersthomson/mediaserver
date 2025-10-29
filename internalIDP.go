@@ -4,11 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-<<<<<<< HEAD
-=======
 
 	"github.com/davecgh/go-spew/spew"
->>>>>>> 8311ca1 (refactor IDPs into a registry structure)
 )
 
 type InternalIDPUser struct {

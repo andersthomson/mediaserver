@@ -557,7 +557,7 @@ func setSessionCookie(w http.ResponseWriter, sessionID string) {
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   true, // Set to true in production (HTTPS)
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	}
 	http.SetCookie(w, cookie)
 }
