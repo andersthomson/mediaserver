@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 type GoogleUser struct {
@@ -33,7 +34,14 @@ type GoogleIDP struct {
 	idpRoot                   string
 }
 
-func NewGoogleIDP(sessionStore *Sessions, oauthConfig *oauth2.Config, postAuthenticateTargetURL string, IDPRoot string) *GoogleIDP {
+func NewGoogleIDP(sessionStore *Sessions, oauthClientID string, oauthClientSecret string, postAuthenticateTargetURL string, IDPRoot string) *GoogleIDP {
+	oauthConfig := &oauth2.Config{
+		ClientID:     oauthClientID,
+		ClientSecret: oauthClientSecret,
+		RedirectURL:  Config.WebRoot + "/auth/google/callback",
+		Scopes:       []string{"openid", "email", "profile"},
+		Endpoint:     google.Endpoint,
+	}
 	return &GoogleIDP{
 		sessionStore:              sessionStore,
 		oauthConfig:               oauthConfig,

@@ -21,8 +21,6 @@ import (
 	"github.com/andersthomson/mediaserver/scrape"
 	"github.com/davecgh/go-spew/spew"
 	slogctx "github.com/veqryn/slog-context"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 )
 
 type Tagser interface {
@@ -45,7 +43,6 @@ type EpisodeTitler interface {
 }
 
 // Global OAuth2 config
-var oauthConfig *oauth2.Config
 var googleIDP *GoogleIDP
 var internalIDP *InternalIDP
 
@@ -474,13 +471,6 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	Config.ReadFromFile("config")
 	scrape.TmdbInit(Config.Tmdb.ApiKey, Config.Tmdb.CacheDir, Config.Tmdb.Iso6391Order)
-	oauthConfig = &oauth2.Config{
-		ClientID:     Config.GoogleOAuth.ClientID,
-		ClientSecret: Config.GoogleOAuth.ClientSecret,
-		RedirectURL:  Config.WebRoot + "/auth/google/callback",
-		Scopes:       []string{"openid", "email", "profile"},
-		Endpoint:     google.Endpoint,
-	}
 	sessions = NewSessionStoreFromFile("./sessions")
 
 	webRootURL, err := url.Parse(Config.WebRoot)
@@ -490,7 +480,7 @@ func main() {
 	IDPRoot := webRootURL.Path + "/auth"
 	idpManager := NewIDPManager()
 	if slices.Contains(Config.IDProviders, "GoogleOAuth") {
-		googleIDP = NewGoogleIDP(sessions, oauthConfig, Config.WebRoot, IDPRoot)
+		googleIDP = NewGoogleIDP(sessions, Config.GoogleOAuth.ClientID, Config.GoogleOAuth.ClientSecret, Config.WebRoot, IDPRoot)
 		idpManager.Register(googleIDP)
 	}
 	if slices.Contains(Config.IDProviders, "InternalIDP") {
