@@ -150,11 +150,11 @@ func init() {
 	ffprobeSem = NewSemaphore(16)
 }
 
-func ffprobe(fname string) (FFProbeRoot, error) {
+func FFProbe(fname string) (FFProbeRoot, error) {
 	defer ffprobeSem.Release(1)
 	ffprobeSem.Acquire(1)
 
-	ffmpegCmd := exec.Command("/usr/bin/ffprobe", fname, "-hide_banner", "-loglevel", "fatal", "-show_error", "-show_format", "-show_streams", "-show_programs", "-show_chapters", "-show_private_data", "-print_format", "json", "-o", "-")
+	ffmpegCmd := exec.Command("/usr/bin/ffprobe", "file:"+fname, "-hide_banner", "-loglevel", "fatal", "-show_error", "-show_format", "-show_streams", "-show_programs", "-show_chapters", "-show_private_data", "-print_format", "json", "-o", "-")
 	ffmpegIn, err := ffmpegCmd.StdinPipe()
 	if err != nil {
 		panic(err)

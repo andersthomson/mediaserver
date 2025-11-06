@@ -157,8 +157,8 @@ func (itm *ItemData) Scrape(dir, fname string) {
 		slog.String("file", filepath.Join(dir, fname)))
 	var ffdata FFProbeRoot
 	var err error
-	if ffdata, err = ffprobe(filepath.Join(dir, fname)); err != nil {
-		slog.Info("ffprobe", fname, filepath.Join(dir, fname), "error", err)
+	if ffdata, err = FFProbe(filepath.Join(dir, fname)); err != nil {
+		slog.Info("FFProbe", fname, filepath.Join(dir, fname), "error", err)
 		panic(33)
 	}
 	itm.id = itm.deriveID(fname)

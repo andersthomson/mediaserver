@@ -25,9 +25,9 @@ func toScraper(dir string, fname string) scrapeer {
 }
 
 func ScrapeFile(logger *slog.Logger, dir string, fname string) datasource.DataSource {
-	ffdata, err := ffprobe(filepath.Join(dir, fname))
+	ffdata, err := FFProbe(filepath.Join(dir, fname))
 	if err != nil {
-		slog.Error("ffprobe", fname, filepath.Join(dir, fname), "error", err)
+		slog.Error("FFProbe", fname, filepath.Join(dir, fname), "error", err)
 		panic(13)
 	}
 
