@@ -1249,7 +1249,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 					      <summary>{{ $itm.Collection.Name }}</summary>
 					      <fieldset>
 						{{ range $t := $itm.Collection.Titles }}
-							<input type="checkbox" id="Movie" name="Movie.{{$t.Movie.Title}}" {{if eq $t.Marked true}} checked {{end}}
+							<input type="checkbox" id="Movie" name="Movie.{{$t.Movie.Title}}" {{if eq $t.Marked true}} checked {{end}}>
 							<label for="Movie.{{$t.Movie.Title}}">{{$t.Movie.Title}}</label><br>
 						{{ end}}
 						</fieldset>
