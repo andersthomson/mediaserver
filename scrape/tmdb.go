@@ -74,6 +74,41 @@ func TMDBImage(key string, size string) (string, error) {
 	return res.(string), err
 }
 
+func TMDBCollectionDetails(id int) (*tmdb.CollectionDetails, error) {
+	fname := fmt.Sprintf("Collection-%d", id)
+	res, err, _ := sf.Do(fname, func() (any, error) {
+		var resp *tmdb.CollectionDetails
+		fnameLong := filepath.Join(cachePath, fname)
+		body, err := os.ReadFile(fnameLong)
+		if err == nil {
+			var collection tmdb.CollectionDetails
+			err := json.Unmarshal(body, &collection)
+			if err != nil {
+				return resp, err
+			}
+			return &collection, nil
+		}
+		options := map[string]string{
+			"language":           "sv-SE",
+			"append_to_response": "images,translations",
+		}
+		slog.Info("TMDB fetch", "type", "CollectionDetails", "id", id)
+		resp, err = tmdbClient.GetCollectionDetails(id, options)
+		if err != nil {
+			return resp, err
+		}
+		body, err = json.MarshalIndent(resp, "", "    ")
+		if err != nil {
+			return resp, err
+		}
+		if os.WriteFile(fnameLong, body, 0644) != nil {
+			return resp, err
+		}
+		return resp, err
+	})
+	return res.(*tmdb.CollectionDetails), err
+}
+
 func TMDBMovieDetails(id int) (*tmdb.MovieDetails, error) {
 	fname := fmt.Sprintf("Movie-%d", id)
 	res, err, _ := sf.Do(fname, func() (any, error) {

@@ -137,6 +137,14 @@ func scrapeAsTMDBMovie(logger *slog.Logger, itm *TMDBMovie, ffdata FFProbeRoot) 
 	for _, genre := range movie.Genres {
 		itm.tags["genre"] = append(itm.tags["genre"], strings.TrimSpace(genre.Name))
 	}
+	if movie.BelongsToCollection.ID != 0 {
+		collection, err := TMDBCollectionDetails(int(movie.BelongsToCollection.ID))
+		if err != nil {
+			logger.Warn("TMDBTVMovie failed to fetch collection data. Skipping", "err", err)
+			return false
+		}
+		itm.tags["collection"] = []string{collection.Name}
+	}
 	return true
 }
 func NewTMDBMovie(logger *slog.Logger, dir string, fname string, ffdata FFProbeRoot) (*TMDBMovie, bool) {

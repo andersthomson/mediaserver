@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"html/template"
@@ -991,6 +992,121 @@ func sortSources(datasources []datasource.DataSource) {
 	datasource.OrderedBy(showname, season, episode, title).Sort(datasources)
 }
 
+type ListItem struct {
+	Movie  *scrape.TMDBMovie
+	Marked bool
+}
+type Collection struct {
+	Name   string
+	Titles []ListItem
+}
+
+type movieListItem struct {
+	Title      *ListItem
+	Collection *Collection
+}
+
+type groupedMovies struct {
+	MovieListItems []movieListItem
+}
+
+func groupMovies(dss []datasource.DataSource, r *http.Request) *groupedMovies {
+	queries := r.URL.Query()
+	markedMovies := make([]string, 0, len(queries))
+	for key, _ := range queries {
+		splits := strings.Split(key, ".")
+		tag := splits[0]
+		val := splits[1]
+		if tag == "Movie" {
+			markedMovies = append(markedMovies, val)
+		}
+	}
+
+	collections := make(map[string][]ListItem, 64)
+	titles := make([]ListItem, 0, len(dss))
+	for _, ds := range dss {
+		dsT, ok := ds.(*scrape.TMDBMovie)
+		if !ok {
+			continue
+		}
+		tags := dsT.Tags()
+		if collectionName, ok := tags["collection"]; ok {
+			if collections[collectionName[0]] == nil {
+				collections[collectionName[0]] = make([]ListItem, 0, 4)
+			}
+			collections[collectionName[0]] = append(collections[collectionName[0]], ListItem{
+				Movie:  dsT,
+				Marked: slices.Contains(markedMovies, dsT.Title()),
+			})
+		} else {
+			titles = append(titles, ListItem{
+				Movie:  dsT,
+				Marked: slices.Contains(markedMovies, dsT.Title()),
+			})
+		}
+	}
+	//sort each collection
+	for _, v := range collections {
+		slices.SortFunc(v, func(a, b ListItem) int {
+			return cmp.Compare(a.Movie.Title(), b.Movie.Title())
+		})
+	}
+	res := &groupedMovies{}
+	res.MovieListItems = make([]movieListItem, 0, len(titles)+len(collections))
+	//Add individual titles to the result slice
+	for _, t := range titles {
+		res.MovieListItems = append(res.MovieListItems, movieListItem{
+			Title:      &t,
+			Collection: nil,
+		})
+	}
+	//Add individual collections to the result slice
+	for cName, cList := range collections {
+		if len(cList) > 1 {
+			res.MovieListItems = append(res.MovieListItems, movieListItem{
+				Title: nil,
+				Collection: &Collection{
+					Name:   cName,
+					Titles: cList,
+				},
+			})
+		} else {
+			res.MovieListItems = append(res.MovieListItems, movieListItem{
+				Title:      &cList[0],
+				Collection: nil,
+			})
+		}
+
+	}
+	//sort the listItems
+	slices.SortFunc(res.MovieListItems, func(a, b movieListItem) int {
+		switch {
+		case a.Title != nil && b.Title != nil:
+			return cmp.Compare(a.Title.Movie.Title(), b.Title.Movie.Title())
+		case a.Collection != nil && b.Title != nil:
+			return cmp.Compare(a.Collection.Name, b.Title.Movie.Title())
+		case a.Title != nil && b.Collection != nil:
+			return cmp.Compare(a.Title.Movie.Title(), b.Collection.Name)
+		case a.Collection != nil && b.Collection != nil:
+			return cmp.Compare(a.Collection.Name, b.Collection.Name)
+		}
+		panic(45)
+		return 0
+	})
+	for _, m := range res.MovieListItems {
+		switch {
+		case m.Title != nil:
+			fmt.Printf("%s\n", m.Title.Movie.Title())
+		case m.Collection != nil:
+			fmt.Printf("Collection %s\n", m.Collection.Name)
+			for _, ct := range m.Collection.Titles {
+				fmt.Printf("\t%s\n", ct.Movie.Title())
+			}
+		}
+	}
+	return res
+}
+
 func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss []datasource.DataSource, formActionURL string) {
 	logger.InfoContext(ctx, "Serving", "url", r.URL.String())
 	//Find all tags
@@ -1023,7 +1139,6 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 			FilterTags[tag][val] = true
 		}
 	}
-
 	type object struct {
 		MediaURL      string
 		PosterURL     string
@@ -1069,13 +1184,17 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 		}
 	}
 	type dataT struct {
-		Objects       []object
+		User          string
+		GroupedMovies *groupedMovies
 		FilterTags    map[string]map[string]bool
+		Objects       []object
 		FormActionURL string
 	}
 	data := dataT{
-		Objects:       o,
+		User:          ctx.Value(userCtxKey{}).(User).UserID(),
+		GroupedMovies: groupMovies(dss, r),
 		FilterTags:    FilterTags,
+		Objects:       o,
 		FormActionURL: formActionURL,
 	}
 	htmltempl := `<!DOCTYPE html>
@@ -1087,12 +1206,18 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 			<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgo=">
 			<title>TITLE</title>
 			<style>
+				fieldset {
+					border: none;          /* removes the border */
+				}
 				tbody tr:nth-child(odd) {
 					background-color: #eeeeee;
 			  	}
 				.poster {
 					max-width:33%;
                                         height: auto;
+				}
+				ul {
+					column-width: 200px;
 				}
 				.plot {
 					max-height: 100pt;
@@ -1111,7 +1236,27 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 			</style>
 		</head>
 		<body>
+				<h1>Welcome {{.User}}</h1>
 				<form action="{{.FormActionURL}}">
+				<ul>
+				{{range $itm := .GroupedMovies.MovieListItems }}
+					{{ if $itm.Title }}
+						<input type="checkbox" id="Movie" name="Movie.{{$itm.Title.Movie.Title}}" {{if eq $itm.Title.Marked true}} checked {{end}}>
+						<label for="Movie.{{$itm.Title.Movie.Title}}">{{$itm.Title.Movie.Title}}</label><br>
+					{{ end}}
+					{{ if $itm.Collection }}
+					      <details>
+					      <summary>{{ $itm.Collection.Name }}</summary>
+					      <fieldset>
+						{{ range $t := $itm.Collection.Titles }}
+							<input type="checkbox" id="Movie" name="Movie.{{$t.Movie.Title}}" {{if eq $t.Marked true}} checked {{end}}
+							<label for="Movie.{{$t.Movie.Title}}">{{$t.Movie.Title}}</label><br>
+						{{ end}}
+						</fieldset>
+					      </details>
+					{{ end }}
+				{{end}}
+				</ul>
 				{{range $tag,$vals := .FilterTags}}
 					{{ $tag }}<p>
 					{{range $val,$set := $vals}}
