@@ -998,6 +998,7 @@ type ListItem struct {
 }
 type Collection struct {
 	Name   string
+	Open   bool
 	Titles []ListItem
 }
 
@@ -1068,6 +1069,9 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) *groupedMovies {
 				Collection: &Collection{
 					Name:   cName,
 					Titles: cList,
+					Open: slices.ContainsFunc(cList, func(i ListItem) bool {
+						return i.Marked
+					}),
 				},
 			})
 		} else {
@@ -1093,17 +1097,19 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) *groupedMovies {
 		panic(45)
 		return 0
 	})
-	for _, m := range res.MovieListItems {
-		switch {
-		case m.Title != nil:
-			fmt.Printf("%s\n", m.Title.Movie.Title())
-		case m.Collection != nil:
-			fmt.Printf("Collection %s\n", m.Collection.Name)
-			for _, ct := range m.Collection.Titles {
-				fmt.Printf("\t%s\n", ct.Movie.Title())
+	/*
+		for _, m := range res.MovieListItems {
+			switch {
+			case m.Title != nil:
+				fmt.Printf("%s\n", m.Title.Movie.Title())
+			case m.Collection != nil:
+				fmt.Printf("Collection %s\n", m.Collection.Name)
+				for _, ct := range m.Collection.Titles {
+					fmt.Printf("\t%s\n", ct.Movie.Title())
+				}
 			}
 		}
-	}
+	*/
 	return res
 }
 
@@ -1245,7 +1251,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 						<label for="Movie.{{$itm.Title.Movie.Title}}">{{$itm.Title.Movie.Title}}</label><br>
 					{{ end}}
 					{{ if $itm.Collection }}
-					      <details>
+					      <details {{ if eq $itm.Collection.Open true}} open {{end}}>
 					      <summary>{{ $itm.Collection.Name }}</summary>
 					      <fieldset>
 						{{ range $t := $itm.Collection.Titles }}
