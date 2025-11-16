@@ -373,6 +373,7 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		ctx := r.Context()
 		reqid := NewRequestid()
 		ctx = slogctx.Append(ctx, "reqid", reqid)
+		ctx = slogctx.Append(ctx, "agent", r.Header.Get("User-Agent"))
 		logger.InfoContext(ctx, "Started", "URL", r.URL.Path)
 		next.ServeHTTP(w, r.WithContext(ctx))
 		logger.InfoContext(ctx, "Completed", "URL", r.URL.Path, "time", time.Since(start))
@@ -563,15 +564,300 @@ func getSessionCookie(r *http.Request) (string, error) {
 
 func serveItemCast(ctx context.Context, w http.ResponseWriter, r *http.Request, ds datasource.DataSource) {
 	type dataT struct {
-		DS       datasource.DataSource
-		MediaURL string
-		SubsURL  string
+		Title     string
+		PosterURL string
+		MediaURL  string
+		SubsURL   string
+		Tagline   string
 	}
 	data := dataT{
-		DS:       ds,
-		MediaURL: mediaServer{}.MediaURL(ds.ID()),
-		SubsURL:  subsServer{}.SubsURL(ds.ID()),
+		Title:     datasource.TitleOrZero(ds),
+		PosterURL: posterServer{}.PosterURL(ds.ID()),
+		MediaURL:  mediaServer{}.MediaURL(ds.ID()),
+		SubsURL:   subsServer{}.SubsURL(ds.ID()),
+		Tagline:   datasource.TaglineOrZero(ds),
 	}
+	html2templ := `
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Chromecast Movie Demo</title>
+
+    <!-- Load Cast Framework -->
+    <script
+      type="text/javascript"
+      src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"
+    ></script>
+
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        background: #f8f9fa;
+        text-align: center;
+        padding: 3rem;
+      }
+      google-cast-launcher {
+        --disconnected-color: #555;
+        --connected-color: #4285f4;
+        width: 48px;
+        height: 48px;
+        cursor: pointer;
+      }
+      button {
+        margin-top: 2rem;
+        padding: 0.8rem 1.4rem;
+        font-size: 1rem;
+        border: none;
+        border-radius: 8px;
+        background: #4285f4;
+        color: white;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #3367d6;
+      }
+      .controls {
+            margin-top: 1rem;
+       }
+    #progress-container {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-top: 1rem;
+   }
+   #progress {
+          flex: 1;
+          width: 100%;
+   }
+    </style>
+
+  </head>
+  <body>
+    <h1>🎥 Chromecast Movie Demo</h1>
+    <p>Click the Cast button, then press “Play Movie” below.</p>
+
+    <!-- Cast button provided by the framework -->
+    <google-cast-launcher></google-cast-launcher>
+
+    <br />
+    <button onclick="startCasting({{.MediaURL}},{{.PosterURL}},{{.SubsURL}},{{.Title}},{{.Tagline}})">Play Movie</button>
+    <div id="log">Log messages will appear here...</div>
+     <div>
+	    <button id="load">Load Media</button>
+	    <button id="play">Play ▶️</button>
+	    <button id="pause">Pause ⏸️</button>
+	    <button id="stop">Stop ⏹️</button>
+	    <button id="skip">Skip +30s ⏩</button>
+	    <button id="rewind">Rewind -10s ⏪</button>
+	    <button id="mute">Mute 🔇</button>
+	    <button id="unmute">Unmute 🔊</button>
+     </div>
+    <div id="progress-container">
+       <span id="currentTime">0:00</span>
+        <input type="range" id="progress" min="0" max="100" value="0">
+       <span id="duration">0:00</span>
+    </div>
+	       
+   <script>
+	function waitForCastApi() {
+	    if (window.cast && window.cast.framework) {
+	        initializeCast();
+	    } else {
+	        console.log("Waiting for Cast API...");
+	        setTimeout(waitForCastApi, 500);
+	    }
+	}
+	waitForCastApi();
+
+	function initializeCast() {
+	    //logmessage("Cast Framework initialized");
+	    const context = cast.framework.CastContext.getInstance();
+	    context.setOptions({
+	        receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+	        autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+	    });
+	    console.log("Cast Framework initialized");
+
+	    // ===== Modern Progress Updater (RemotePlayer API) =====
+	    player = new cast.framework.RemotePlayer();
+	    controller = new cast.framework.RemotePlayerController(player);
+	    setupPlayerListeners();
+	}
+
+	async function startCasting(mediaURL, posterURL, subsURL, title, tagline) {
+	    const context = cast.framework.CastContext.getInstance();
+
+	    // Ensure a Cast session exists
+	    await context.requestSession();
+	    const session = context.getCurrentSession();
+
+	    // Define media
+	    const mediaInfo = new chrome.cast.media.MediaInfo(mediaURL, "video/mp4");
+
+	    // Attach movie metadata (this is what shows up in Google Home!)
+	    const metadata = new chrome.cast.media.MovieMediaMetadata();
+	    metadata.title = title;
+	    metadata.subtitle = tagline;
+	    metadata.studio = "Blender Studio";
+	    metadata.images = [
+	        new chrome.cast.Image(
+	            "posterURL"
+	        ),
+	    ];
+	    mediaInfo.metadata = metadata;
+	    if (subsURL.length > 0) {
+	        const tracks = [
+	            new chrome.cast.media.Track(1, chrome.cast.media.TrackType.TEXT),
+	        ];
+	        tracks[0].trackContentId = subsURL;
+	        tracks[0].trackContentType = "text/vtt";
+	        tracks[0].subtype = chrome.cast.media.TextTrackType.SUBTITLES;
+	        tracks[0].name = "Swedish";
+	        tracks[0].language = "sv";
+	        mediaInfo.tracks = tracks;
+	    }
+
+	    // Load media
+	    const request = new chrome.cast.media.LoadRequest(mediaInfo);
+	    request.autoplay = true;
+	    if (subsURL.length > 0) {
+	        request.activeTrackIds = [1]; // enable subtitles
+	    }
+
+	    try {
+	        await session.loadMedia(request);
+	        console.log("Media loaded successfully!");
+	    } catch (err) {
+	        console.error("Error loading media:", err);
+	    }
+	}
+	// --- Helper to get media session ---
+	function getMedia() {
+	    const session = cast.framework.CastContext.getInstance().getCurrentSession();
+	    if (!session) {
+	        alert("No cast session.");
+	        return null;
+	    }
+	    return session.getMediaSession();
+	}
+
+	// --- Controls ---
+	function play() {
+	    const media = getMedia();
+	    if (media) media.play(null,
+	        () => console.log("▶️ Playing"),
+	        err => console.error("play() failed", err)
+	    );
+	}
+
+	function pause() {
+	    const media = getMedia();
+	    if (media) media.pause(null,
+	        () => console.log("⏸️ Paused"),
+	        err => console.error("pause() failed", err)
+	    );
+	}
+
+	function stop() {
+	    const media = getMedia();
+	    if (media) media.stop(null,
+	        () => console.log("⏹️ Stopped"),
+	        err => console.error("stop() failed", err)
+	    );
+	}
+
+	function skipForward() {
+	    const media = getMedia();
+	    if (!media) return;
+	    const seek = new chrome.cast.media.SeekRequest();
+	    seek.currentTime = media.currentTime + 30;
+	    media.seek(seek);
+	}
+
+	function rewind() {
+	    const media = getMedia();
+	    if (!media) return;
+	    const seek = new chrome.cast.media.SeekRequest();
+	    seek.currentTime = Math.max(media.currentTime - 10, 0);
+	    media.seek(seek);
+	}
+
+	function mute() {
+	    const session = cast.framework.CastContext.getInstance().getCurrentSession();
+	    if (session) session.setMute(true);
+	}
+
+	function unmute() {
+	    const session = cast.framework.CastContext.getInstance().getCurrentSession();
+	    if (session) session.setMute(false);
+	}
+
+	function formatTime(seconds) {
+	    if (!seconds || isNaN(seconds)) return "0:00";
+	    const m = Math.floor(seconds / 60);
+	    const s = Math.floor(seconds % 60);
+	    return ` + "`${m}: ${s.toString().padStart(2, \"0\")}`" + `;
+	}
+
+	function setupPlayerListeners() {
+	    controller.addEventListener(
+	        cast.framework.RemotePlayerEventType.CURRENT_TIME_CHANGED,
+	        () => {
+	            document.getElementById("progress").value = player.currentTime;
+	            document.getElementById("currentTime").textContent = formatTime(player.currentTime);
+	        }
+	    );
+
+	    controller.addEventListener(
+	        cast.framework.RemotePlayerEventType.DURATION_CHANGED,
+	        () => {
+	            document.getElementById("progress").max = player.duration;
+	            document.getElementById("duration").textContent = formatTime(player.duration);
+	        }
+	    );
+
+	    controller.addEventListener(
+	        cast.framework.RemotePlayerEventType.PLAYER_STATE_CHANGED,
+	        () => {
+	            const playBtn = document.getElementById("play");
+	            const pauseBtn = document.getElementById("pause");
+
+	            if (player.playerState === chrome.cast.media.PlayerState.PLAYING) {
+	                playBtn.disabled = true;
+	                pauseBtn.disabled = false;
+	            } else if (player.playerState === chrome.cast.media.PlayerState.PAUSED) {
+	                playBtn.disabled = false;
+	                pauseBtn.disabled = true;
+	            } else {
+	                playBtn.disabled = false;
+	                pauseBtn.disabled = false;
+	            }
+	        }
+	    );
+
+	};
+
+
+	// --- Wire buttons ---
+	document.getElementById("play").onclick = play;
+	document.getElementById("pause").onclick = pause;
+	document.getElementById("stop").onclick = stop;
+	document.getElementById("skip").onclick = skipForward;
+	document.getElementById("rewind").onclick = rewind;
+	document.getElementById("mute").onclick = mute;
+	document.getElementById("unmute").onclick = unmute;
+
+	// ===== Scrubbing =====
+	document.getElementById("progress").addEventListener("input", (e) => {
+	    player.currentTime = parseFloat(e.target.value);
+	    controller.seek();
+	});
+    </script>
+  </body>
+</html>
+`
+
 	htmltempl := `
 <!DOCTYPE html>
 <html lang="en">
@@ -683,6 +969,7 @@ class ChromeCastService {
 
   setMedia(mediaUrl, subtitlesUrl, contentType) {
     const mediaInfo = new chrome.cast.media.MediaInfo(mediaUrl, contentType);
+    const metadata = new chrome.cast.media.MovieMediaMetadata();
     let subtitlesPreparationPromise = Promise.resolve();
     if (subtitlesUrl) { // Check if the subs exist
       subtitlesPreparationPromise = axios.head(subtitlesUrl).then(
@@ -695,6 +982,12 @@ class ChromeCastService {
           subtitles.language = 'en-US'; // Can be in any language
           subtitles.customData = null;
           mediaInfo.tracks = [subtitles];
+
+	metadata.title = "AB";
+	metadata.subtitle = "A mind-bending thriller";
+	metadata.studio = "Warner Bros";
+	mediaInfo.metadata = metadata;
+
           mediaInfo.activeTrackIds = [1];
         },
         () => {}
@@ -707,6 +1000,7 @@ class ChromeCastService {
         loadRequest,
         (media) => {
           console.log('Media loaded successfully');
+          logMessage('Media loaded successfully');
           const tracksInfoRequest = new chrome.cast.media.EditTracksInfoRequest([1]);
           media.editTracksInfo(tracksInfoRequest, s => console.log('Subtitles loaded'), e => console.log(e));
         },
@@ -728,15 +1022,16 @@ window['__onGCastApiAvailable'] = function(isAvailable) {
      //const mediaUrl = episode.videoUrl;
       mediaUrl = {{.MediaURL}}
       subtitlesUrl = {{.SubsURL}}
+      metadataTitle = {{.Title}}
         const loadMedia = () => {
-          ChromeCast.setMedia(mediaUrl, subtitlesUrl);
+          ChromeCast.setMedia(mediaUrl, subtitlesUrl,"video/mp4");
       }
 
-      if(!ChromeCast.isConnectedToDevice()) {
+      //if(!ChromeCast.isConnectedToDevice()) {
         ChromeCast.selectDevice().then(loadMedia);
-      } else {
-        loadMedia();
-      }
+      //} else {
+      //  loadMedia();
+      //}
     }
     </script>
 
@@ -750,7 +1045,7 @@ window['__onGCastApiAvailable'] = function(isAvailable) {
 
         // Initialize the Cast API
         function initializeCast() {
-            logMessage('Initializing Cast session...');
+            //logMessage('Initializing Cast session...');
 
             if (!cast || !cast.framework) {
                 logMessage('Google Cast SDK is not available.');
@@ -760,7 +1055,7 @@ window['__onGCastApiAvailable'] = function(isAvailable) {
             const castContext = cast.framework.CastContext.getInstance();
 
             if (!castContext) {
-                logMessage('Cast Context is not ready.');
+                //logMessage('Cast Context is not ready.');
                 return;
             }
 
@@ -824,7 +1119,9 @@ window['__onGCastApiAvailable'] = function(isAvailable) {
 </body>
 </html>
 	`
-	templ := template.Must(template.New("foo").Parse(htmltempl))
+	_ = htmltempl
+	_ = html2templ
+	templ := template.Must(template.New("foo").Parse(html2templ))
 	if err := templ.Execute(w, data); err != nil {
 		logger.WarnContext(ctx, "Temaplate error", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

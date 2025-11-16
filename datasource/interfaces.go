@@ -17,6 +17,17 @@ func TitleOrZero(x any) string {
 	return ""
 }
 
+type Tagliner interface {
+	Tagline() string
+}
+
+func TaglineOrZero(x any) string {
+	if xT, ok := x.(Tagliner); ok {
+		return xT.Tagline()
+	}
+	return ""
+}
+
 type Overviewer interface {
 	Overview() string
 }

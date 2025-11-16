@@ -17,7 +17,7 @@ type TMDBMovie struct {
 	id           string
 	media        string
 	title        string
-	episodetitle string
+	tagline      string
 	SubsFile     string
 	posterFile   string
 	backdropFile string
@@ -36,6 +36,10 @@ func (i TMDBMovie) OpenMedia() (io.ReadSeekCloser, error) {
 
 func (i TMDBMovie) Title() string {
 	return i.title
+}
+
+func (i TMDBMovie) Tagline() string {
+	return i.tagline
 }
 
 func (i TMDBMovie) Overview() string {
@@ -137,6 +141,7 @@ func scrapeAsTMDBMovie(logger *slog.Logger, itm *TMDBMovie, ffdata FFProbeRoot) 
 	for _, genre := range movie.Genres {
 		itm.tags["genre"] = append(itm.tags["genre"], strings.TrimSpace(genre.Name))
 	}
+	itm.tagline = movie.Tagline
 	if movie.BelongsToCollection.ID != 0 {
 		collection, err := TMDBCollectionDetails(int(movie.BelongsToCollection.ID))
 		if err != nil {
