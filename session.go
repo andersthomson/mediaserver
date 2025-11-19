@@ -31,16 +31,6 @@ func NewSessionEntry(u User) SessionEntry {
 		LastUsed: time.Now(),
 	}
 }
-func NewSessionStoreFromFile(fname string) *SessionStore {
-	s := NewSessionStore()
-	buf, err := os.ReadFile(fname)
-	if err != nil {
-		return s
-
-	}
-	s.FromJson(buf)
-	return s
-}
 
 type SessionStore struct {
 	sync.RWMutex
@@ -52,10 +42,44 @@ func NewSessionStore() *SessionStore {
 		m: make(map[string]SessionEntry, 16),
 	}
 }
+func NewSessionStoreFromFile(fname string) *SessionStore {
+	s := NewSessionStore()
+	buf, err := os.ReadFile(fname)
+	if err != nil {
+		return s
+
+	}
+	s.FromJson(buf)
+	return s
+}
+
+func (s *SessionStore) PruneOldSessions(olderthan time.Duration) {
+	s.Lock()
+	defer s.Unlock()
+	for k, v := range s.m {
+		if v.LastUsed.Add(olderthan).Before(time.Now()) {
+			delete(s.m, k)
+		}
+	}
+}
+
 func (s *SessionStore) AddSessionEntry(sessionID string, se SessionEntry) {
 	s.Lock()
 	s.m[sessionID] = se
 	s.Unlock()
+}
+
+func (s *SessionStore) DeleteSessionEntry(sessionID string) {
+	s.Lock()
+	delete(s.m, sessionID)
+	s.Unlock()
+}
+
+func (s *SessionStore) GetSessionEntry(sessionID string) (SessionEntry, bool) {
+	s.RLock()
+	se, ok := sessions.m[sessionID]
+	s.RUnlock()
+	return se, ok
 }
 
 func (s *SessionStore) Add(sessionID string, u User) {

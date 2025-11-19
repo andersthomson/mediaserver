@@ -28,12 +28,13 @@ type InternalIDPAccount struct {
 }
 
 type config struct {
-	WebRoot     string
-	Tmdb        Tmdb
-	Directories []Directory
-	GoogleOAuth GoogleOAuth
-	InternalIDP []InternalIDPAccount
-	IDProviders []string
+	WebRoot       string
+	Tmdb          Tmdb
+	Directories   []Directory
+	GoogleOAuth   GoogleOAuth
+	InternalIDP   []InternalIDPAccount
+	IDProviders   []string
+	MaxSessionAge string
 }
 
 func (c *config) ReadFromFile(f string) {

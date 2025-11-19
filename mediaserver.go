@@ -395,35 +395,54 @@ func GetUserSession(r *http.Request) (User, bool) {
 	return u.User, true
 }
 
-func MustGetUserSession(w http.ResponseWriter, r *http.Request) (User, bool) {
-	u, ok := GetUserSession(r)
-	if !ok {
-		http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
-		return nil, false
+type userCtxKey struct{}
+
+func setSessionCookie(w http.ResponseWriter, sessionID string) {
+	cookie := &http.Cookie{
+		Name:     "session_id",
+		Value:    sessionID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true, // Set to true in production (HTTPS)
+		SameSite: http.SameSiteLaxMode,
 	}
-	return u, true
+	http.SetCookie(w, cookie)
 }
 
-type userCtxKey struct{}
+func getSessionCookie(r *http.Request) (string, error) {
+	c, err := r.Cookie("session_id")
+	if err != nil || c.Value == "" {
+		return "", fmt.Errorf("missing session cookie")
+	}
+	return c.Value, nil
+}
 
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		user, hasSession := GetUserSession(r)
+		sessionID, err := getSessionCookie(r)
+		if err != nil {
+			logger.Error("No session cookie", "err", err)
+			http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
+			return
+		}
+		se, hasSession := sessions.GetSessionEntry(sessionID)
 		if !hasSession {
 			http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
 			return
 		}
-		sessionID, err := getSessionCookie(r)
-		if err != nil {
-			logger.Error("No session cookie", "err", err)
-			panic(1)
+		if maxAge, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
+			if maxAge.Abs() > 0 && se.LastUsed.Add(maxAge).Before(time.Now()) {
+				sessions.DeleteSessionEntry(sessionID)
+				http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
+				return
+			}
 		}
-		_ = sessionID
+		//We are good! Proceed to use the session
 		sessions.TouchLastUsed(sessionID)
 		// Add user data to the request context
-		ctx = context.WithValue(ctx, userCtxKey{}, user)
-		logger.InfoContext(ctx, "Has Session", "userID", user.UserID(), "idp", user.IDProvider())
+		ctx = context.WithValue(ctx, userCtxKey{}, se.User)
+		logger.InfoContext(ctx, "Has Session", "userID", se.User.UserID(), "idp", se.User.IDProvider())
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -494,6 +513,9 @@ func main() {
 	go func() {
 		sig := <-sigChan // Block until a signal is received
 		fmt.Printf("\nReceived signal: %v\n", sig)
+		if maxDur, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
+			sessions.PruneOldSessions(maxDur)
+		}
 		b := sessions.ToJson()
 		if err := os.WriteFile("./sessions", b, 0644); err != nil {
 			logger.Error("Failed to write sessionfile", "err", err)
@@ -540,26 +562,6 @@ func main() {
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	}
-}
-
-func setSessionCookie(w http.ResponseWriter, sessionID string) {
-	cookie := &http.Cookie{
-		Name:     "session_id",
-		Value:    sessionID,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   true, // Set to true in production (HTTPS)
-		SameSite: http.SameSiteLaxMode,
-	}
-	http.SetCookie(w, cookie)
-}
-
-func getSessionCookie(r *http.Request) (string, error) {
-	c, err := r.Cookie("session_id")
-	if err != nil || c.Value == "" {
-		return "", fmt.Errorf("missing session cookie")
-	}
-	return c.Value, nil
 }
 
 func serveItemCast(ctx context.Context, w http.ResponseWriter, r *http.Request, ds datasource.DataSource) {
