@@ -31,7 +31,7 @@ func NewSessionEntry(u User) SessionEntry {
 		LastUsed: time.Now(),
 	}
 }
-func NewSessionStoreFromFile(fname string) *Sessions {
+func NewSessionStoreFromFile(fname string) *SessionStore {
 	s := NewSessionStore()
 	buf, err := os.ReadFile(fname)
 	if err != nil {
@@ -42,23 +42,23 @@ func NewSessionStoreFromFile(fname string) *Sessions {
 	return s
 }
 
-type Sessions struct {
+type SessionStore struct {
 	sync.RWMutex
 	m map[string]SessionEntry
 }
 
-func NewSessionStore() *Sessions {
-	return &Sessions{
+func NewSessionStore() *SessionStore {
+	return &SessionStore{
 		m: make(map[string]SessionEntry, 16),
 	}
 }
-func (s *Sessions) AddSessionEntry(sessionID string, se SessionEntry) {
+func (s *SessionStore) AddSessionEntry(sessionID string, se SessionEntry) {
 	s.Lock()
 	s.m[sessionID] = se
 	s.Unlock()
 }
 
-func (s *Sessions) Add(sessionID string, u User) {
+func (s *SessionStore) Add(sessionID string, u User) {
 	se := SessionEntry{
 		User:     u,
 		LastUsed: time.Now(),
@@ -68,7 +68,7 @@ func (s *Sessions) Add(sessionID string, u User) {
 	s.Unlock()
 }
 
-func (s *Sessions) TouchLastUsed(sessionID string) {
+func (s *SessionStore) TouchLastUsed(sessionID string) {
 	s.Lock()
 	se, ok := s.m[sessionID]
 	if !ok {
@@ -79,7 +79,7 @@ func (s *Sessions) TouchLastUsed(sessionID string) {
 	s.Unlock()
 }
 
-func (s *Sessions) ToJson() []byte {
+func (s *SessionStore) ToJson() []byte {
 	s.RLock()
 	defer s.RUnlock()
 	sj, err := json.MarshalIndent(s.m, "", "   ")
@@ -89,7 +89,7 @@ func (s *Sessions) ToJson() []byte {
 	return sj
 }
 
-func (s *Sessions) FromJson(sj []byte) {
+func (s *SessionStore) FromJson(sj []byte) {
 	type itemT struct {
 		IDProvider_ string
 	}

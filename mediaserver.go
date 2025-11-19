@@ -47,7 +47,7 @@ type EpisodeTitler interface {
 var googleIDP *GoogleIDP
 var internalIDP *InternalIDP
 
-var sessions *Sessions
+var sessions *SessionStore
 
 var logger *slog.Logger
 var Config config

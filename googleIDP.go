@@ -28,13 +28,13 @@ func (g GoogleUser) IDProvider() string {
 }
 
 type GoogleIDP struct {
-	sessionStore              *Sessions
+	sessionStore              *SessionStore
 	oauthConfig               *oauth2.Config
 	postAuthenticateTargetURL string
 	idpRoot                   string
 }
 
-func NewGoogleIDP(sessionStore *Sessions, oauthClientID string, oauthClientSecret string, postAuthenticateTargetURL string, IDPRoot string) *GoogleIDP {
+func NewGoogleIDP(sessionStore *SessionStore, oauthClientID string, oauthClientSecret string, postAuthenticateTargetURL string, IDPRoot string) *GoogleIDP {
 	oauthConfig := &oauth2.Config{
 		ClientID:     oauthClientID,
 		ClientSecret: oauthClientSecret,
