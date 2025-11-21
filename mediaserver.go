@@ -373,10 +373,13 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		ctx := r.Context()
 		reqid := NewRequestid()
 		ctx = slogctx.Append(ctx, "reqid", reqid)
-		ctx = slogctx.Append(ctx, "agent", r.Header.Get("User-Agent"))
-		logger.InfoContext(ctx, "Started", "URL", r.URL.Path)
+		//ctx = slogctx.Append(ctx, "agent", r.Header.Get("User-Agent"))
+		logger.InfoContext(ctx, "start req",
+			"clientAddr", r.Header.Get("X-Forwarded-For"),
+			"Agent", r.Header.Get("User-Agent"),
+			"URL", r.URL.String())
 		next.ServeHTTP(w, r.WithContext(ctx))
-		logger.InfoContext(ctx, "Completed", "URL", r.URL.Path, "time", time.Since(start))
+		logger.InfoContext(ctx, "end req", "time", time.Since(start))
 	})
 }
 func GetUserSession(r *http.Request) (User, bool) {
@@ -492,7 +495,7 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	Config.ReadFromFile("config")
 	scrape.TmdbInit(Config.Tmdb.ApiKey, Config.Tmdb.CacheDir, Config.Tmdb.Iso6391Order)
-	sessions = NewSessionStoreFromFile("./sessions")
+	sessions = NewSessionStoreFromFile("./sessions.json")
 
 	webRootURL, err := url.Parse(Config.WebRoot)
 	if err != nil {
@@ -517,7 +520,7 @@ func main() {
 			sessions.PruneOldSessions(maxDur)
 		}
 		b := sessions.ToJson()
-		if err := os.WriteFile("./sessions", b, 0644); err != nil {
+		if err := os.WriteFile("./sessions.json", b, 0644); err != nil {
 			logger.Error("Failed to write sessionfile", "err", err)
 		}
 		os.Exit(0)
