@@ -1514,6 +1514,13 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 			<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgo=">
 			<title>TITLE</title>
 			<style>
+				#navigation a {
+    background-color: #999;
+}
+
+#navigation .current {
+    background-color: #000;
+}
 				fieldset {
 					border: none;          /* removes the border */
 				}
@@ -1627,9 +1634,11 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 							</div>
 						{{ end }}
 						<p>
+						<div id="navigation">
 						<a href="{{.MediaURL}}">&lt;Download&gt;</a>
 						<a href="{{ .Html5URL}}">&lt;Play in browser&gt;</a>
 						<a href="{{ .CastURL}}">&lt;Play on ChromeCast&gt;</a><br> 
+						</div>
 						</div>
 						</div>
 						{{if .BackdropURL }}

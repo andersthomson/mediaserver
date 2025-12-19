@@ -9,7 +9,7 @@ type requestid uuid.UUID
 func NewRequestid() requestid {
 	u, err := uuid.NewRandom()
 	if err != nil {
-		panic(4)
+		panic(err)
 	}
 	return requestid(u)
 }
