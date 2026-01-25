@@ -1317,7 +1317,7 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) *groupedMovies {
 	queries := r.URL.Query()
 	markedMovies := make([]string, 0, len(queries))
 	for key, _ := range queries {
-		splits := strings.Split(key, ".")
+		splits := strings.SplitN(key, ".", 2)
 		tag := splits[0]
 		val := splits[1]
 		if tag == "Movie" {
@@ -1440,7 +1440,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 	queries := r.URL.Query()
 	for key, value := range queries {
 		fmt.Printf("  %v ===== %v\n", key, value)
-		splits := strings.Split(key, ".")
+		splits := strings.SplitN(key, ".", 2)
 		tag := splits[0]
 		val := splits[1]
 		if _, ok := FilterTags[tag][val]; ok {
