@@ -16,6 +16,7 @@ type TMDBMovie struct {
 	logger       *slog.Logger
 	id           string
 	media        string
+	language     string
 	title        string
 	tagline      string
 	SubsFile     string
@@ -44,6 +45,10 @@ func (i TMDBMovie) Tagline() string {
 
 func (i TMDBMovie) Overview() string {
 	return i.overview
+}
+
+func (i TMDBMovie) Language() string {
+	return i.language
 }
 
 func (i TMDBMovie) Tags() map[string][]string {
@@ -178,6 +183,12 @@ func NewTMDBMovie(logger *slog.Logger, dir string, fname string, ffdata FFProbeR
 		logger.Info("", "source", "filename", "posterfile", res.posterFile)
 	}
 
+	for idx := range ffdata.Streams {
+		if ffdata.Streams[idx].CodecType == "audio" {
+			res.language = ffdata.Streams[idx].Tags.Language
+			break
+		}
+	}
 	if ffdata.Format.Tags.Grouping != "" {
 		res.tags["grouping"] = append(res.tags["grouping"], strings.TrimSpace(ffdata.Format.Tags.Grouping))
 		logger.Info("", "source", "mp4 Format.Tags.Grouping", "grouping", ffdata.Format.Tags.Grouping)

@@ -1452,6 +1452,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 		PosterURL     string
 		BackdropURL   string
 		Title         string
+		Language      string
 		Overview      string
 		ShowName      string
 		EpisodeTitle  string
@@ -1476,6 +1477,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 				CastURL:       castServer{}.CastURL(ds.ID()),
 				Overview:      datasource.OverviewOrZero(ds),
 				Plot:          datasource.PlotOrZero(ds),
+				Language:      datasource.LanguageOrZero(ds),
 				SeasonEpisode: seasonEpisode(ds),
 				BackingStruct: spew.Sdump(ds),
 			}
@@ -1610,6 +1612,9 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 						{{ end }}
 						{{ if .EpisodeTitle }}
 							EpisodeTitle: {{.EpisodeTitle}}<br>
+						{{ end }}
+						{{ if .Language }}
+							Language: {{.Language}}<br>
 						{{ end }}
 						{{ if .Tags }}
 							Tags:<br>

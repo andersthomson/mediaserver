@@ -39,6 +39,17 @@ func OverviewOrZero(x any) string {
 	return ""
 }
 
+type Languager interface {
+	Language() string
+}
+
+func LanguageOrZero(x any) string {
+	if xT, ok := x.(Languager); ok {
+		return xT.Language()
+	}
+	return ""
+}
+
 type Ploter interface {
 	Plot() string
 }
