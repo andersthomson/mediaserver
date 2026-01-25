@@ -133,7 +133,7 @@ func (p backdropServer) BackdropURL(id string) string {
 	}
 	dsT, ok := ds.(datasource.OpenBackdroper)
 	if !ok {
-		logger.Warn("ds does not support backdrops", "id", ds.ID())
+		logger.Warn("ds does not support backdrops", "id", ds.ID(), "type", fmt.Sprintf("%T", ds))
 		return ""
 	}
 	content, err := dsT.OpenBackdrop()

@@ -64,7 +64,7 @@ func TMDBImage(key string, size string) (string, error) {
 			return fnameLong, nil
 		}
 		u := tmdb.GetImageURL(key, size)
-		slog.Info("TMDB fetch", "type", "file", "url", u)
+		slog.Info("TMDB fetch", "type", "file", "url", u, "key", key, "size", size)
 		if err := DownloadFile(fnameLong, u); err != nil {
 			slog.Error("Download failed", "source", "tmdb", "err", err)
 			return "", err

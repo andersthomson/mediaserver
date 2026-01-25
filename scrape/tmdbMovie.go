@@ -140,8 +140,12 @@ func scrapeAsTMDBMovie(logger *slog.Logger, itm *TMDBMovie, ffdata FFProbeRoot) 
 	if fname, err := TMDBImage(movie.PosterPath, tmdb.W500); err == nil {
 		itm.posterFile = fname
 	}
-	if fname, err := TMDBImage(movie.BackdropPath, tmdb.W1280); err == nil {
-		itm.backdropFile = fname
+	if movie.BackdropPath != "" {
+		if fname, err := TMDBImage(movie.BackdropPath, tmdb.W1280); err == nil {
+			itm.backdropFile = fname
+		}
+	} else {
+		logger.Warn("Has no backdrop image", "id", id, "title", movie.Title)
 	}
 	for _, genre := range movie.Genres {
 		itm.tags["genre"] = append(itm.tags["genre"], strings.TrimSpace(genre.Name))
