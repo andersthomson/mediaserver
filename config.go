@@ -29,6 +29,8 @@ type InternalIDPAccount struct {
 
 type config struct {
 	WebRoot       string
+	Port          int32
+	IP_Address    string
 	Tmdb          Tmdb
 	Directories   []Directory
 	GoogleOAuth   GoogleOAuth

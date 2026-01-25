@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -560,8 +561,9 @@ func main() {
 
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, AuthMiddleware, CORS)(http.HandlerFunc(serveTopIndex)))
 
-	logger.Info("Listening...")
-	err = http.ListenAndServe(":3000", mux)
+	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
+	logger.Info("Listening at %s", listenaddr)
+	err = http.ListenAndServe(listenaddr, mux)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	}
