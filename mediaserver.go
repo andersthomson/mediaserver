@@ -151,7 +151,7 @@ func (p *backdropServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ds := allRepos.DataSourceByID(itm)
 	if ds == nil {
 		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unkown", "id", itm)
+		logger.WarnContext(ctx, "datasource unknown", "id", itm)
 		return
 	}
 	dsT, ok := ds.(datasource.OpenBackdroper)
@@ -195,7 +195,7 @@ func (p *posterServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ds := allRepos.DataSourceByID(itm)
 	if ds == nil {
 		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unkown", "id", itm)
+		logger.WarnContext(ctx, "datasource unknown", "id", itm)
 		return
 	}
 	content, err := ds.OpenPoster()
@@ -224,7 +224,7 @@ func (p *mediaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ds := allRepos.DataSourceByID(itm)
 	if ds == nil {
 		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unkown", "id", itm)
+		logger.WarnContext(ctx, "datasource unknown", "id", itm)
 		return
 	}
 	content, err := ds.OpenMedia()
@@ -261,7 +261,7 @@ func (_ *subsServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ds := allRepos.DataSourceByID(itm)
 	if ds == nil {
 		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unkown", "id", itm)
+		logger.WarnContext(ctx, "datasource unknown", "id", itm)
 		return
 	}
 	content, err := ds.OpenSubs()
@@ -291,7 +291,7 @@ func (_ *html5Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ds := allRepos.DataSourceByID(itm)
 	if ds == nil {
 		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unkown", "id", itm)
+		logger.WarnContext(ctx, "datasource unknown", "id", itm)
 		return
 	}
 	serveItemHtml5(ctx, w, r, ds)
@@ -314,7 +314,7 @@ func (_ *castServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ds := allRepos.DataSourceByID(itm)
 	if ds == nil {
 		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unkown", "id", itm)
+		logger.WarnContext(ctx, "datasource unknown", "id", itm)
 		return
 	}
 	serveItemCast(ctx, w, r, ds)
