@@ -22,8 +22,6 @@ type TMDBMovie struct {
 	SubsFile     string
 	posterFile   string
 	backdropFile string
-	plotFile     string
-	plot         string
 	overview     string
 	episode      int
 	season       int
@@ -66,20 +64,6 @@ func (i TMDBMovie) Episode() int {
 func (i TMDBMovie) Season() int {
 	return i.season
 }
-func (i TMDBMovie) XPlot() string {
-	if i.plot != "" {
-		return i.plot
-	}
-	if i.plotFile == "" {
-		return ""
-	}
-	buf, err := os.ReadFile(i.plotFile)
-	if err != nil {
-		slog.Warn("Plotfile gone from under me", "fname", i.plotFile, "err", err)
-		return ""
-	}
-	return string(buf)
-}
 
 func (i TMDBMovie) OpenPoster() (io.ReadSeekCloser, error) {
 	x, err := os.Open(i.posterFile)
@@ -93,17 +77,6 @@ func (i TMDBMovie) OpenBackdrop() (io.ReadSeekCloser, error) {
 
 func (_ TMDBMovie) deriveID(fname string) string {
 	return fname
-}
-
-func (_ TMDBMovie) derivePlot(fname string, dir string) string {
-	plotFname := filepath.Join(dir, strings.TrimSuffix(fname, ".mp4")+"-plot.txt")
-	_, err := os.Stat(plotFname)
-	if err != nil {
-		//slog.Info("TMDBMovier/derivePlot", "err", err)
-		return ""
-	}
-	//slog.Info("TMDBMovier/derivePlot", "file", err)
-	return plotFname
 }
 
 func (_ TMDBMovie) deriveSubs(basedir string, fname string) []string {
@@ -135,7 +108,6 @@ func scrapeAsTMDBMovie(logger *slog.Logger, itm *TMDBMovie, ffdata FFProbeRoot) 
 	//Given all the data, complete the itm record.
 	itm.title = movie.Title
 	itm.tags["Movie"] = []string{itm.title}
-	itm.plot = movie.Overview
 	itm.overview = movie.Overview
 	if fname, err := TMDBImage(movie.PosterPath, tmdb.W500); err == nil {
 		itm.posterFile = fname
