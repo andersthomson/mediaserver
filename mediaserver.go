@@ -241,42 +241,6 @@ func (p *mediaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-type subsServer struct {
-}
-
-func (_ subsServer) partName() string {
-	return "subs.vtt"
-}
-func (s subsServer) SubsURL(id string) string {
-	ds := allRepos.DataSourceByID(id)
-	content, err := ds.OpenSubs()
-	if err == nil {
-		content.Close()
-		return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + s.partName()
-	}
-	return ""
-}
-
-func (_ *subsServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	itm := r.PathValue("item")
-	ds := allRepos.DataSourceByID(itm)
-	if ds == nil {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unknown", "id", itm)
-		return
-	}
-	content, err := ds.OpenSubs()
-	if err != nil {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.InfoContext(ctx, "read of subs", "failed", err)
-		return
-	}
-	http.ServeContent(w, r, "foo.vtt", time.Time{}, content)
-	content.Close()
-	return
-}
-
 type SubsManager struct {
 	languages []string
 }
@@ -641,7 +605,6 @@ func main() {
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+mediaServer{}.partName(), Chain(LoggingMiddleware, CORS)(&mediaServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+posterServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&posterServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+backdropServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&backdropServer{}))
-	mux.Handle(webRootURL.Path+"/item/{item}/part/"+subsServer{}.partName(), Chain(LoggingMiddleware, CORS)(&subsServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+SubsManager{}.partName(), Chain(LoggingMiddleware, CORS)(NewSubsManager(slices.Collect(maps.Keys(iso639_3.LanguagesPart1)))))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+html5Server{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&html5Server{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+castServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&castServer{}))
@@ -669,7 +632,6 @@ func serveItemCast(ctx context.Context, w http.ResponseWriter, r *http.Request, 
 		Title:     datasource.TitleOrZero(ds),
 		PosterURL: posterServer{}.PosterURL(ds.ID()),
 		MediaURL:  mediaServer{}.MediaURL(ds.ID()),
-		SubsURL:   subsServer{}.SubsURL(ds.ID()),
 		SubsURLs:  SubsManager{}.SubsURLSlice(ds.ID()),
 		Tagline:   datasource.TaglineOrZero(ds),
 	}
