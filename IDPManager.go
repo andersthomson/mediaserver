@@ -24,8 +24,8 @@ func (i *IDPManager) Register(idp IDP) {
 
 func (i IDPManager) ServeMux() *http.ServeMux {
 	mux := http.NewServeMux()
-	for _, i := range i.idps {
-		mux.Handle("/"+i.IDPName()+"/", http.StripPrefix("/"+i.IDPName(), i.ServeMux()))
+	for _, idp := range i.idps {
+		mux.Handle("/"+idp.IDPName()+"/", http.StripPrefix("/"+idp.IDPName(), idp.ServeMux()))
 	}
 	return mux
 }

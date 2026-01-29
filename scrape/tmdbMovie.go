@@ -13,6 +13,7 @@ import (
 
 type TMDBMovie struct {
 	SubsFileHandler
+	SubsFileHandlerSlice
 	logger       *slog.Logger
 	id           string
 	media        string
@@ -79,17 +80,6 @@ func (_ TMDBMovie) deriveID(fname string) string {
 	return fname
 }
 
-func (_ TMDBMovie) deriveSubs(basedir string, fname string) []string {
-	basename := strings.TrimSuffix(fname, ".mp4")
-	target := filepath.Join(basedir, basename+"-subtitles_sv.vtt")
-	if !fileExists(target) {
-		//slog.Info("TMDBMovie/deriveSubs", "ENOFILE", target)
-		return []string{}
-	}
-	//slog.Info("TMDBMovier/deriveSubs", "found file", target)
-	return []string{target}
-}
-
 func scrapeAsTMDBMovie(logger *slog.Logger, itm *TMDBMovie, ffdata FFProbeRoot) bool {
 	if ffdata.Format.Tags.TmdbMovie == "" {
 		return false
@@ -147,9 +137,10 @@ func NewTMDBMovie(logger *slog.Logger, dir string, fname string, ffdata FFProbeR
 	}
 	res.id = res.deriveID(fname)
 	res.media = dir + "/" + fname
-	i := res.deriveSubs(dir, fname)
-	if len(i) > 0 {
-		res.SubsFileHandler.Filename = i[0]
+
+	res.SubsFileHandlerSlice = NewSubsFileHandlers(dir, fname)
+	if len(res.SubsFileHandlerSlice) > 0 {
+		res.SubsFileHandler = res.SubsFileHandlerSlice[0]
 	}
 
 	basename := strings.TrimSuffix(fname, ".mp4")

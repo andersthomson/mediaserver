@@ -1,7 +1,6 @@
 package scrape
 
 import (
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -13,13 +12,14 @@ import (
 )
 
 type TMDBTVEpisode struct {
+	SubsFileHandler
+	SubsFileHandlerSlice
 	logger       *slog.Logger
 	id           string
 	media        string
 	showName     string
 	title        string
 	episodetitle string
-	SubsFile     string
 	posterFile   string
 	backdropFile string
 	plotFile     string
@@ -72,14 +72,6 @@ func (i TMDBTVEpisode) Plot() string {
 	return string(buf)
 }
 
-func (i TMDBTVEpisode) OpenSubs() (io.ReadSeekCloser, error) {
-	x, err := os.Open(i.SubsFile)
-	if err != nil {
-		return nil, fmt.Errorf("open of %s failed: %w", i.SubsFile, err)
-	}
-	return x, nil
-}
-
 func (i TMDBTVEpisode) OpenPoster() (io.ReadSeekCloser, error) {
 	x, err := os.Open(i.posterFile)
 	return x, err
@@ -103,17 +95,6 @@ func (_ TMDBTVEpisode) derivePlot(fname string, dir string) string {
 	}
 	//slog.Info("TMDBTVEpisoder/derivePlot", "file", err)
 	return plotFname
-}
-
-func (_ TMDBTVEpisode) deriveSubs(basedir string, fname string) []string {
-	basename := strings.TrimSuffix(fname, ".mp4")
-	target := filepath.Join(basedir, basename+"-subtitles_sv.vtt")
-	if !fileExists(target) {
-		//slog.Info("TMDBTVEpisode/deriveSubs", "ENOFILE", target)
-		return []string{}
-	}
-	//slog.Info("TMDBTVEpisoder/deriveSubs", "found file", target)
-	return []string{target}
 }
 
 func getFirstString(strings ...*string) *string {
@@ -215,9 +196,10 @@ func NewTMDBTVEpisode(logger *slog.Logger, dir string, fname string, ffdata FFPr
 	}
 	res.id = res.deriveID(fname)
 	res.media = dir + "/" + fname
-	i := res.deriveSubs(dir, fname)
-	if len(i) > 0 {
-		res.SubsFile = i[0]
+
+	res.SubsFileHandlerSlice = NewSubsFileHandlers(dir, fname)
+	if len(res.SubsFileHandlerSlice) > 0 {
+		res.SubsFileHandler = res.SubsFileHandlerSlice[0]
 	}
 
 	basename := strings.TrimSuffix(fname, ".mp4")

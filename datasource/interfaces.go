@@ -1,6 +1,8 @@
 package datasource
 
-import "io"
+import (
+	"io"
+)
 
 type OpenBackdroper interface {
 	OpenBackdrop() (io.ReadSeekCloser, error)

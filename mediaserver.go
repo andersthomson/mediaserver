@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
+	"maps"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/andersthomson/mediaserver/datasource"
 	"github.com/andersthomson/mediaserver/scrape"
+	iso639_3 "github.com/barbashov/iso639-3"
 	"github.com/davecgh/go-spew/spew"
 	slogctx "github.com/veqryn/slog-context"
 )
@@ -273,6 +275,90 @@ func (_ *subsServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "foo.vtt", time.Time{}, content)
 	content.Close()
 	return
+}
+
+type SubsManager struct {
+	languages []string
+}
+
+func NewSubsManager(languages []string) *SubsManager {
+	return &SubsManager{
+		languages: languages,
+	}
+}
+
+func (_ SubsManager) partName() string {
+	return "subs/{code}/subs.vtt"
+}
+
+type LangURL struct {
+	Language string
+	URL      string
+}
+
+func (s SubsManager) SubsURLSlice(id string) []LangURL {
+	ds := allRepos.DataSourceByID(id)
+	if ds == nil {
+		logger.Warn("datasource unknown", "struct", "SubsManager", "id", id)
+		return nil
+	}
+	dsT, ok := ds.(scrape.SubsFileHandlerser)
+	if !ok {
+		logger.Warn("datasource has no subsFileHandlers", "struct", "SubsManager", "id", id)
+		return nil
+	}
+	sfhs := dsT.SubsFileHandlers()
+
+	res := make([]LangURL, 0, len(sfhs))
+	for _, sfh := range sfhs {
+		content, err := sfh.OpenSubs()
+		if err == nil {
+			content.Close()
+			res = append(res, LangURL{
+				Language: iso639_3.LanguagesPart1[sfh.Language].Name,
+				URL:      Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + "subs/" + sfh.Language + "/subs.vtt",
+			})
+		}
+	}
+	return res
+}
+
+func (s *SubsManager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	logger.Info("SubsManager got", "code", r.PathValue("code"))
+
+	ctx := r.Context()
+	itm := r.PathValue("item")
+	ds := allRepos.DataSourceByID(itm)
+	if ds == nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "datasource unknown", "id", itm)
+		return
+	}
+	dsT, ok := ds.(scrape.SubsFileHandlerser)
+	if !ok {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "datasource has no subsFileHandlers", "id", itm)
+		return
+	}
+	code := r.PathValue("code")
+	sfhs := dsT.SubsFileHandlers()
+	idx := slices.IndexFunc(sfhs, func(e scrape.SubsFileHandler) bool {
+		return e.Language == code
+	})
+	if idx == -1 {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "datasource has no such subsfile", "id", itm, "lang", code)
+		return
+	}
+	content, err := sfhs[idx].OpenSubs()
+	if err != nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.InfoContext(ctx, "read of subs", "failed", err)
+		return
+	}
+	http.ServeContent(w, r, "foo.vtt", time.Time{}, content)
+	content.Close()
+
 }
 
 type html5Server struct {
@@ -556,6 +642,7 @@ func main() {
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+posterServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&posterServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+backdropServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&backdropServer{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+subsServer{}.partName(), Chain(LoggingMiddleware, CORS)(&subsServer{}))
+	mux.Handle(webRootURL.Path+"/item/{item}/part/"+SubsManager{}.partName(), Chain(LoggingMiddleware, CORS)(NewSubsManager(slices.Collect(maps.Keys(iso639_3.LanguagesPart1)))))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+html5Server{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&html5Server{}))
 	mux.Handle(webRootURL.Path+"/item/{item}/part/"+castServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&castServer{}))
 
@@ -575,6 +662,7 @@ func serveItemCast(ctx context.Context, w http.ResponseWriter, r *http.Request, 
 		PosterURL string
 		MediaURL  string
 		SubsURL   string
+		SubsURLs  []LangURL
 		Tagline   string
 	}
 	data := dataT{
@@ -582,6 +670,7 @@ func serveItemCast(ctx context.Context, w http.ResponseWriter, r *http.Request, 
 		PosterURL: posterServer{}.PosterURL(ds.ID()),
 		MediaURL:  mediaServer{}.MediaURL(ds.ID()),
 		SubsURL:   subsServer{}.SubsURL(ds.ID()),
+		SubsURLs:  SubsManager{}.SubsURLSlice(ds.ID()),
 		Tagline:   datasource.TaglineOrZero(ds),
 	}
 	html2templ := `
@@ -648,7 +737,9 @@ func serveItemCast(ctx context.Context, w http.ResponseWriter, r *http.Request, 
     <google-cast-launcher></google-cast-launcher>
 
     <br />
-    <button onclick="startCasting({{.MediaURL}},{{.PosterURL}},{{.SubsURL}},{{.Title}},{{.Tagline}})">Play Movie</button>
+    {{range $s := .SubsURLs }}
+    <button onclick="startCasting({{$.MediaURL}},{{$.PosterURL}},{{$s.URL}},{{$.Title}},{{$.Tagline}})">Play Movie in {{$s.Language}}</button><br>
+    {{ end}}
     <div id="log">Log messages will appear here...</div>
      <div>
 	    <button id="load">Load Media</button>
@@ -1166,7 +1257,7 @@ func tags(ds datasource.DataSource) string {
 func serveItemHtml5(ctx context.Context, w http.ResponseWriter, r *http.Request, ds datasource.DataSource) {
 	type dataT struct {
 		MediaURL      string
-		SubsURL       string
+		SubsURLs      []LangURL
 		Title         string
 		SeasonEpisode string
 		Plot          string
@@ -1175,7 +1266,7 @@ func serveItemHtml5(ctx context.Context, w http.ResponseWriter, r *http.Request,
 	//itm := r.PathValue("item")
 	data := dataT{}
 	data.MediaURL = mediaServer{}.MediaURL(ds.ID())
-	data.SubsURL = subsServer{}.SubsURL(ds.ID())
+	data.SubsURLs = SubsManager{}.SubsURLSlice(ds.ID())
 	data.SeasonEpisode = seasonEpisode(ds)
 	data.Overview = datasource.OverviewOrZero(ds)
 	data.Title = datasource.TitleOrZero(ds)
@@ -1206,8 +1297,8 @@ func serveItemHtml5(ctx context.Context, w http.ResponseWriter, r *http.Request,
                 <body>
     <video id="video" controls>
         <source src="{{.MediaURL}}" type="video/mp4">
-	{{ if .SubsURL }}
-        	<track src="{{.SubsURL}}" kind="subtitles" srclang="sv" label="Swedish">
+	{{ range .SubsURLs }}
+        	<track src="{{.URL}}" kind="subtitles" srclang="{{.Language}}" label="{{.Language}}">
 	{{ end }}
         Your browser does not support the video tag.
     </video>
@@ -1418,7 +1509,7 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) *groupedMovies {
 }
 
 func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss []datasource.DataSource, formActionURL string) {
-	logger.InfoContext(ctx, "Serving", "url", r.URL.String())
+	logger.InfoContext(ctx, "Serving idx", "url", r.URL.String())
 	//Find all tags
 	FilterTags := map[string]map[string]bool{}
 	for _, ds := range dss {
@@ -1464,6 +1555,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 		SeasonEpisode string
 		Tags          map[string][]string
 		BackingStruct string
+		SubsLanguages []string
 	}
 
 	o := make([]object, 0, len(dss))
@@ -1491,6 +1583,11 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 			}
 			if dsT, ok := ds.(Tagser); ok {
 				dsObject.Tags = dsT.Tags()
+			}
+			if dsT, ok := ds.(scrape.SubsFileHandlerser); ok {
+				for _, sh := range dsT.SubsFileHandlers() {
+					dsObject.SubsLanguages = append(dsObject.SubsLanguages, iso639_3.LanguagesPart1[sh.Language].Name)
+				}
 			}
 			o = append(o, dsObject)
 		}
@@ -1626,6 +1723,12 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 									{{ $x }} 
 									{{ end}}<br>
 							{{ end }}
+						{{ end }}
+						{{ if .SubsLanguages }}
+							Subtitles:<br>
+							{{ range $lang := .SubsLanguages }}
+								{{ $lang }}
+							{{ end }}<br>
 						{{ end }}
 						{{ if .SeasonEpisode }}
 							{{.SeasonEpisode }}<br>
