@@ -612,7 +612,7 @@ func main() {
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, AuthMiddleware, CORS)(http.HandlerFunc(serveTopIndex)))
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
-	logger.Info("Listening at %s", listenaddr)
+	logger.Info("Started", "Listening at", listenaddr)
 	err = http.ListenAndServe(listenaddr, mux)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
