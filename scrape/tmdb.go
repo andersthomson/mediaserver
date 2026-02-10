@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
+	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 	"golang.org/x/sync/singleflight"
@@ -26,6 +28,27 @@ func TmdbInit(apiKey string, cacheDir string, iso639_1_order []string) {
 	if err != nil {
 		panic(err)
 	}
+	dialer := &net.Dialer{
+		// A negative value or 1ms forces the dialer to start IPv4
+		// almost immediately after IPv6.
+		FallbackDelay: 1 * time.Millisecond,
+		Timeout:       30 * time.Second,
+		KeepAlive:     30 * time.Second,
+	}
+
+	transport := &http.Transport{
+		DialContext:           dialer.DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+
+	httpclient := http.Client{
+		Transport: transport,
+	}
+	tmdbClient.SetClientConfig(httpclient)
 	tmdbClient.GetBaseURL()
 	tmdbClient.SetClientAutoRetry()
 	cachePath = cacheDir
