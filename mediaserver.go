@@ -546,7 +546,7 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	Config.ReadFromFile("config")
 	scrape.TmdbInit(Config.Tmdb.ApiKey, Config.Tmdb.CacheDir, Config.Tmdb.Iso6391Order)
-	sessions = NewSessionStoreFromFile("./sessions.json")
+	sessions = NewSessionStoreFromFile(Config.SessionFile)
 
 	webRootURL, err := url.Parse(Config.WebRoot)
 	if err != nil {
@@ -571,7 +571,7 @@ func main() {
 			sessions.PruneOldSessions(maxDur)
 		}
 		b := sessions.ToJson()
-		if err := os.WriteFile("./sessions.json", b, 0644); err != nil {
+		if err := os.WriteFile(Config.SessionFile, b, 0644); err != nil {
 			logger.Error("Failed to write sessionfile", "err", err)
 		}
 		os.Exit(0)

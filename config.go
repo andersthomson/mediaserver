@@ -37,6 +37,7 @@ type config struct {
 	InternalIDP   []InternalIDPAccount
 	IDProviders   []string
 	MaxSessionAge string
+	SessionFile   string
 }
 
 func (c *config) ReadFromFile(f string) {
