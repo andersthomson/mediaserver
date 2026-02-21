@@ -2,10 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"log/slog"
 	"math/rand"
 	"os"
 	"sync"
 	"time"
+
+	"gopkg.in/natefinch/lumberjack.v2"
+
+	slogctx "github.com/veqryn/slog-context"
 )
 
 func randomString(n int) string {
@@ -20,15 +25,28 @@ func NewSessionID() string {
 	return randomString(32)
 }
 
+func NewSessionLogger(u User) *slog.Logger {
+	logRotator := &lumberjack.Logger{
+		Filename:   "./access-" + u.UserID() + "-" + u.IDProvider() + ".log",
+		MaxSize:    10,   // Max size in MB
+		MaxBackups: 5,    // Number of backups
+		MaxAge:     3000, // Days
+		Compress:   true, // Enable compression
+	}
+	return slog.New(slogctx.NewHandler(slog.NewJSONHandler(logRotator, &slog.HandlerOptions{}), nil))
+}
+
 type SessionEntry struct {
 	User     User
 	LastUsed time.Time
+	Logger   *slog.Logger
 }
 
 func NewSessionEntry(u User) SessionEntry {
 	return SessionEntry{
 		User:     u,
 		LastUsed: time.Now(),
+		Logger:   NewSessionLogger(u),
 	}
 }
 
@@ -148,6 +166,7 @@ func (s *SessionStore) FromJson(sj []byte) {
 			s.m[k] = SessionEntry{
 				User:     g,
 				LastUsed: entry.LastUsed,
+				Logger:   NewSessionLogger(g),
 			}
 		case "internalIDP":
 			var x InternalIDPUser
@@ -157,6 +176,7 @@ func (s *SessionStore) FromJson(sj []byte) {
 			s.m[k] = SessionEntry{
 				User:     x,
 				LastUsed: entry.LastUsed,
+				Logger:   NewSessionLogger(x),
 			}
 		default:
 			panic("Unknown IDP" + i.IDProvider_)

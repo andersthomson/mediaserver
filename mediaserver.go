@@ -497,6 +497,8 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		// Add user data to the request context
 		ctx = context.WithValue(ctx, userCtxKey{}, se.User)
 		logger.InfoContext(ctx, "Has Session", "userID", se.User.UserID(), "idp", se.User.IDProvider())
+		//Write the to session log (per user data)
+		se.Logger.Info("Serving", "url", r.URL.String(), "range", r.Header.Get("Range"))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
