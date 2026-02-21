@@ -12,7 +12,7 @@ import (
 )
 
 type TMDBMovie struct {
-	SubsFileHandler
+	//SubsFileHandler
 	SubsFileHandlerSlice
 	logger       *slog.Logger
 	id           string
@@ -20,12 +20,9 @@ type TMDBMovie struct {
 	language     string
 	title        string
 	tagline      string
-	SubsFile     string
 	posterFile   string
 	backdropFile string
 	overview     string
-	episode      int
-	season       int
 	tags         map[string][]string
 }
 
@@ -56,14 +53,6 @@ func (i TMDBMovie) Tags() map[string][]string {
 
 func (i TMDBMovie) ID() string {
 	return i.id
-}
-
-func (i TMDBMovie) Episode() int {
-	return i.episode
-}
-
-func (i TMDBMovie) Season() int {
-	return i.season
 }
 
 func (i TMDBMovie) OpenPoster() (io.ReadSeekCloser, error) {
@@ -139,9 +128,6 @@ func NewTMDBMovie(logger *slog.Logger, dir string, fname string, ffdata FFProbeR
 	res.media = dir + "/" + fname
 
 	res.SubsFileHandlerSlice = NewSubsFileHandlers(dir, fname)
-	if len(res.SubsFileHandlerSlice) > 0 {
-		res.SubsFileHandler = res.SubsFileHandlerSlice[0]
-	}
 
 	basename := strings.TrimSuffix(fname, ".mp4")
 	target := filepath.Join(dir, basename+"-poster.jpg")
