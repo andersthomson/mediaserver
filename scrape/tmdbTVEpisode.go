@@ -13,7 +13,6 @@ import (
 )
 
 type TMDBTVEpisode struct {
-	SubsFileHandler
 	SubsFileHandlerSlice
 	PosterServer
 	BackdropServer
@@ -199,9 +198,6 @@ func NewTMDBTVEpisode(logger *slog.Logger, dir string, fname string, ffdata FFPr
 	res.media = dir + "/" + fname
 
 	res.SubsFileHandlerSlice = NewSubsFileHandlers(dir, fname)
-	if len(res.SubsFileHandlerSlice) > 0 {
-		res.SubsFileHandler = res.SubsFileHandlerSlice[0]
-	}
 
 	basename := strings.TrimSuffix(fname, ".mp4")
 	target := filepath.Join(dir, basename+"-poster.jpg")

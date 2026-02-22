@@ -13,7 +13,6 @@ import (
 )
 
 type TMDBMovie struct {
-	//SubsFileHandler
 	SubsFileHandlerSlice
 	PosterServer
 	BackdropServer
