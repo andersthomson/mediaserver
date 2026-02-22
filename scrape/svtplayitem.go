@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,12 +17,13 @@ import (
 )
 
 type svtplayItem struct {
+	PosterServer
+	Logger        *slog.Logger
 	ID_           string
 	Title_        string
 	EpisodeTitle_ string
 	Media         string
 	SubsFile      string
-	PosterFile_   string
 	PlotFile_     string
 	PlotString    string
 	Episode_      int
@@ -73,6 +75,12 @@ func (s svtplayItem) Plot() string {
 		return ""
 	}
 	return string(buf)
+}
+func (s svtplayItem) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case s.PosterURLPath():
+		s.PosterServer.ServeHTTP(w, r, s.Logger)
+	}
 }
 
 type nopCloser struct {
@@ -144,11 +152,6 @@ func (s svtplayItem) OpenSubs() (io.ReadSeekCloser, error) {
 	slog.Warn("Unknown subs file extension", "filename", s.SubsFile)
 	return nil, fmt.Errorf("error")
 
-}
-
-func (s svtplayItem) OpenPoster() (io.ReadSeekCloser, error) {
-	x, err := os.Open(s.PosterFile_)
-	return x, err
 }
 
 func (_ svtplayItem) derivePlot(dir, fname string) string {
@@ -246,7 +249,7 @@ func (s *svtplayItem) ScrapeNfo(nfoFname string) {
 func (s *svtplayItem) Scrape(dir, fname string) {
 	s.ID_ = s.deriveID(fname)
 	s.Media = filepath.Join(dir, fname)
-	s.PosterFile_ = s.derivePoster(dir, fname)
+	s.PosterFile = s.derivePoster(dir, fname)
 	s.SubsFile = s.deriveSubs(dir, fname)
 	if s.Tags_ == nil {
 		s.Tags_ = map[string][]string{}

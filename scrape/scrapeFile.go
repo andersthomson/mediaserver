@@ -11,14 +11,16 @@ import (
 
 func toScraper(dir string, fname string) scrapeer {
 	if strings.HasSuffix(fname, ".mp4") {
-		if strings.HasSuffix(fname, "-svtplay.mp4") {
-			return &svtplayItem{}
-		}
 		defaultAttrs := []slog.Attr{}
 		level := &slog.LevelVar{}
 		level.Set(slog.LevelInfo)
 		handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level}).WithAttrs(defaultAttrs)
 		logger := slog.New(handler)
+		if strings.HasSuffix(fname, "-svtplay.mp4") {
+			return &svtplayItem{
+				Logger: logger,
+			}
+		}
 		return NewItem(logger)
 	}
 	return nil

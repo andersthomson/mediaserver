@@ -3,6 +3,7 @@ package scrape
 import (
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,13 +15,13 @@ import (
 type TMDBMovie struct {
 	//SubsFileHandler
 	SubsFileHandlerSlice
+	PosterServer
 	logger       *slog.Logger
 	id           string
 	media        string
 	language     string
 	title        string
 	tagline      string
-	posterFile   string
 	backdropFile string
 	overview     string
 	tags         map[string][]string
@@ -55,11 +56,6 @@ func (i TMDBMovie) ID() string {
 	return i.id
 }
 
-func (i TMDBMovie) OpenPoster() (io.ReadSeekCloser, error) {
-	x, err := os.Open(i.posterFile)
-	return x, err
-}
-
 func (i TMDBMovie) OpenBackdrop() (io.ReadSeekCloser, error) {
 	x, err := os.Open(i.backdropFile)
 	return x, err
@@ -67,6 +63,14 @@ func (i TMDBMovie) OpenBackdrop() (io.ReadSeekCloser, error) {
 
 func (_ TMDBMovie) deriveID(fname string) string {
 	return fname
+}
+
+func (i TMDBMovie) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	i.logger.Info("tmdbmovie serving", "Url", r.URL.String())
+	switch r.URL.Path {
+	case i.PosterURLPath():
+		i.PosterServer.ServeHTTP(w, r, i.logger)
+	}
 }
 
 func scrapeAsTMDBMovie(logger *slog.Logger, itm *TMDBMovie, ffdata FFProbeRoot) bool {
@@ -89,7 +93,7 @@ func scrapeAsTMDBMovie(logger *slog.Logger, itm *TMDBMovie, ffdata FFProbeRoot) 
 	itm.tags["Movie"] = []string{itm.title}
 	itm.overview = movie.Overview
 	if fname, err := TMDBImage(movie.PosterPath, tmdb.W500); err == nil {
-		itm.posterFile = fname
+		itm.PosterFile = fname
 	}
 	if movie.BackdropPath != "" {
 		if fname, err := TMDBImage(movie.BackdropPath, tmdb.W1280); err == nil {
@@ -132,8 +136,8 @@ func NewTMDBMovie(logger *slog.Logger, dir string, fname string, ffdata FFProbeR
 	basename := strings.TrimSuffix(fname, ".mp4")
 	target := filepath.Join(dir, basename+"-poster.jpg")
 	if fileExists(target) {
-		res.posterFile = target
-		logger.Info("", "source", "filename", "posterfile", res.posterFile)
+		res.PosterFile = target
+		logger.Info("", "source", "filename", "posterfile", res.PosterFile)
 	}
 
 	for idx := range ffdata.Streams {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 )
 
 type ItemData struct {
+	PosterServer
 	logger       *slog.Logger
 	id           string
 	media        string
@@ -18,7 +20,7 @@ type ItemData struct {
 	title        string
 	episodetitle string
 	SubsFile     string
-	posterFile   string
+	PosterFile   string
 	plotFile     string
 	plot         string
 	episode      int
@@ -83,11 +85,6 @@ func (i ItemData) OpenSubs() (io.ReadSeekCloser, error) {
 	return x, nil
 }
 
-func (i ItemData) OpenPoster() (io.ReadSeekCloser, error) {
-	x, err := os.Open(i.posterFile)
-	return x, err
-}
-
 func (_ ItemData) deriveID(fname string) string {
 	return fname
 }
@@ -112,6 +109,13 @@ func (_ ItemData) deriveSubs(basedir string, fname string) []string {
 	}
 	//slog.Info("ItemDatar/deriveSubs", "found file", target)
 	return []string{target}
+}
+func (i ItemData) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	i.logger.Info("itemdata serving", "Url", r.URL.String())
+	switch r.URL.Path {
+	case i.PosterURLPath():
+		i.PosterServer.ServeHTTP(w, r, i.logger)
+	}
 }
 
 func scrapeAsIndividualmp4tags(logger *slog.Logger, itm *ItemData, ffdata FFProbeRoot) bool {
@@ -171,8 +175,8 @@ func (itm *ItemData) Scrape(dir, fname string) {
 	basename := strings.TrimSuffix(fname, ".mp4")
 	target := filepath.Join(dir, basename+"-poster.jpg")
 	if fileExists(target) {
-		itm.posterFile = target
-		logger.Info("", "source", "filename", "posterfile", itm.posterFile)
+		itm.PosterFile = target
+		logger.Info("", "source", "filename", "posterfile", itm.PosterFile)
 	}
 
 	scrapeAsIndividualmp4tags(logger, itm, ffdata)

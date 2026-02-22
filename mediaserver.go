@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
-	"maps"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -172,26 +171,18 @@ func (p *backdropServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	content.Close()
 }
 
-type posterServer struct {
+func posterURL(ds datasource.DataSource) string {
+	if p := datasource.PosterURLPathOrZero(ds); p == "" {
+		return ""
+	} else {
+		return Config.WebRoot + "/item/" + url.PathEscape(ds.ID()) + "/part/" + url.PathEscape(p)
+	}
 }
 
-func (_ posterServer) partName() string {
-	return "poster"
-}
-func (p posterServer) PosterURL(id string) string {
-	ds := allRepos.DataSourceByID(id)
-	if ds == nil {
-		return ""
-	}
-	content, err := ds.OpenPoster()
-	if err != nil {
-		return ""
-	}
-	content.Close()
-	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + p.partName()
+type dataSourceServer struct {
 }
 
-func (p *posterServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	itm := r.PathValue("item")
 	ds := allRepos.DataSourceByID(itm)
@@ -200,14 +191,14 @@ func (p *posterServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.WarnContext(ctx, "datasource unknown", "id", itm)
 		return
 	}
-	content, err := ds.OpenPoster()
-	if err != nil {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "read of poster", "failed", err)
-		return
-	}
-	http.ServeContent(w, r, "", time.Time{}, content)
-	content.Close()
+
+	r2 := new(http.Request)
+	*r2 = *r
+	r2.URL = new(url.URL)
+	*r2.URL = *r.URL
+	r2.URL.Path = r.PathValue("subPath")
+	ds.(http.Handler).ServeHTTP(w, r2)
+	return
 }
 
 type mediaServer struct {
@@ -604,12 +595,14 @@ func main() {
 
 	mux.Handle(webRootURL.Path+"/auth/login", Chain(LoggingMiddleware)(idpManager))
 
-	mux.Handle(webRootURL.Path+"/item/{item}/part/"+mediaServer{}.partName(), Chain(LoggingMiddleware, CORS)(&mediaServer{}))
-	mux.Handle(webRootURL.Path+"/item/{item}/part/"+posterServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&posterServer{}))
-	mux.Handle(webRootURL.Path+"/item/{item}/part/"+backdropServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&backdropServer{}))
-	mux.Handle(webRootURL.Path+"/item/{item}/part/"+SubsManager{}.partName(), Chain(LoggingMiddleware, CORS)(NewSubsManager(slices.Collect(maps.Keys(iso639_3.LanguagesPart1)))))
-	mux.Handle(webRootURL.Path+"/item/{item}/part/"+html5Server{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&html5Server{}))
-	mux.Handle(webRootURL.Path+"/item/{item}/part/"+castServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&castServer{}))
+	/*
+		mux.Handle(webRootURL.Path+"/item/{item}/part/"+mediaServer{}.partName(), Chain(LoggingMiddleware, CORS)(&mediaServer{}))
+		mux.Handle(webRootURL.Path+"/item/{item}/part/"+backdropServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&backdropServer{}))
+		mux.Handle(webRootURL.Path+"/item/{item}/part/"+SubsManager{}.partName(), Chain(LoggingMiddleware, CORS)(NewSubsManager(slices.Collect(maps.Keys(iso639_3.LanguagesPart1)))))
+		mux.Handle(webRootURL.Path+"/item/{item}/part/"+html5Server{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&html5Server{}))
+		mux.Handle(webRootURL.Path+"/item/{item}/part/"+castServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&castServer{}))
+	*/
+	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, CORS)(&dataSourceServer{}))
 
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, AuthMiddleware, CORS)(http.HandlerFunc(serveTopIndex)))
 
@@ -632,7 +625,7 @@ func serveItemCast(ctx context.Context, w http.ResponseWriter, r *http.Request, 
 	}
 	data := dataT{
 		Title:     datasource.TitleOrZero(ds),
-		PosterURL: posterServer{}.PosterURL(ds.ID()),
+		PosterURL: posterURL(ds),
 		MediaURL:  mediaServer{}.MediaURL(ds.ID()),
 		SubsURLs:  SubsManager{}.SubsURLSlice(ds.ID()),
 		Tagline:   datasource.TaglineOrZero(ds),
@@ -1266,7 +1259,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 		if hasSetTag(ds, FilterTags) {
 			dsObject := object{
 				MediaURL:      mediaServer{}.MediaURL(ds.ID()),
-				PosterURL:     posterServer{}.PosterURL(ds.ID()),
+				PosterURL:     posterURL(ds),
 				BackdropURL:   backdropServer{}.BackdropURL(ds.ID()),
 				Html5URL:      html5Server{}.Html5URL(ds.ID()),
 				CastURL:       castServer{}.CastURL(ds.ID()),

@@ -3,6 +3,7 @@ package scrape
 import (
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 type TMDBTVEpisode struct {
 	SubsFileHandler
 	SubsFileHandlerSlice
+	PosterServer
 	logger       *slog.Logger
 	id           string
 	media        string
@@ -72,11 +74,6 @@ func (i TMDBTVEpisode) Plot() string {
 	return string(buf)
 }
 
-func (i TMDBTVEpisode) OpenPoster() (io.ReadSeekCloser, error) {
-	x, err := os.Open(i.posterFile)
-	return x, err
-}
-
 func (i TMDBTVEpisode) OpenBackdrop() (io.ReadSeekCloser, error) {
 	x, err := os.Open(i.backdropFile)
 	return x, err
@@ -95,6 +92,14 @@ func (_ TMDBTVEpisode) derivePlot(fname string, dir string) string {
 	}
 	//slog.Info("TMDBTVEpisoder/derivePlot", "file", err)
 	return plotFname
+}
+
+func (i TMDBTVEpisode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	i.logger.Info("tmdbtvepisode serving", "Url", r.URL.String())
+	switch r.URL.Path {
+	case i.PosterURLPath():
+		i.PosterServer.ServeHTTP(w, r, i.logger)
+	}
 }
 
 func getFirstString(strings ...*string) *string {
@@ -167,7 +172,7 @@ func scrapeAsTMDBTVEpisode(logger *slog.Logger, itm *TMDBTVEpisode, ffdata FFPro
 	itm.season = season
 	if p := getFirstString(&tvEpisodeDetails.StillPath, &tvSeasonDetails.PosterPath); p != nil {
 		if fname, err := TMDBImage(*p, tmdb.W500); err == nil {
-			itm.posterFile = fname
+			itm.PosterFile = fname
 		}
 	}
 	if p := getFirstString(&tvDetails.BackdropPath); p != nil {
@@ -205,8 +210,8 @@ func NewTMDBTVEpisode(logger *slog.Logger, dir string, fname string, ffdata FFPr
 	basename := strings.TrimSuffix(fname, ".mp4")
 	target := filepath.Join(dir, basename+"-poster.jpg")
 	if fileExists(target) {
-		res.posterFile = target
-		logger.Info("", "source", "filename", "posterfile", res.posterFile)
+		res.PosterFile = target
+		logger.Info("", "source", "filename", "posterfile", res.PosterFile)
 	}
 
 	if ffdata.Format.Tags.Grouping != "" {
