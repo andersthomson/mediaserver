@@ -73,3 +73,14 @@ func PosterURLPathOrZero(x any) string {
 	}
 	return ""
 }
+
+type BackdropURLPather interface {
+	BackdropURLPath() string
+}
+
+func BackdropURLPathOrZero(x any) string {
+	if xT, ok := x.(BackdropURLPather); ok {
+		return xT.BackdropURLPath()
+	}
+	return ""
+}

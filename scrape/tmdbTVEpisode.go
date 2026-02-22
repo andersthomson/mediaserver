@@ -16,6 +16,7 @@ type TMDBTVEpisode struct {
 	SubsFileHandler
 	SubsFileHandlerSlice
 	PosterServer
+	BackdropServer
 	logger       *slog.Logger
 	id           string
 	media        string
@@ -72,11 +73,6 @@ func (i TMDBTVEpisode) Plot() string {
 		return ""
 	}
 	return string(buf)
-}
-
-func (i TMDBTVEpisode) OpenBackdrop() (io.ReadSeekCloser, error) {
-	x, err := os.Open(i.backdropFile)
-	return x, err
 }
 
 func (_ TMDBTVEpisode) deriveID(fname string) string {
@@ -177,7 +173,7 @@ func scrapeAsTMDBTVEpisode(logger *slog.Logger, itm *TMDBTVEpisode, ffdata FFPro
 	}
 	if p := getFirstString(&tvDetails.BackdropPath); p != nil {
 		if fname, err := TMDBImage(*p, tmdb.W500); err == nil {
-			itm.backdropFile = fname
+			itm.BackdropFile = fname
 		}
 	}
 

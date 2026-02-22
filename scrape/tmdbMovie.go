@@ -16,15 +16,15 @@ type TMDBMovie struct {
 	//SubsFileHandler
 	SubsFileHandlerSlice
 	PosterServer
-	logger       *slog.Logger
-	id           string
-	media        string
-	language     string
-	title        string
-	tagline      string
-	backdropFile string
-	overview     string
-	tags         map[string][]string
+	BackdropServer
+	logger   *slog.Logger
+	id       string
+	media    string
+	language string
+	title    string
+	tagline  string
+	overview string
+	tags     map[string][]string
 }
 
 func (i TMDBMovie) OpenMedia() (io.ReadSeekCloser, error) {
@@ -56,11 +56,6 @@ func (i TMDBMovie) ID() string {
 	return i.id
 }
 
-func (i TMDBMovie) OpenBackdrop() (io.ReadSeekCloser, error) {
-	x, err := os.Open(i.backdropFile)
-	return x, err
-}
-
 func (_ TMDBMovie) deriveID(fname string) string {
 	return fname
 }
@@ -70,6 +65,8 @@ func (i TMDBMovie) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case i.PosterURLPath():
 		i.PosterServer.ServeHTTP(w, r, i.logger)
+	case i.BackdropURLPath():
+		i.BackdropServer.ServeHTTP(w, r, i.logger)
 	}
 }
 
@@ -97,7 +94,7 @@ func scrapeAsTMDBMovie(logger *slog.Logger, itm *TMDBMovie, ffdata FFProbeRoot) 
 	}
 	if movie.BackdropPath != "" {
 		if fname, err := TMDBImage(movie.BackdropPath, tmdb.W1280); err == nil {
-			itm.backdropFile = fname
+			itm.BackdropFile = fname
 		}
 	} else {
 		logger.Warn("Has no backdrop image", "id", id, "title", movie.Title)

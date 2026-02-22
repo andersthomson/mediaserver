@@ -122,53 +122,12 @@ func (a allReposT) DataSourceByID(id string) datasource.DataSource {
 
 var allRepos allReposT
 
-type backdropServer struct {
-}
-
-func (_ backdropServer) partName() string {
-	return "backdrop"
-}
-func (p backdropServer) BackdropURL(id string) string {
-	ds := allRepos.DataSourceByID(id)
-	if ds == nil {
+func backdropURL(ds datasource.DataSource) string {
+	if p := datasource.BackdropURLPathOrZero(ds); p == "" {
 		return ""
+	} else {
+		return Config.WebRoot + "/item/" + url.PathEscape(ds.ID()) + "/part/" + url.PathEscape(p)
 	}
-	dsT, ok := ds.(datasource.OpenBackdroper)
-	if !ok {
-		logger.Warn("ds does not support backdrops", "id", ds.ID(), "type", fmt.Sprintf("%T", ds))
-		return ""
-	}
-	content, err := dsT.OpenBackdrop()
-	if err != nil {
-		return ""
-	}
-	content.Close()
-	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + p.partName()
-}
-
-func (p *backdropServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	itm := r.PathValue("item")
-	ds := allRepos.DataSourceByID(itm)
-	if ds == nil {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unknown", "id", itm)
-		return
-	}
-	dsT, ok := ds.(datasource.OpenBackdroper)
-	if !ok {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "ds does not support backdrops", "id", ds.ID())
-		return
-	}
-	content, err := dsT.OpenBackdrop()
-	if err != nil {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "read of backdrop", "failed", err)
-		return
-	}
-	http.ServeContent(w, r, "", time.Time{}, content)
-	content.Close()
 }
 
 func posterURL(ds datasource.DataSource) string {
@@ -597,7 +556,6 @@ func main() {
 
 	/*
 		mux.Handle(webRootURL.Path+"/item/{item}/part/"+mediaServer{}.partName(), Chain(LoggingMiddleware, CORS)(&mediaServer{}))
-		mux.Handle(webRootURL.Path+"/item/{item}/part/"+backdropServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&backdropServer{}))
 		mux.Handle(webRootURL.Path+"/item/{item}/part/"+SubsManager{}.partName(), Chain(LoggingMiddleware, CORS)(NewSubsManager(slices.Collect(maps.Keys(iso639_3.LanguagesPart1)))))
 		mux.Handle(webRootURL.Path+"/item/{item}/part/"+html5Server{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&html5Server{}))
 		mux.Handle(webRootURL.Path+"/item/{item}/part/"+castServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&castServer{}))
@@ -1260,7 +1218,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 			dsObject := object{
 				MediaURL:      mediaServer{}.MediaURL(ds.ID()),
 				PosterURL:     posterURL(ds),
-				BackdropURL:   backdropServer{}.BackdropURL(ds.ID()),
+				BackdropURL:   backdropURL(ds),
 				Html5URL:      html5Server{}.Html5URL(ds.ID()),
 				CastURL:       castServer{}.CastURL(ds.ID()),
 				Title:         datasource.TitleOrZero(ds),
