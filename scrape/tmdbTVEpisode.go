@@ -13,9 +13,9 @@ import (
 )
 
 type TMDBTVEpisode struct {
-	SubsFileHandlerSlice
 	PosterServer
 	BackdropServer
+	SubsServer
 	logger       *slog.Logger
 	id           string
 	media        string
@@ -91,9 +91,17 @@ func (_ TMDBTVEpisode) derivePlot(fname string, dir string) string {
 
 func (i TMDBTVEpisode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	i.logger.Info("tmdbtvepisode serving", "Url", r.URL.String())
-	switch r.URL.Path {
-	case i.PosterURLPath():
+	switch {
+	case r.URL.Path == i.PosterURLPath():
 		i.PosterServer.ServeHTTP(w, r, i.logger)
+	case r.URL.Path == i.BackdropURLPath():
+		i.BackdropServer.ServeHTTP(w, r, i.logger)
+	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
+		i.SubsServer.ServeHTTP(w, r, i.logger)
+	default:
+		i.logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
+		w.WriteHeader(404)
+		return
 	}
 }
 
@@ -197,7 +205,7 @@ func NewTMDBTVEpisode(logger *slog.Logger, dir string, fname string, ffdata FFPr
 	res.id = res.deriveID(fname)
 	res.media = dir + "/" + fname
 
-	res.SubsFileHandlerSlice = NewSubsFileHandlers(dir, fname)
+	res.SubsServer.AddSubsFromMP4Filename(dir, fname)
 
 	basename := strings.TrimSuffix(fname, ".mp4")
 	target := filepath.Join(dir, basename+"-poster.jpg")

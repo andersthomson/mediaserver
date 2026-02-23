@@ -84,3 +84,18 @@ func BackdropURLPathOrZero(x any) string {
 	}
 	return ""
 }
+
+type Subs struct {
+	Language    string
+	URLPathFrag string
+}
+type SubsSlicer interface {
+	SubsSlice() []Subs
+}
+
+func SubsSliceOrZero(x any) []Subs {
+	if xT, ok := x.(SubsSlicer); ok {
+		return xT.SubsSlice()
+	}
+	return []Subs{}
+}

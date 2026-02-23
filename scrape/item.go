@@ -1,7 +1,6 @@
 package scrape
 
 import (
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,14 +12,13 @@ import (
 
 type ItemData struct {
 	PosterServer
+	SubsServer
 	logger       *slog.Logger
 	id           string
 	media        string
 	showName     string
 	title        string
 	episodetitle string
-	SubsFile     string
-	PosterFile   string
 	plotFile     string
 	plot         string
 	episode      int
@@ -77,14 +75,6 @@ func (i ItemData) Plot() string {
 	return string(buf)
 }
 
-func (i ItemData) OpenSubs() (io.ReadSeekCloser, error) {
-	x, err := os.Open(i.SubsFile)
-	if err != nil {
-		return nil, fmt.Errorf("open of %s failed: %w", i.SubsFile, err)
-	}
-	return x, nil
-}
-
 func (_ ItemData) deriveID(fname string) string {
 	return fname
 }
@@ -100,21 +90,17 @@ func (_ ItemData) derivePlot(fname string, dir string) string {
 	return plotFname
 }
 
-func (_ ItemData) deriveSubs(basedir string, fname string) []string {
-	basename := strings.TrimSuffix(fname, ".mp4")
-	target := filepath.Join(basedir, basename+"-subtitles_sv.vtt")
-	if !fileExists(target) {
-		//slog.Info("ItemData/deriveSubs", "ENOFILE", target)
-		return []string{}
-	}
-	//slog.Info("ItemDatar/deriveSubs", "found file", target)
-	return []string{target}
-}
 func (i ItemData) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	i.logger.Info("itemdata serving", "Url", r.URL.String())
-	switch r.URL.Path {
-	case i.PosterURLPath():
+	switch {
+	case r.URL.Path == i.PosterURLPath():
 		i.PosterServer.ServeHTTP(w, r, i.logger)
+	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
+		i.SubsServer.ServeHTTP(w, r, i.logger)
+	default:
+		i.logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
+		w.WriteHeader(404)
+		return
 	}
 }
 
@@ -167,10 +153,7 @@ func (itm *ItemData) Scrape(dir, fname string) {
 	}
 	itm.id = itm.deriveID(fname)
 	itm.media = dir + "/" + fname
-	i := itm.deriveSubs(dir, fname)
-	if len(i) > 0 {
-		itm.SubsFile = i[0]
-	}
+	itm.SubsServer.AddSubsFromMP4Filename(dir, fname)
 
 	basename := strings.TrimSuffix(fname, ".mp4")
 	target := filepath.Join(dir, basename+"-poster.jpg")
