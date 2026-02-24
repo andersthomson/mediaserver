@@ -1,13 +1,17 @@
 package scrape
 
 import (
+	"bytes"
+	"io"
 	"log/slog"
 	"maps"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/andersthomson/mediaserver/datasource"
@@ -72,6 +76,60 @@ func (s *SubsServer) ServeHTTP(w http.ResponseWriter, r *http.Request, logger *s
 		w.WriteHeader(http.StatusNotFound)
 		logger.Error("SubsServer unknown URLPath", "URLPath", r.URL.String())
 		return
+	}
+	if strings.HasSuffix(s.Subs[idx].SubsFile, ".srt") {
+		ffmpegCmd := exec.Command("/usr/bin/ffmpeg", "-hide_banner", "-loglevel", "quiet", "-i", s.Subs[idx].SubsFile, "-f", "webvtt", "-")
+		ffmpegIn, _ := ffmpegCmd.StdinPipe()
+		ffmpegOut, _ := ffmpegCmd.StdoutPipe()
+		ffmpegErr, _ := ffmpegCmd.StderrPipe()
+		ffmpegIn.Close()
+
+		if err := ffmpegCmd.Start(); err != nil {
+			slog.Info("svtplayItem/ffmpeg start", "err", err)
+			logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
+			w.WriteHeader(500)
+			return
+		}
+
+		var errbuf []byte
+		var errerr error
+		var outbuf []byte
+		var outerr error
+
+		var stdwg sync.WaitGroup
+		stdwg.Add(1)
+		go func() {
+			errbuf, errerr = io.ReadAll(ffmpegErr)
+			stdwg.Done()
+		}()
+		stdwg.Add(1)
+		go func() {
+			outbuf, outerr = io.ReadAll(ffmpegOut)
+			stdwg.Done()
+		}()
+		stdwg.Wait()
+		if errerr != nil {
+			logger.Error("svtplayItem/ffmpeg", "errerr", errerr)
+			w.WriteHeader(500)
+			return
+		}
+		if len(errbuf) != 0 {
+			logger.Error("svtplayItem/OpenSubs/ffmpeg stderr", "stderr", string(errbuf))
+			w.WriteHeader(500)
+			return
+		}
+
+		if outerr != nil {
+			logger.Error("svtplayItem/OpenSubs/ffmpeg stdout", "err", outerr)
+			w.WriteHeader(500)
+			return
+		}
+		//slog.Info("stdout", "buf", string(outbuf), "err", err)
+		ffmpegCmd.Wait()
+		reader := bytes.NewReader(outbuf)
+		http.ServeContent(w, r, "", time.Time{}, reader)
+		return
+
 	}
 	content, err := os.Open(s.Subs[idx].SubsFile)
 	if err != nil {

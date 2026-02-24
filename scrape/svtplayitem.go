@@ -1,23 +1,20 @@
 package scrape
 
 import (
-	"bytes"
 	"encoding/xml"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 type svtplayItem struct {
 	PosterServer
+	SubsServer
 	Logger        *slog.Logger
 	ID_           string
 	Title_        string
@@ -91,69 +88,6 @@ func (r nopCloser) Close() error {
 	return nil
 }
 
-func (s svtplayItem) OpenSubs() (io.ReadSeekCloser, error) {
-	//slog.Info("Checking subs", "subs", s.SubsFile)
-	if strings.HasSuffix(s.SubsFile, ".vtt") {
-		x, err := os.Open(s.SubsFile)
-		if err != nil {
-			return nil, fmt.Errorf("open of %s failed: %w", s.SubsFile, err)
-		}
-		return x, nil
-	}
-	if strings.HasSuffix(s.SubsFile, ".srt") {
-		ffmpegCmd := exec.Command("/usr/bin/ffmpeg", "-hide_banner", "-loglevel", "quiet", "-i", s.SubsFile, "-f", "webvtt", "-")
-		ffmpegIn, _ := ffmpegCmd.StdinPipe()
-		ffmpegOut, _ := ffmpegCmd.StdoutPipe()
-		ffmpegErr, _ := ffmpegCmd.StderrPipe()
-		ffmpegIn.Close()
-
-		if err := ffmpegCmd.Start(); err != nil {
-			slog.Info("svtplayItem/OpenSubs/ffmpeg start", "err", err)
-			return nil, err
-		}
-
-		var errbuf []byte
-		var errerr error
-		var outbuf []byte
-		var outerr error
-
-		var stdwg sync.WaitGroup
-		stdwg.Add(1)
-		go func() {
-			errbuf, errerr = io.ReadAll(ffmpegErr)
-			stdwg.Done()
-		}()
-		stdwg.Add(1)
-		go func() {
-			outbuf, outerr = io.ReadAll(ffmpegOut)
-			stdwg.Done()
-		}()
-		stdwg.Wait()
-		if errerr != nil {
-			slog.Info("svtplayItem/OpenSubs/ffmpeg stderr", "err", errerr)
-			return nil, errerr
-		}
-		if len(errbuf) != 0 {
-			slog.Info("svtplayItem/OpenSubs/ffmpeg stderr", "stderr", string(errbuf))
-			return nil, errerr
-		}
-
-		if outerr != nil {
-			slog.Info("svtplayItem/OpenSubs/ffmpeg stdout", "err", outerr)
-			return nil, outerr
-		}
-		//slog.Info("stdout", "buf", string(outbuf), "err", err)
-		ffmpegCmd.Wait()
-		reader := bytes.NewReader(outbuf)
-
-		return nopCloser{reader}, nil
-
-	}
-	slog.Warn("Unknown subs file extension", "filename", s.SubsFile)
-	return nil, fmt.Errorf("error")
-
-}
-
 func (_ svtplayItem) derivePlot(dir, fname string) string {
 	plotFname := filepath.Join(dir, strings.TrimSuffix(fname, ".mp4")+".plot.txt")
 	_, err := os.Stat(plotFname)
@@ -200,16 +134,11 @@ func (s *svtplayItem) _split(fname string) {
 	return
 }
 
-func (_ svtplayItem) deriveSubs(basedir string, fname string) string {
-	target := replaceSuffix(filepath.Join(basedir, fname), ".mp4", ".vtt")
+func (s *svtplayItem) AddSubs(basedir string, fname string) {
+	target := replaceSuffix(filepath.Join(basedir, fname), ".mp4", ".srt")
 	if fileExists(target) {
-		return target
+		s.SubsServer.AddSubs(target, "sv")
 	}
-	target = replaceSuffix(filepath.Join(basedir, fname), ".mp4", ".srt")
-	if fileExists(target) {
-		return target
-	}
-	return ""
 }
 
 func (_ svtplayItem) derivePoster(basedir string, fname string) string {
@@ -250,7 +179,7 @@ func (s *svtplayItem) Scrape(dir, fname string) {
 	s.ID_ = s.deriveID(fname)
 	s.Media = filepath.Join(dir, fname)
 	s.PosterFile = s.derivePoster(dir, fname)
-	s.SubsFile = s.deriveSubs(dir, fname)
+	s.AddSubs(dir, fname)
 	if s.Tags_ == nil {
 		s.Tags_ = map[string][]string{}
 	}
