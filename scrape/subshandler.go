@@ -127,7 +127,7 @@ func (s *SubsServer) ServeHTTP(w http.ResponseWriter, r *http.Request, logger *s
 		//slog.Info("stdout", "buf", string(outbuf), "err", err)
 		ffmpegCmd.Wait()
 		reader := bytes.NewReader(outbuf)
-		http.ServeContent(w, r, "", time.Time{}, reader)
+		http.ServeContent(w, r, "foo.vtt", time.Time{}, reader)
 		return
 
 	}
@@ -136,5 +136,5 @@ func (s *SubsServer) ServeHTTP(w http.ResponseWriter, r *http.Request, logger *s
 		w.WriteHeader(http.StatusInternalServerError)
 		logger.Error("SubsServer os.Open failed", "name", s.Subs[idx].SubsFile, "error", err.Error())
 	}
-	http.ServeContent(w, r, "", time.Time{}, content)
+	http.ServeContent(w, r, "foo.vtt", time.Time{}, content)
 }

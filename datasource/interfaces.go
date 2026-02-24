@@ -74,6 +74,17 @@ func PosterURLPathOrZero(x any) string {
 	return ""
 }
 
+type MediaURLPather interface {
+	MediaURLPath() string
+}
+
+func MediaURLPathOrZero(x any) string {
+	if xT, ok := x.(MediaURLPather); ok {
+		return xT.MediaURLPath()
+	}
+	return ""
+}
+
 type BackdropURLPather interface {
 	BackdropURLPath() string
 }

@@ -1,10 +1,8 @@
 package scrape
 
 import (
-	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -13,22 +11,17 @@ import (
 )
 
 type TMDBMovie struct {
+	MediaServer
 	SubsServer
 	PosterServer
 	BackdropServer
 	logger   *slog.Logger
 	id       string
-	media    string
 	language string
 	title    string
 	tagline  string
 	overview string
 	tags     map[string][]string
-}
-
-func (i TMDBMovie) OpenMedia() (io.ReadSeekCloser, error) {
-	x, err := os.Open(i.media)
-	return x, err
 }
 
 func (i TMDBMovie) Title() string {
@@ -62,6 +55,8 @@ func (_ TMDBMovie) deriveID(fname string) string {
 func (i TMDBMovie) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	i.logger.Info("tmdbmovie serving", "Url", r.URL.String())
 	switch {
+	case r.URL.Path == i.MediaURLPath():
+		i.MediaServer.ServeHTTP(w, r, i.logger)
 	case r.URL.Path == i.PosterURLPath():
 		i.PosterServer.ServeHTTP(w, r, i.logger)
 	case r.URL.Path == i.BackdropURLPath():
@@ -131,7 +126,7 @@ func NewTMDBMovie(logger *slog.Logger, dir string, fname string, ffdata FFProbeR
 		return nil, false
 	}
 	res.id = res.deriveID(fname)
-	res.media = dir + "/" + fname
+	res.MediaFile = dir + "/" + fname
 
 	res.SubsServer.AddSubsFromMP4Filename(dir, fname)
 	basename := strings.TrimSuffix(fname, ".mp4")

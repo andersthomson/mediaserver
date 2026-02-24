@@ -13,6 +13,7 @@ import (
 )
 
 type svtplayItem struct {
+	MediaServer
 	PosterServer
 	SubsServer
 	Logger        *slog.Logger
@@ -30,10 +31,6 @@ type svtplayItem struct {
 
 func (_ svtplayItem) deriveID(fname string) string {
 	return fname
-}
-func (s svtplayItem) OpenMedia() (io.ReadSeekCloser, error) {
-	x, err := os.Open(s.Media)
-	return x, err
 }
 
 func (s svtplayItem) Title() string {
@@ -74,9 +71,17 @@ func (s svtplayItem) Plot() string {
 	return string(buf)
 }
 func (s svtplayItem) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch r.URL.Path {
-	case s.PosterURLPath():
+	switch {
+	case r.URL.Path == s.MediaURLPath():
+		s.MediaServer.ServeHTTP(w, r, s.Logger)
+	case r.URL.Path == s.PosterURLPath():
 		s.PosterServer.ServeHTTP(w, r, s.Logger)
+	case strings.HasPrefix(r.URL.String(), s.SubsURLPath()):
+		s.SubsServer.ServeHTTP(w, r, s.Logger)
+	default:
+		s.Logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
+		w.WriteHeader(404)
+		return
 	}
 }
 
@@ -177,7 +182,7 @@ func (s *svtplayItem) ScrapeNfo(nfoFname string) {
 
 func (s *svtplayItem) Scrape(dir, fname string) {
 	s.ID_ = s.deriveID(fname)
-	s.Media = filepath.Join(dir, fname)
+	s.MediaFile = filepath.Join(dir, fname)
 	s.PosterFile = s.derivePoster(dir, fname)
 	s.AddSubs(dir, fname)
 	if s.Tags_ == nil {

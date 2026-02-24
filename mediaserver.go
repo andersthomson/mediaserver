@@ -122,6 +122,14 @@ func (a allReposT) DataSourceByID(id string) datasource.DataSource {
 
 var allRepos allReposT
 
+func mediaURL(ds datasource.DataSource) string {
+	if p := datasource.MediaURLPathOrZero(ds); p == "" {
+		return ""
+	} else {
+		return Config.WebRoot + "/item/" + url.PathEscape(ds.ID()) + "/part/" + url.PathEscape(p)
+	}
+}
+
 func backdropURL(ds datasource.DataSource) string {
 	if p := datasource.BackdropURLPathOrZero(ds); p == "" {
 		return ""
@@ -157,37 +165,6 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	*r2.URL = *r.URL
 	r2.URL.Path = r.PathValue("subPath")
 	ds.(http.Handler).ServeHTTP(w, r2)
-	return
-}
-
-type mediaServer struct {
-}
-
-func (_ mediaServer) partName() string {
-	return "media"
-}
-func (p mediaServer) MediaURL(id string) string {
-	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + p.partName()
-}
-
-func (p *mediaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	itm := r.PathValue("item")
-	ds := allRepos.DataSourceByID(itm)
-	if ds == nil {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unknown", "id", itm)
-		return
-	}
-	content, err := ds.OpenMedia()
-	if err != nil {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.InfoContext(ctx, "media not found", "ds", ds.ID())
-		return
-	}
-	logger.InfoContext(ctx, "Serving", "URL", r.URL)
-	http.ServeContent(w, r, "foo.mp4", time.Time{}, content)
-	content.Close()
 	return
 }
 
@@ -499,7 +476,7 @@ func serveItemCast(ctx context.Context, w http.ResponseWriter, r *http.Request, 
 	data := dataT{
 		Title:     datasource.TitleOrZero(ds),
 		PosterURL: posterURL(ds),
-		MediaURL:  mediaServer{}.MediaURL(ds.ID()),
+		MediaURL:  mediaURL(ds),
 		SubsURLs:  datasource.SubsSliceOrZero(ds),
 		Tagline:   datasource.TaglineOrZero(ds),
 	}
@@ -833,7 +810,7 @@ func serveItemHtml5(ctx context.Context, w http.ResponseWriter, r *http.Request,
 	}
 	//itm := r.PathValue("item")
 	data := dataT{}
-	data.MediaURL = mediaServer{}.MediaURL(ds.ID())
+	data.MediaURL = mediaURL(ds)
 	data.SubsURLs = datasource.SubsSliceOrZero(ds)
 	data.SeasonEpisode = seasonEpisode(ds)
 	data.Overview = datasource.OverviewOrZero(ds)
@@ -1131,7 +1108,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 	for _, ds := range dss {
 		if hasSetTag(ds, FilterTags) {
 			dsObject := object{
-				MediaURL:      mediaServer{}.MediaURL(ds.ID()),
+				MediaURL:      mediaURL(ds),
 				PosterURL:     posterURL(ds),
 				BackdropURL:   backdropURL(ds),
 				Html5URL:      html5Server{}.Html5URL(ds.ID()),
