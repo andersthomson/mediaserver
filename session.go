@@ -95,7 +95,7 @@ func (s *SessionStore) DeleteSessionEntry(sessionID string) {
 
 func (s *SessionStore) GetSessionEntry(sessionID string) (SessionEntry, bool) {
 	s.RLock()
-	se, ok := sessions.m[sessionID]
+	se, ok := s.m[sessionID]
 	s.RUnlock()
 	return se, ok
 }

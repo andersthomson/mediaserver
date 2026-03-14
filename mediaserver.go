@@ -49,8 +49,6 @@ type EpisodeTitler interface {
 var googleIDP *GoogleIDP
 var internalIDP *InternalIDP
 
-var sessions *SessionStore
-
 var logger *slog.Logger
 var Config config
 
@@ -130,6 +128,14 @@ func mediaURL(ds datasource.DataSource) string {
 	}
 }
 
+func castURL(ds datasource.DataSource) string {
+	return Config.WebRoot + "/view/cast/" + url.PathEscape(ds.ID())
+}
+
+func html5URL(ds datasource.DataSource) string {
+	return Config.WebRoot + "/view/html5/" + url.PathEscape(ds.ID())
+}
+
 func backdropURL(ds datasource.DataSource) string {
 	if p := datasource.BackdropURLPathOrZero(ds); p == "" {
 		return ""
@@ -165,52 +171,6 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	*r2.URL = *r.URL
 	r2.URL.Path = r.PathValue("subPath")
 	ds.(http.Handler).ServeHTTP(w, r2)
-	return
-}
-
-type html5Server struct {
-}
-
-func (_ html5Server) partName() string {
-	return "html5"
-}
-func (h html5Server) Html5URL(id string) string {
-	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + h.partName()
-}
-
-func (_ *html5Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	itm := r.PathValue("item")
-	ds := allRepos.DataSourceByID(itm)
-	if ds == nil {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unknown", "id", itm)
-		return
-	}
-	serveItemHtml5(ctx, w, r, ds)
-	return
-}
-
-type castServer struct {
-}
-
-func (_ castServer) partName() string {
-	return "cast"
-}
-func (h castServer) CastURL(id string) string {
-	return Config.WebRoot + "/item/" + url.PathEscape(id) + "/part/" + h.partName()
-}
-
-func (_ *castServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	itm := r.PathValue("item")
-	ds := allRepos.DataSourceByID(itm)
-	if ds == nil {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unknown", "id", itm)
-		return
-	}
-	serveItemCast(ctx, w, r, ds)
 	return
 }
 
@@ -250,6 +210,7 @@ func setupLogger() {
 	customHandler := slogctx.NewHandler(slog.Default().Handler(), nil)
 	logger = slog.New(customHandler)
 }
+
 func BruteLoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -276,10 +237,71 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		logger.InfoContext(ctx, "end req", "time", time.Since(start))
 	})
 }
+
+func SessionStoreFromContext(ctx context.Context) *SessionStore {
+	if ss := ctx.Value("sessionStore"); ss != nil {
+		return ss.(*SessionStore)
+	}
+	return nil
+}
+
+func SessionStoreToContext(sessions *SessionStore) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		f := func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			ctx = context.WithValue(ctx, "sessionStore", sessions)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		}
+		return http.HandlerFunc(f)
+	}
+}
+
+func AuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		sessionID, err := getSessionCookie(r)
+		if err != nil {
+			logger.Error("No session cookie", "err", err)
+			http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
+			return
+		}
+		sessions := SessionStoreFromContext(ctx)
+		if sessions == nil {
+			logger.Error("No sessionStore in context")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		se, hasSession := sessions.GetSessionEntry(sessionID)
+		if !hasSession {
+			http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
+			return
+		}
+		if maxAge, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
+			if maxAge.Abs() > 0 && se.LastUsed.Add(maxAge).Before(time.Now()) {
+				sessions.DeleteSessionEntry(sessionID)
+				http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
+				return
+			}
+		}
+		//We are good! Proceed to use the session
+		sessions.TouchLastUsed(sessionID)
+		// Add user data to the request context
+		ctx = context.WithValue(ctx, userCtxKey{}, se.User)
+		logger.InfoContext(ctx, "Has Session", "userID", se.User.UserID(), "idp", se.User.IDProvider())
+		//Write the to session log (per user data)
+		se.Logger.Info("Serving", "url", r.URL.String(), "range", r.Header.Get("Range"))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 func GetUserSession(r *http.Request) (User, bool) {
 	sessionID, err := getSessionCookie(r)
 	if err != nil {
 		logger.Info("No session cookie", "err", err)
+		return nil, false
+	}
+	sessions := SessionStoreFromContext(r.Context())
+	if sessions == nil {
 		return nil, false
 	}
 	sessions.RLock()
@@ -312,38 +334,6 @@ func getSessionCookie(r *http.Request) (string, error) {
 		return "", fmt.Errorf("missing session cookie")
 	}
 	return c.Value, nil
-}
-
-func AuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		sessionID, err := getSessionCookie(r)
-		if err != nil {
-			logger.Error("No session cookie", "err", err)
-			http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
-			return
-		}
-		se, hasSession := sessions.GetSessionEntry(sessionID)
-		if !hasSession {
-			http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
-			return
-		}
-		if maxAge, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
-			if maxAge.Abs() > 0 && se.LastUsed.Add(maxAge).Before(time.Now()) {
-				sessions.DeleteSessionEntry(sessionID)
-				http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
-				return
-			}
-		}
-		//We are good! Proceed to use the session
-		sessions.TouchLastUsed(sessionID)
-		// Add user data to the request context
-		ctx = context.WithValue(ctx, userCtxKey{}, se.User)
-		logger.InfoContext(ctx, "Has Session", "userID", se.User.UserID(), "idp", se.User.IDProvider())
-		//Write the to session log (per user data)
-		se.Logger.Info("Serving", "url", r.URL.String(), "range", r.Header.Get("Range"))
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
 }
 
 func CORS(next http.Handler) http.Handler {
@@ -388,6 +378,7 @@ func serveTopIndex(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	setupLogger()
+	var sessions *SessionStore
 	rand.Seed(time.Now().UnixNano())
 	Config.ReadFromFile("config")
 	scrape.TmdbInit(Config.Tmdb.ApiKey, Config.Tmdb.CacheDir, Config.Tmdb.Iso6391Order)
@@ -444,17 +435,14 @@ func main() {
 	//mux.Handle(webRootURL.Path+"/auth/google/", http.StripPrefix(webRootURL.Path+"/auth/google", googleIDP.ServeMux()))
 	//mux.Handle(webRootURL.Path+"/auth/internalIDP/", http.StripPrefix(webRootURL.Path+"/auth/internalIDP", internalIDP.ServeMux()))
 	mux.Handle(webRootURL.Path+"/auth/", http.StripPrefix(webRootURL.Path+"/auth", idpManager.ServeMux()))
-
 	mux.Handle(webRootURL.Path+"/auth/login", Chain(LoggingMiddleware)(idpManager))
 
-	/*
-		mux.Handle(webRootURL.Path+"/item/{item}/part/"+mediaServer{}.partName(), Chain(LoggingMiddleware, CORS)(&mediaServer{}))
-		mux.Handle(webRootURL.Path+"/item/{item}/part/"+html5Server{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&html5Server{}))
-		mux.Handle(webRootURL.Path+"/item/{item}/part/"+castServer{}.partName(), Chain(LoggingMiddleware, AuthMiddleware, CORS)(&castServer{}))
-	*/
-	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, CORS)(&dataSourceServer{}))
+	mux.Handle(webRootURL.Path+"/view/cast/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemCast)))
+	mux.Handle(webRootURL.Path+"/view/html5/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemHtml5)))
 
-	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, AuthMiddleware, CORS)(http.HandlerFunc(serveTopIndex)))
+	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{}))
+
+	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveTopIndex)))
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Started", "Listening at", listenaddr)
@@ -464,7 +452,16 @@ func main() {
 	}
 }
 
-func serveItemCast(ctx context.Context, w http.ResponseWriter, r *http.Request, ds datasource.DataSource) {
+func serveItemCast(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	itm := r.PathValue("item")
+	ds := allRepos.DataSourceByID(itm)
+	if ds == nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "datasource unknown", "id", itm)
+		return
+	}
+
 	type dataT struct {
 		Title     string
 		PosterURL string
@@ -799,7 +796,7 @@ func tags(ds datasource.DataSource) string {
 	return strings.Join(tags, "\n")
 }
 
-func serveItemHtml5(ctx context.Context, w http.ResponseWriter, r *http.Request, ds datasource.DataSource) {
+func serveItemHtml5(w http.ResponseWriter, r *http.Request) {
 	type dataT struct {
 		MediaURL      string
 		SubsURLs      []datasource.Subs
@@ -808,7 +805,16 @@ func serveItemHtml5(ctx context.Context, w http.ResponseWriter, r *http.Request,
 		Plot          string
 		Overview      string
 	}
-	//itm := r.PathValue("item")
+
+	ctx := r.Context()
+	itm := r.PathValue("item")
+	ds := allRepos.DataSourceByID(itm)
+	if ds == nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "datasource unknown", "id", itm)
+		return
+	}
+
 	data := dataT{}
 	data.MediaURL = mediaURL(ds)
 	data.SubsURLs = datasource.SubsSliceOrZero(ds)
@@ -816,7 +822,6 @@ func serveItemHtml5(ctx context.Context, w http.ResponseWriter, r *http.Request,
 	data.Overview = datasource.OverviewOrZero(ds)
 	data.Title = datasource.TitleOrZero(ds)
 	data.Plot = datasource.PlotOrZero(ds)
-	//spew.Dump(ds)
 
 	htmltempl := `<!DOCTYPE html>
         <html lang="en" dir="ltr">
@@ -1086,6 +1091,8 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 		}
 	}
 	type object struct {
+		Html5URL      string
+		CastURL       string
 		MediaURL      string
 		PosterURL     string
 		BackdropURL   string
@@ -1094,8 +1101,6 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 		Overview      string
 		ShowName      string
 		EpisodeTitle  string
-		Html5URL      string
-		CastURL       string
 		Plot          string
 		SeasonEpisode string
 		Tags          map[string][]string
@@ -1108,11 +1113,11 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 	for _, ds := range dss {
 		if hasSetTag(ds, FilterTags) {
 			dsObject := object{
+				Html5URL:      html5URL(ds),
+				CastURL:       castURL(ds),
 				MediaURL:      mediaURL(ds),
 				PosterURL:     posterURL(ds),
 				BackdropURL:   backdropURL(ds),
-				Html5URL:      html5Server{}.Html5URL(ds.ID()),
-				CastURL:       castServer{}.CastURL(ds.ID()),
 				Title:         datasource.TitleOrZero(ds),
 				Overview:      datasource.OverviewOrZero(ds),
 				Plot:          datasource.PlotOrZero(ds),

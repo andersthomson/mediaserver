@@ -74,6 +74,14 @@ func (i *InternalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	ctx := r.Context()
+
+	sessions := SessionStoreFromContext(ctx)
+	if sessions == nil {
+		logger.Error("No sessionStore in context")
+		http.Error(w, "No sessionStore in context", http.StatusInternalServerError)
+		return
+	}
+
 	u := InternalIDPAccount{
 		Username: username,
 		Password: password,

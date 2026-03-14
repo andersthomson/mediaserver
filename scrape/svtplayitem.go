@@ -20,7 +20,6 @@ type svtplayItem struct {
 	ID_           string
 	Title_        string
 	EpisodeTitle_ string
-	Media         string
 	SubsFile      string
 	PlotFile_     string
 	PlotString    string
@@ -190,7 +189,7 @@ func (s *svtplayItem) Scrape(dir, fname string) {
 	}
 	s.Tags_["dir"] = append(s.Tags_["dir"], filepath.Base(dir))
 	s.Tags_["fulldir"] = append(s.Tags_["fulldir"], (dir))
-	nfoFname := replaceSuffix(s.Media, ".mp4", ".nfo")
+	nfoFname := replaceSuffix(s.MediaFile, ".mp4", ".nfo")
 	if fileExists(nfoFname) {
 		s.ScrapeNfo(nfoFname)
 		s.Tags_["scraper"] = append(s.Tags_["scraper"], "svtplay/nfo")

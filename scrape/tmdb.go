@@ -31,7 +31,7 @@ func TmdbInit(apiKey string, cacheDir string, iso639_1_order []string) {
 	dialer := &net.Dialer{
 		// A negative value or 1ms forces the dialer to start IPv4
 		// almost immediately after IPv6.
-		FallbackDelay: 1 * time.Millisecond,
+		FallbackDelay: -1 * time.Millisecond,
 		Timeout:       30 * time.Second,
 		KeepAlive:     30 * time.Second,
 	}

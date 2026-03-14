@@ -1,7 +1,6 @@
 package scrape
 
 import (
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,11 +10,12 @@ import (
 )
 
 type ItemData struct {
+	MediaServer
 	PosterServer
 	SubsServer
+	BackdropServer
 	logger       *slog.Logger
 	id           string
-	media        string
 	showName     string
 	title        string
 	episodetitle string
@@ -31,10 +31,6 @@ func NewItem(logger *slog.Logger) *ItemData {
 		logger: logger,
 		tags:   make(map[string][]string, 4),
 	}
-}
-func (i ItemData) OpenMedia() (io.ReadSeekCloser, error) {
-	x, err := os.Open(i.media)
-	return x, err
 }
 
 func (i ItemData) Title() string {
@@ -93,6 +89,8 @@ func (_ ItemData) derivePlot(fname string, dir string) string {
 func (i ItemData) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	i.logger.Info("itemdata serving", "Url", r.URL.String())
 	switch {
+	case r.URL.Path == i.MediaURLPath():
+		i.MediaServer.ServeHTTP(w, r, i.logger)
 	case r.URL.Path == i.PosterURLPath():
 		i.PosterServer.ServeHTTP(w, r, i.logger)
 	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
@@ -152,7 +150,7 @@ func (itm *ItemData) Scrape(dir, fname string) {
 		panic(33)
 	}
 	itm.id = itm.deriveID(fname)
-	itm.media = dir + "/" + fname
+	itm.MediaFile = dir + "/" + fname
 	itm.SubsServer.AddSubsFromMP4Filename(dir, fname)
 
 	basename := strings.TrimSuffix(fname, ".mp4")
