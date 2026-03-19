@@ -1,0 +1,104 @@
+package main
+
+import (
+	"slices"
+	"maps"
+	"fmt"
+	"github.com/andersthomson/mediaserver/datasource"
+	"github.com/andersthomson/mediaserver/scrape"
+	)
+
+templ Card(content templ.Component) {
+     <div class="card-body">
+     @content
+   </div>
+}
+
+templ links(ds datasource.DataSource) {
+	<div id="navigation">
+	<a href={mediaURL(ds)}>&lt;Download&gt;</a>
+	<a href={html5URL(ds)}>&lt;Play in browser&gt;</a>
+	<a href={ castURL(ds)}>&lt;Play on ChromeCast&gt;</a><br> 
+	</div>
+}
+templ ItemCard(ds *scrape.ItemData) {
+	<div class="card">
+	<img src={posterURLGen(ds)} /><br>
+	{ds.Title()}<br>
+	<b>QA Notice: Uses Item scaper</b><br>
+	@links(ds)
+	//<i>{ds.Tagline()}</i><br>
+	//{ds.Overview()}<br>
+	</div>
+}
+
+templ TMDBMovieCard(ds *scrape.TMDBMovie) {
+	<div class="card">
+	<img src={posterURLGen(ds)} /><br>
+	{ds.Title()}<br>
+	@links(ds)
+	<i>{ds.Tagline()}</i><br>
+	{ds.Overview()}<br>
+	</div>
+}
+
+templ svtplayCard(ds *scrape.SvtplayItem) {
+	<div class="card">
+	<img src={posterURLGen(ds)} /><br>
+	{ds.Title()}<br>
+	@links(ds)
+	//<i>{ds.Tagline()}</i><br>
+	//{ds.Overview()}<br>
+	</div>
+}
+
+templ TMDBEpisodeCard(ds *scrape.TMDBTVEpisode) {
+	<div class="card">
+	<img src={posterURLGen(ds)} /><br>
+	{ds.Title()}<br>
+	@links(ds)
+	<i>{ds.Tagline()}</i><br>
+	{ds.Overview()}<br>
+	</div>
+}
+
+templ Card4Episode(ds *scrape.TMDBTVEpisode) {
+	@Card(TMDBEpisodeCard(ds))
+}
+
+templ Card4Movie(ds *scrape.TMDBMovie) {
+	@Card(TMDBMovieCard(ds))
+}
+
+templ Card4Item(ds *scrape.ItemData) {
+        @Card(ItemCard(ds))
+}
+
+templ Card4svtplay(ds *scrape.SvtplayItem) {
+        @Card(svtplayCard(ds))
+}
+
+
+templ Cards4Datasources(splits map[string][]datasource.DataSource) {
+	for _, key := range slices.Sorted(maps.Keys(splits)) {
+		<b>{key}</b><br>
+		<div class="row-content">
+		for _,ds := range splits[key] {
+			switch dsT := ds.(type) {
+			case *scrape.TMDBMovie:
+				@Card4Movie(dsT)
+			case *scrape.TMDBTVEpisode:
+				@Card4Episode(dsT)
+			case *scrape.SvtplayItem:
+				@Card4svtplay(dsT)
+			case *scrape.ItemData:
+				@Card4Item(dsT)
+			default:
+				{fmt.Sprintf("Unsupported datasource %T\n",dsT)}
+			}
+		}
+		</div>
+		<br>
+	}
+}
+	
