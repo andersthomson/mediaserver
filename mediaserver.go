@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/a-h/templ"
 	"github.com/andersthomson/mediaserver/datasource"
 	"github.com/andersthomson/mediaserver/scrape"
 	iso639_3 "github.com/barbashov/iso639-3"
@@ -150,6 +151,15 @@ func posterURL(ds datasource.DataSource) string {
 	} else {
 		return Config.WebRoot + "/item/" + url.PathEscape(ds.ID()) + "/part/" + url.PathEscape(p)
 	}
+}
+
+type posterURLGenI interface {
+	datasource.PosterURLPather
+	datasource.DataSource
+}
+
+func posterURLGen[T posterURLGenI](p T) string {
+	return Config.WebRoot + "/item/" + url.PathEscape(p.ID()) + "/part/" + url.PathEscape(p.PosterURLPath())
 }
 
 type dataSourceServer struct {
@@ -444,12 +454,44 @@ func main() {
 
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveTopIndex)))
 
+	mux.Handle(webRootURL.Path+"/search", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Extract the 'search' value from the POST request
+		searchTerm := strings.ToLower(r.FormValue("search"))
+
+		// Join all matching rows and send back as the response
+		all := allRepos.AllDataSources()
+		res := make([]datasource.DataSource, 0, len(all))
+		for _, ds := range all {
+			if strings.Contains(strings.ToLower(datasource.TitleOrZero(ds)), searchTerm) {
+				res = append(res, ds)
+			}
+		}
+		sortSources(res)
+		splits := SplitByGenre(res)
+		logger.InfoContext(r.Context(), "serving search", "SearchTerm", searchTerm, "num datasources", len(res))
+		templ.Handler(Cards4Datasources(splits)).ServeHTTP(w, r)
+	})))
+
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Started", "Listening at", listenaddr)
 	err = http.ListenAndServe(listenaddr, mux)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	}
+}
+
+func SplitByGenre(dss []datasource.DataSource) map[string][]datasource.DataSource {
+	res := map[string][]datasource.DataSource{}
+
+	for _, ds := range dss {
+		for _, genre := range datasource.GenresOrZero(ds) {
+			res[genre] = append(res[genre], ds)
+		}
+		if len(datasource.GenresOrZero(ds)) == 0 {
+			res["generic"] = append(res["generic"], ds)
+		}
+	}
+	return res
 }
 
 func serveItemCast(w http.ResponseWriter, r *http.Request) {
@@ -1198,11 +1240,52 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 						max-width:100%;
                 	                        height: auto;
 					}
+				
 				}
+				.row-content {
+				    display: flex;          /* Put cards in a single row */
+				        overflow-x: auto;       /* Enable horizontal scrolling */
+					    gap: 16px;              /* Space between cards */
+					        padding: 10px 0;        /* Space for shadows/borders */
+						    scrollbar-width: thin;  /* Optional: cleaner scrollbar for Firefox */
+						    }
+
+				.card {
+				    border: 1px solid #ccc;
+				        padding: 16px;
+				    border-radius: 8px;
+				        width: 250px;        /* Fixed width or use flex-basis */
+				    background: #f9f9f9;
+			   	 }
+				 .card-container {
+				     display: flex;     
+					      flex-direction: column; /* Stack rows vertically */
+					          gap: 40px;              /* Space between the "Trending", "Recommended" rows */
+						      padding: 20px;
+					     gap: 16px;           /* Space between the cards */
+					     }
+			.card img {
+			    max-width: 100%;  /* Shrink to fit the card's width */
+			        height: auto;     /* Maintain aspect ratio (don't stretch) */
+				    display: block;   /* Removes the tiny gap at the bottom of images */
+				        border-radius: 4px; /* Optional: matches the card style */
+					}
 			</style>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/1.9.12/htmx.min.js"></script>
 		</head>
 		<body>
 				<h1>Welcome {{.User}}</h1>
+					<input class="form-control" 
+					type="search" 
+					name="search" 
+					placeholder="Begin typing to search..." 
+					hx-post="/ms-beta/search" 
+					hx-trigger="input changed delay:500ms, search" 
+					hx-target="#searchresult">
+
+				<div id="searchresult" class="card-container">
+NADA
+				</div>
 				<form action="{{.FormActionURL}}">
 				<ul>
 				{{range $itm := .GroupedMovies.MovieListItems }}

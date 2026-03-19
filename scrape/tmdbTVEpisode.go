@@ -20,11 +20,11 @@ type TMDBTVEpisode struct {
 	id           string
 	showName     string
 	title        string
+	tagline      string
 	episodetitle string
 	posterFile   string
 	backdropFile string
-	plotFile     string
-	plot         string
+	overview     string
 	episode      int
 	season       int
 	tags         map[string][]string
@@ -32,6 +32,10 @@ type TMDBTVEpisode struct {
 
 func (i TMDBTVEpisode) Title() string {
 	return i.title
+}
+
+func (i TMDBTVEpisode) Tagline() string {
+	return i.tagline
 }
 
 func (i TMDBTVEpisode) ShowName() string {
@@ -53,19 +57,8 @@ func (i TMDBTVEpisode) Episode() int {
 func (i TMDBTVEpisode) Season() int {
 	return i.season
 }
-func (i TMDBTVEpisode) Plot() string {
-	if i.plot != "" {
-		return i.plot
-	}
-	if i.plotFile == "" {
-		return ""
-	}
-	buf, err := os.ReadFile(i.plotFile)
-	if err != nil {
-		slog.Warn("Plotfile gone from under me", "fname", i.plotFile, "err", err)
-		return ""
-	}
-	return string(buf)
+func (i TMDBTVEpisode) Overview() string {
+	return i.overview
 }
 
 func (_ TMDBTVEpisode) deriveID(fname string) string {
@@ -146,6 +139,7 @@ func scrapeAsTMDBTVEpisode(logger *slog.Logger, itm *TMDBTVEpisode, ffdata FFPro
 	}
 	//Given all the data, complete the itm record.
 	itm.showName = tvDetails.Name
+	itm.tagline = tvDetails.Tagline
 	itm.tags["TV Show"] = []string{itm.showName}
 	for _, lang := range iso639_1_Order {
 		if tvEpisodeDetails == nil {
@@ -155,12 +149,16 @@ func scrapeAsTMDBTVEpisode(logger *slog.Logger, itm *TMDBTVEpisode, ffdata FFPro
 			for _, translation := range tvEpisodeDetails.Translations.Translations {
 				//logger.Info("trans", translation.Iso639_1, "lang", lang)
 				if translation.Iso639_1 == lang {
-					if translation.Data.Overview != "" && itm.plot == "" {
-						itm.plot = translation.Data.Overview
-						//logger.Info("hit", itm.plot)
+					if translation.Data.Overview != "" && itm.overview == "" {
+						itm.overview = translation.Data.Overview
+						//logger.Info("hit", itm.overview)
 					}
 					if translation.Data.Name != "" && itm.title == "" {
 						itm.title = translation.Data.Name
+						//logger.Info("hit", itm.title)
+					}
+					if translation.Data.Tagline != "" && itm.tagline == "" {
+						itm.tagline = translation.Data.Tagline
 						//logger.Info("hit", itm.title)
 					}
 				}

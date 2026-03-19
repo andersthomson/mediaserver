@@ -19,6 +19,17 @@ func TitleOrZero(x any) string {
 	return ""
 }
 
+type Genreser interface {
+	Genres() []string
+}
+
+func GenresOrZero(x any) []string {
+	if xT, ok := x.(Genreser); ok {
+		return xT.Genres()
+	}
+	return []string{}
+}
+
 type Tagliner interface {
 	Tagline() string
 }

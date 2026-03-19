@@ -19,6 +19,7 @@ type TMDBMovie struct {
 	id       string
 	language string
 	title    string
+	genres   []string
 	tagline  string
 	overview string
 	tags     map[string][]string
@@ -50,6 +51,10 @@ func (i TMDBMovie) ID() string {
 
 func (_ TMDBMovie) deriveID(fname string) string {
 	return fname
+}
+
+func (i TMDBMovie) Genres() []string {
+	return i.genres
 }
 
 func (i TMDBMovie) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -101,8 +106,10 @@ func scrapeAsTMDBMovie(logger *slog.Logger, itm *TMDBMovie, ffdata FFProbeRoot) 
 	}
 	for _, genre := range movie.Genres {
 		itm.tags["genre"] = append(itm.tags["genre"], strings.TrimSpace(genre.Name))
+		itm.genres = append(itm.genres, strings.TrimSpace(genre.Name))
 	}
 	itm.tagline = movie.Tagline
+
 	if movie.BelongsToCollection.ID != 0 {
 		collection, err := TMDBCollectionDetails(int(movie.BelongsToCollection.ID))
 		if err != nil {
@@ -110,6 +117,29 @@ func scrapeAsTMDBMovie(logger *slog.Logger, itm *TMDBMovie, ffdata FFProbeRoot) 
 			return false
 		}
 		itm.tags["collection"] = []string{collection.Name}
+	}
+	for _, lang := range iso639_1_Order {
+		if movie.MovieTranslationsAppend != nil {
+			if movie.MovieTranslationsAppend.Translations != nil {
+				for _, translation := range movie.MovieTranslationsAppend.Translations.Translations {
+					//logger.Info("trans", translation.Iso639_1, "lang", lang)
+					if translation.Iso639_1 == lang {
+						if translation.Data.Overview != "" && itm.overview == "" {
+							itm.overview = translation.Data.Overview
+							//logger.Info("hit", itm.plot)
+						}
+						if translation.Data.Name != "" && itm.title == "" {
+							itm.title = translation.Data.Name
+							//logger.Info("hit", itm.title)
+						}
+						if translation.Data.Tagline != "" && itm.tagline == "" {
+							itm.tagline = translation.Data.Tagline
+							//logger.Info("hit", itm.tagline)
+						}
+					}
+				}
+			}
+		}
 	}
 	return true
 }

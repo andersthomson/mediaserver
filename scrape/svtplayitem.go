@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-type svtplayItem struct {
+type SvtplayItem struct {
 	MediaServer
 	PosterServer
 	SubsServer
@@ -28,34 +28,34 @@ type svtplayItem struct {
 	Tags_         map[string][]string
 }
 
-func (_ svtplayItem) deriveID(fname string) string {
+func (_ SvtplayItem) deriveID(fname string) string {
 	return fname
 }
 
-func (s svtplayItem) Title() string {
+func (s SvtplayItem) Title() string {
 	return s.Title_
 }
 
-func (s svtplayItem) Tags() map[string][]string {
+func (s SvtplayItem) Tags() map[string][]string {
 	return s.Tags_
 }
 
-func (s svtplayItem) EpisodeTitle() string {
+func (s SvtplayItem) EpisodeTitle() string {
 	return s.EpisodeTitle_
 }
 
-func (s svtplayItem) ID() string {
+func (s SvtplayItem) ID() string {
 	return s.ID_
 }
 
-func (s svtplayItem) Episode() int {
+func (s SvtplayItem) Episode() int {
 	return s.Episode_
 }
 
-func (s svtplayItem) Season() int {
+func (s SvtplayItem) Season() int {
 	return s.Season_
 }
-func (s svtplayItem) Plot() string {
+func (s SvtplayItem) Plot() string {
 	if s.PlotFile_ == "" {
 		if s.PlotString != "" {
 			return s.PlotString
@@ -69,7 +69,7 @@ func (s svtplayItem) Plot() string {
 	}
 	return string(buf)
 }
-func (s svtplayItem) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s SvtplayItem) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == s.MediaURLPath():
 		s.MediaServer.ServeHTTP(w, r, s.Logger)
@@ -92,24 +92,24 @@ func (r nopCloser) Close() error {
 	return nil
 }
 
-func (_ svtplayItem) derivePlot(dir, fname string) string {
+func (_ SvtplayItem) derivePlot(dir, fname string) string {
 	plotFname := filepath.Join(dir, strings.TrimSuffix(fname, ".mp4")+".plot.txt")
 	_, err := os.Stat(plotFname)
 	if err != nil {
-		//slog.Info("svtplayItem/derivePlot", "err", err)
+		//slog.Info("SvtplayItem/derivePlot", "err", err)
 		return ""
 	}
-	//slog.Info("svtplayItem/derivePlot", "file", err)
+	//slog.Info("SvtplayItem/derivePlot", "file", err)
 	return plotFname
 }
 
-func (_ svtplayItem) _dropDotsDashesAndTrimSpaces(s string) string {
+func (_ SvtplayItem) _dropDotsDashesAndTrimSpaces(s string) string {
 	res := strings.ReplaceAll(s, ".", " ")
 	res = strings.ReplaceAll(res, "-", " ")
 	res = strings.Trim(res, " ")
 	return res
 }
-func (s *svtplayItem) _split(fname string) {
+func (s *SvtplayItem) _split(fname string) {
 	parts := strings.Split(fname, "-")
 	basename := strings.Join(parts[:len(parts)-2], "-")
 	re := regexp.MustCompile("(.*)s([0-9][0-9])e([0-9][0-9])(.*)")
@@ -138,21 +138,21 @@ func (s *svtplayItem) _split(fname string) {
 	return
 }
 
-func (s *svtplayItem) AddSubs(basedir string, fname string) {
+func (s *SvtplayItem) AddSubs(basedir string, fname string) {
 	target := replaceSuffix(filepath.Join(basedir, fname), ".mp4", ".srt")
 	if fileExists(target) {
 		s.SubsServer.AddSubs(target, "sv")
 	}
 }
 
-func (_ svtplayItem) derivePoster(basedir string, fname string) string {
+func (_ SvtplayItem) derivePoster(basedir string, fname string) string {
 	target := replaceSuffix(filepath.Join(basedir, fname), ".mp4", ".tbn")
 	if !fileExists(target) {
 		return ""
 	}
 	return target
 }
-func (s *svtplayItem) ScrapeNfo(nfoFname string) {
+func (s *SvtplayItem) ScrapeNfo(nfoFname string) {
 	type nfoT struct {
 		ShowTitle string `xml:"showtitle"`
 		Title     string `xml:"title"`
@@ -179,7 +179,7 @@ func (s *svtplayItem) ScrapeNfo(nfoFname string) {
 	return
 }
 
-func (s *svtplayItem) Scrape(dir, fname string) {
+func (s *SvtplayItem) Scrape(dir, fname string) {
 	s.ID_ = s.deriveID(fname)
 	s.MediaFile = filepath.Join(dir, fname)
 	s.PosterFile = s.derivePoster(dir, fname)

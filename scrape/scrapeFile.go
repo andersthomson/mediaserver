@@ -17,7 +17,7 @@ func toScraper(dir string, fname string) scrapeer {
 		handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level}).WithAttrs(defaultAttrs)
 		logger := slog.New(handler)
 		if strings.HasSuffix(fname, "-svtplay.mp4") {
-			return &svtplayItem{
+			return &SvtplayItem{
 				Logger: logger,
 			}
 		}
