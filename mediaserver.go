@@ -383,7 +383,7 @@ func serveTopIndex(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err)
 	}
-	serveIndex(r.Context(), w, r, allRepos.AllDataSources(), webRootURL.Path+"/")
+	serveIndex(r.Context(), w, r, allRepos.AllDataSources(), webRootURL.Path+"/", webRootURL.Path+"/search")
 }
 
 func main() {
@@ -1100,7 +1100,7 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) *groupedMovies {
 	return res
 }
 
-func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss []datasource.DataSource, formActionURL string) {
+func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss []datasource.DataSource, formActionURL string, searchURL string) {
 	logger.InfoContext(ctx, "Serving idx", "url", r.URL.String())
 	//Find all tags
 	FilterTags := map[string]map[string]bool{}
@@ -1190,6 +1190,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 		FilterTags    map[string]map[string]bool
 		Objects       []object
 		FormActionURL string
+		SearchURL     string
 	}
 	data := dataT{
 		User:          ctx.Value(userCtxKey{}).(User).UserID(),
@@ -1197,6 +1198,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 		FilterTags:    FilterTags,
 		Objects:       o,
 		FormActionURL: formActionURL,
+		SearchURL:     searchURL,
 	}
 	htmltempl := `<!DOCTYPE html>
 	<html lang="en" dir="ltr">
@@ -1279,7 +1281,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 					type="search" 
 					name="search" 
 					placeholder="Begin typing to search..." 
-					hx-post="/ms-beta/search" 
+					hx-post="{{.SearchURL}}"
 					hx-trigger="input changed delay:500ms, search" 
 					hx-target="#searchresult">
 
