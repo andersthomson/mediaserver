@@ -35,7 +35,7 @@ func (d *faNotifyDirectoryRepo) AllDataSources() []datasource.DataSource {
 	r = slices.Collect(maps.Values(d.ds))
 	d.dsLck.Unlock()
 	if r == nil {
-		return []datasource.DataSource{}
+		return nil
 	}
 	return r
 }
@@ -198,10 +198,11 @@ func (f *faNotifyDirectoryRepo) Refresh() {
 				if IsMP4File(fname) {
 					go func(fname string) {
 						//spew.Dump(fname)
-						ds := scrape.ScrapeFile(logger, f.dir, fname)
-						f.dsLck.Lock()
-						f.ds[fname] = ds
-						f.dsLck.Unlock()
+						if ds := scrape.ScrapeFile(logger, f.dir, fname); ds != nil {
+							f.dsLck.Lock()
+							f.ds[fname] = ds
+							f.dsLck.Unlock()
+						}
 					}(fname)
 
 				}

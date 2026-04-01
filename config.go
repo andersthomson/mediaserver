@@ -33,6 +33,7 @@ type config struct {
 	IP_Address    string
 	Tmdb          Tmdb
 	Directories   []Directory
+	Caches        []string
 	GoogleOAuth   GoogleOAuth
 	InternalIDP   []InternalIDPAccount
 	IDProviders   []string

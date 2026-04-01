@@ -66,6 +66,13 @@ func ScanDir(dir string) []datasource.DataSource {
 			if itm := scrape.ScrapeFile(logger, dir, d.Name()); itm != nil {
 				res = append(res, itm)
 			}
+			continue
+		}
+		if strings.HasSuffix(d.Name(), ".generate") {
+			if itm := scrape.DataSourceFromGenerate(logger, Config.Caches, dir, d.Name()); itm != nil {
+				res = append(res, itm)
+			}
+			continue
 		}
 	}
 	return res
@@ -82,6 +89,7 @@ type allReposT struct {
 func (a *allReposT) Add(r repo) {
 	a.reposMu.Lock()
 	a.repos = append(a.repos, r)
+	logger.Info("allrepos now", "var", a.repos)
 	a.reposMu.Unlock()
 }
 
@@ -90,6 +98,7 @@ func (a *allReposT) Delete(r repo) {
 	slices.DeleteFunc(a.repos, func(x repo) bool {
 		return x == r
 	})
+	logger.Info("post delete", "var", a.repos)
 	a.reposMu.Unlock()
 }
 
@@ -98,9 +107,14 @@ func (a allReposT) AllDataSources() []datasource.DataSource {
 	a.reposMu.Lock()
 	for _, r := range a.repos {
 		if r != nil {
-			res = append(res, r.AllDataSources()...)
+			logger.Warn("pulling", "xxx", r.AllDataSources())
+			//spew.Dump(r.AllDataSources())
+			if srcs := r.AllDataSources(); len(srcs) > 0 {
+				res = append(res, srcs...)
+			}
 		}
 	}
+	logger.Info("all to be returned", "var", res)
 	a.reposMu.Unlock()
 	return res
 }
@@ -129,6 +143,14 @@ func mediaURL(ds datasource.DataSource) string {
 	}
 }
 
+func dashURL(ds datasource.DataSource) string {
+	if p := datasource.DashURLPathOrZero(ds); p == "" {
+		return ""
+	} else {
+		return Config.WebRoot + "/item/" + url.PathEscape(ds.ID()) + "/part/" + p
+	}
+}
+
 func castURL(ds datasource.DataSource) string {
 	return Config.WebRoot + "/view/cast/" + url.PathEscape(ds.ID())
 }
@@ -137,6 +159,9 @@ func html5URL(ds datasource.DataSource) string {
 	return Config.WebRoot + "/view/html5/" + url.PathEscape(ds.ID())
 }
 
+func shakaURL(ds datasource.DataSource) string {
+	return Config.WebRoot + "/view/shaka/" + url.PathEscape(ds.ID())
+}
 func backdropURL(ds datasource.DataSource) string {
 	if p := datasource.BackdropURLPathOrZero(ds); p == "" {
 		return ""
@@ -174,13 +199,17 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.WarnContext(ctx, "datasource unknown", "id", itm)
 		return
 	}
-
-	r2 := new(http.Request)
-	*r2 = *r
-	r2.URL = new(url.URL)
-	*r2.URL = *r.URL
-	r2.URL.Path = r.PathValue("subPath")
-	ds.(http.Handler).ServeHTTP(w, r2)
+	/*
+		r2 := new(http.Request)
+		*r2 = *r
+		r2.URL = new(url.URL)
+		*r2.URL = *r.URL
+		r2.URL.Path = r.PathValue("subPath")
+	*/
+	r.URL.Path = "/" + r.PathValue("subPath")
+	r.URL.RawPath = ""
+	hdlr := ds.(http.Handler)
+	hdlr.ServeHTTP(w, r)
 	return
 }
 
@@ -351,7 +380,7 @@ func CORS(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		//w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
 
 		// Handle preflight request quickly
 		if r.Method == http.MethodOptions {
@@ -424,18 +453,19 @@ func main() {
 	}()
 
 	for _, d := range Config.Directories {
-		if d.Method == "faNotify" {
+		/*if d.Method == "faNotify" {
 			dr := NewFaNotifyDirectoryRepo(d.Name, d.Recursive)
 			dr.Refresh()
 			allRepos.Add(dr)
 
 		} else {
-			if d.Recursive {
-				recurseDir(d.Name)
-			} else {
-				addDir(d.Name)
-			}
+		*/
+		if d.Recursive {
+			recurseDir(d.Name)
+		} else {
+			addDir(d.Name)
 		}
+		//}
 	}
 	mux := http.NewServeMux()
 
@@ -449,6 +479,7 @@ func main() {
 
 	mux.Handle(webRootURL.Path+"/view/cast/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemCast)))
 	mux.Handle(webRootURL.Path+"/view/html5/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemHtml5)))
+	mux.Handle(webRootURL.Path+"/view/shaka/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemShaka)))
 
 	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{}))
 
@@ -889,17 +920,17 @@ func serveItemHtml5(w http.ResponseWriter, r *http.Request) {
                 <body>
     <video id="video" controls>
         <source src="{{.MediaURL}}" type="video/mp4">
-	{{ range .SubsURLs }}
-        	<track src="{{.URL}}" kind="subtitles" srclang="{{.Language}}" label="{{.Language}}">
-	{{ end }}
+        {{ range .SubsURLs }}
+                <track src="{{.URL}}" kind="subtitles" srclang="{{.Language}}" label="{{.Language}}">
+        {{ end }}
         Your browser does not support the video tag.
     </video>
     <p>
 {{ if .SeasonEpisode }}
-	{{.SeasonEpisode }}<br>
+        {{.SeasonEpisode }}<br>
 {{ end }}
 {{ if .Overview }}
-	Overview: {{ .Overview}}<br>
+        Overview: {{ .Overview}}<br>
 {{ end }}
 {{ if .Plot }}
     Plot {{.Plot}}<br>
@@ -907,6 +938,99 @@ func serveItemHtml5(w http.ResponseWriter, r *http.Request) {
     </body>
     </html>
 `
+	templ := template.Must(template.New("foo").Parse(htmltempl))
+	if err := templ.Execute(w, data); err != nil {
+		logger.WarnContext(ctx, "Template error", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func serveItemShaka(w http.ResponseWriter, r *http.Request) {
+	type dataT struct {
+		DashURL       string
+		MediaURL      string
+		SubsURLs      []datasource.Subs
+		Title         string
+		SeasonEpisode string
+		Plot          string
+		Overview      string
+	}
+
+	ctx := r.Context()
+	itm := r.PathValue("item")
+	ds := allRepos.DataSourceByID(itm)
+	if ds == nil {
+		errorHandler(ctx, w, r, http.StatusNotFound)
+		logger.WarnContext(ctx, "datasource unknown", "id", itm)
+		return
+	}
+
+	data := dataT{}
+	data.MediaURL = mediaURL(ds)
+	data.DashURL = dashURL(ds)
+	data.SubsURLs = datasource.SubsSliceOrZero(ds)
+	data.SeasonEpisode = seasonEpisode(ds)
+	data.Overview = datasource.OverviewOrZero(ds)
+	data.Title = datasource.TitleOrZero(ds)
+	data.Plot = datasource.PlotOrZero(ds)
+
+	htmltempl := `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Minimal Shaka Cast/CC</title>
+  <!-- Full URL Paths for UI and Engine -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.0/controls.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.0/shaka-player.ui.min.js"></script>
+  <script defer src="https://gstatic.com/cv/js/sender/v1/cast_sender.js"></script>
+  <style>
+    body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    .video-container { width: 800px; }
+  </style>
+</head>
+<body>
+
+  <!-- Container with Shaka Demo Receiver ID -->
+  <div class="video-container" 
+       data-shaka-player-container 
+       data-shaka-player-cast-receiver-id="07AEE832">
+    <video data-shaka-player id="video" style="width:100%; height:100%"></video>
+  </div>
+
+<script>
+  const manifestUri = '{{.DashURL}}';
+  //const captionUri = 'https://googleapis.com/shaka-demo-assets/angel-one/subs_en.vtt';
+
+  async function initPlayer() {
+    shaka.polyfill.installAll();
+
+    const video = document.getElementById('video');
+    const ui = video['ui'];
+    const player = ui.getControls().getPlayer();
+
+    // Configure UI for Cast and CC visibility
+    ui.configure({
+      'controlPanelElements': ['play_pause', 'time_and_duration', 'spacer', 'captions', 'cast', 'fullscreen']
+    });
+
+    try {
+      await player.load(manifestUri);
+      // Explicitly add a CC track for the UI menu to pick up
+     // await player.addTextTrackAsync(captionUri, 'en', 'captions', 'text/vtt');
+    } catch (e) {
+      console.error('Error loading:', e);
+    }
+  }
+
+  // Initialized via Shaka UI event
+  document.addEventListener('shaka-ui-loaded', initPlayer);
+</script>
+
+</body>
+</html>
+`
+
 	templ := template.Must(template.New("foo").Parse(htmltempl))
 	if err := templ.Execute(w, data); err != nil {
 		logger.WarnContext(ctx, "Template error", "err", err)
@@ -1134,6 +1258,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 	}
 	type object struct {
 		Html5URL      string
+		ShakaURL      string
 		CastURL       string
 		MediaURL      string
 		PosterURL     string
@@ -1156,6 +1281,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 		if hasSetTag(ds, FilterTags) {
 			dsObject := object{
 				Html5URL:      html5URL(ds),
+				ShakaURL:      shakaURL(ds),
 				CastURL:       castURL(ds),
 				MediaURL:      mediaURL(ds),
 				PosterURL:     posterURL(ds),
@@ -1382,6 +1508,7 @@ NADA
 						<div id="navigation">
 						<a href="{{.MediaURL}}">&lt;Download&gt;</a>
 						<a href="{{ .Html5URL}}">&lt;Play in browser&gt;</a>
+						<a href="{{ .ShakaURL}}">&lt;Play in Shaka&gt;</a>
 						<a href="{{ .CastURL}}">&lt;Play on ChromeCast&gt;</a><br> 
 						</div>
 						</div>
