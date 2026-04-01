@@ -31,7 +31,8 @@ func (d *directoryRepo) AllDataSources() []datasource.DataSource {
 	r = d.ds
 	d.dsLck.Unlock()
 	if r == nil {
-		return []datasource.DataSource{}
+		return nil
 	}
+	logger.Warn("returning", "dir", d.dir, "res", r)
 	return r
 }

@@ -33,13 +33,6 @@ func ScrapeFile(logger *slog.Logger, dir string, fname string) datasource.DataSo
 		panic(13)
 	}
 
-	/*
-		defaultAttrs := []slog.Attr{}
-		level := &slog.LevelVar{}
-		level.Set(slog.LevelInfo)
-		handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level}).WithAttrs(defaultAttrs)
-		logger := slog.New(handler)
-	*/
 	if res, ok := NewTMDBMovie(logger, dir, fname, ffdata); ok {
 		return res
 	}
