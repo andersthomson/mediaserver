@@ -2,7 +2,6 @@ package scrape
 
 import (
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -11,32 +10,25 @@ import (
 
 func toScraper(dir string, fname string) scrapeer {
 	if strings.HasSuffix(fname, ".mp4") {
-		defaultAttrs := []slog.Attr{}
-		level := &slog.LevelVar{}
-		level.Set(slog.LevelInfo)
-		handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level}).WithAttrs(defaultAttrs)
-		logger := slog.New(handler)
 		if strings.HasSuffix(fname, "-svtplay.mp4") {
-			return &SvtplayItem{
-				Logger: logger,
-			}
+			return &SvtplayItem{}
 		}
-		return NewItem(logger)
+		return NewItem()
 	}
 	return nil
 }
 
-func ScrapeFile(logger *slog.Logger, dir string, fname string) datasource.DataSource {
+func ScrapeFile(dir string, fname string) datasource.DataSource {
 	ffdata, err := FFProbe(filepath.Join(dir, fname))
 	if err != nil {
 		slog.Error("FFProbe", fname, filepath.Join(dir, fname), "error", err)
 		panic(13)
 	}
 
-	if res, ok := NewTMDBMovie(logger, dir, fname, ffdata); ok {
+	if res, ok := NewTMDBMovie(dir, fname, ffdata); ok {
 		return res
 	}
-	if res, ok := NewTMDBTVEpisode(logger, dir, fname, ffdata); ok {
+	if res, ok := NewTMDBTVEpisode(dir, fname, ffdata); ok {
 		return res
 	}
 	itm := toScraper(dir, fname)

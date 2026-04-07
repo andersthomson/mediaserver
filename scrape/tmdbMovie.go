@@ -1,7 +1,6 @@
 package scrape
 
 import (
-	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -17,7 +16,6 @@ type TMDBMovie struct {
 	SubsServer
 	PosterServer
 	BackdropServer
-	logger   *slog.Logger
 	id       string
 	uuid     string
 	language string
@@ -68,42 +66,42 @@ func (i TMDBMovie) Genres() []string {
 }
 
 func (i TMDBMovie) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	i.logger.Info("tmdbmovie serving", "Url", r.URL.String())
+	Logger.Info("tmdbmovie serving", "Url", r.URL.String())
 	w.Header().Add("Cache-Control", "no-cache, private, max-age=0")
 	switch {
 	case r.URL.Path == "/"+i.MediaURLPath():
-		i.MediaServer.ServeHTTP(w, r, i.logger)
+		i.MediaServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), "/dash/"):
-		i.DashServer.ServeHTTP(w, r, i.logger)
+		i.DashServer.ServeHTTP(w, r)
 	case r.URL.Path == i.PosterURLPath():
-		i.PosterServer.ServeHTTP(w, r, i.logger)
+		i.PosterServer.ServeHTTP(w, r)
 	case r.URL.Path == i.BackdropURLPath():
-		i.BackdropServer.ServeHTTP(w, r, i.logger)
+		i.BackdropServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
-		i.SubsServer.ServeHTTP(w, r, i.logger)
+		i.SubsServer.ServeHTTP(w, r)
 	default:
-		i.logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
+		Logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
 		w.WriteHeader(404)
 		return
 	}
 }
 
-func getTMDBMovieIdFromFFdata(logger *slog.Logger, ffdata FFProbeRoot) (int, bool) {
+func getTMDBMovieIdFromFFdata(ffdata FFProbeRoot) (int, bool) {
 	if ffdata.Format.Tags.TmdbMovie == "" {
 		return 0, false
 	}
 	id, err := strconv.Atoi(ffdata.Format.Tags.TmdbMovie)
 	if err != nil {
-		logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.TmdbMovie", ffdata.Format.Tags.TmdbMovie, "err", err)
+		Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.TmdbMovie", ffdata.Format.Tags.TmdbMovie, "err", err)
 		return 0, false
 
 	}
 	return id, true
 }
-func extractTMDBMovieData(logger *slog.Logger, itm *TMDBMovie, tmdbId int) bool {
+func extractTMDBMovieData(itm *TMDBMovie, tmdbId int) bool {
 	movie, err := TMDBMovieDetails(tmdbId)
 	if err != nil {
-		logger.Warn("TMDBTVMovie failed. Skipping", "err", err)
+		Logger.Warn("TMDBTVMovie failed. Skipping", "err", err)
 		return false
 	}
 	//Given all the data, complete the itm record.
@@ -118,7 +116,7 @@ func extractTMDBMovieData(logger *slog.Logger, itm *TMDBMovie, tmdbId int) bool 
 			itm.BackdropFile = fname
 		}
 	} else {
-		logger.Warn("Has no backdrop image", "id", tmdbId, "title", movie.Title)
+		Logger.Warn("Has no backdrop image", "id", tmdbId, "title", movie.Title)
 	}
 	for _, genre := range movie.Genres {
 		itm.tags["genre"] = append(itm.tags["genre"], strings.TrimSpace(genre.Name))
@@ -129,7 +127,7 @@ func extractTMDBMovieData(logger *slog.Logger, itm *TMDBMovie, tmdbId int) bool 
 	if movie.BelongsToCollection.ID != 0 {
 		collection, err := TMDBCollectionDetails(int(movie.BelongsToCollection.ID))
 		if err != nil {
-			logger.Warn("TMDBTVMovie failed to fetch collection data. Skipping", "err", err)
+			Logger.Warn("TMDBTVMovie failed to fetch collection data. Skipping", "err", err)
 			return false
 		}
 		itm.tags["collection"] = []string{collection.Name}
@@ -159,20 +157,16 @@ func extractTMDBMovieData(logger *slog.Logger, itm *TMDBMovie, tmdbId int) bool 
 	}
 	return true
 }
-func NewTMDBMovie(logger *slog.Logger, dir string, fname string, ffdata FFProbeRoot) (*TMDBMovie, bool) {
+func NewTMDBMovie(dir string, fname string, ffdata FFProbeRoot) (*TMDBMovie, bool) {
 	res := &TMDBMovie{
-		logger: logger,
-		tags:   make(map[string][]string, 4),
+		tags: make(map[string][]string, 4),
 	}
-	logger = res.logger.With(
-		slog.String("scraper", "TMDBMovie"),
-		slog.String("file", filepath.Join(dir, fname)))
 
-	id, ok := getTMDBMovieIdFromFFdata(logger, ffdata)
+	id, ok := getTMDBMovieIdFromFFdata(ffdata)
 	if !ok {
 		return nil, false
 	}
-	if !extractTMDBMovieData(logger, res, id) {
+	if !extractTMDBMovieData(res, id) {
 		return nil, false
 	}
 	res.id = res.deriveID(fname)
@@ -201,24 +195,40 @@ func basename(orig string) string {
 	return orig
 }
 
-func TMDBMovieFromGenerate(logger *slog.Logger, caches []string, g map[string]string, dir string) (*TMDBMovie, bool) {
+func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 	res := &TMDBMovie{
-		logger: logger,
-		tags:   make(map[string][]string, 4),
+		tags: make(map[string][]string, 4),
 	}
-	logger = res.logger.With(
-		slog.String("scraper", "TMDBMovie"),
-		slog.String("dir", dir),
-		slog.String("INPUT", g["INPUT"]))
 
+	if !extractTMDBMovieData(res, *m.Tmdb.MovieId) {
+		return nil, false
+	}
+	res.uuid = m.Id
+	res.id = m.Input.Input
+	res.MpdFile = caches[0] + "/" + res.ID() + "/dash/" + "manifest.mpd"
+	res.SubsServer.AddSubsFromMP4Filename(caches[0]+"/"+res.ID()+"/mp4/", basename(m.Input.Input+".mp4"))
+
+	res.language = m.Audio.Language
+	res.tags["dir"] = append(res.tags["dir"], filepath.Base(dir))
+	res.tags["fulldir"] = append(res.tags["fulldir"], (dir))
+	res.tags["scraper"] = append(res.tags["scraper"], "TMDBMovie")
+	spew.Dump(res)
+	return res, true
+
+}
+
+func TMDBMovieFromGenerate(caches []string, g map[string]string, dir string) (*TMDBMovie, bool) {
+	res := &TMDBMovie{
+		tags: make(map[string][]string, 4),
+	}
 	id, err := strconv.Atoi(g["TMDBMOVIE"])
 	if err != nil {
-		logger.Warn("Unexpected TMDBMOVIE in .generate file. Skipping", "err", err)
+		Logger.Warn("Unexpected TMDBMOVIE in .generate file. Skipping", "err", err)
 		return nil, false
 
 	}
 
-	if !extractTMDBMovieData(logger, res, id) {
+	if !extractTMDBMovieData(res, id) {
 		return nil, false
 	}
 	res.uuid = g["INPUTID"]
@@ -226,7 +236,7 @@ func TMDBMovieFromGenerate(logger *slog.Logger, caches []string, g map[string]st
 
 	methods, ok := g["methods"]
 	if !ok {
-		logger.Warn("no serving method(s) defined. Skipping", "dir", dir, "input", g["INPUT"])
+		Logger.Warn("no serving method(s) defined. Skipping", "dir", dir, "input", g["INPUT"])
 		return nil, false
 	}
 	for _, method := range strings.Split(methods, ",") {
@@ -236,7 +246,7 @@ func TMDBMovieFromGenerate(logger *slog.Logger, caches []string, g map[string]st
 		case "dash":
 			res.MpdFile = caches[0] + "/" + res.ID() + "/dash/" + "manifest.mpd"
 		default:
-			logger.Warn("unsupported serving method. Skipping", "dir", dir, "input", g["INPUT"], "method", method)
+			Logger.Warn("unsupported serving method. Skipping", "dir", dir, "input", g["INPUT"], "method", method)
 			return nil, false
 		}
 	}
@@ -246,7 +256,7 @@ func TMDBMovieFromGenerate(logger *slog.Logger, caches []string, g map[string]st
 	res.tags["dir"] = append(res.tags["dir"], filepath.Base(dir))
 	res.tags["fulldir"] = append(res.tags["fulldir"], (dir))
 	res.tags["scraper"] = append(res.tags["scraper"], "TMDBMovie")
-	spew.Dump(res)
+	//spew.Dump(res)
 	return res, true
 
 }

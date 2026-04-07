@@ -1,12 +1,11 @@
 package scrape
 
 import (
-	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/davecgh/go-spew/spew"
+	"time"
 )
 
 type MediaServer struct {
@@ -20,28 +19,14 @@ func (m MediaServer) MediaURLPath() string {
 	return ""
 }
 
-func (m MediaServer) ServeHTTP(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
-	/*
-		content, err := os.Open(m.MediaFile)
-		if err != nil {
-			logger.ErrorContext(r.Context(), "read of media", "failed", err)
-			w.WriteHeader(404)
-			return
-		}
-		http.ServeContent(w, r, "foo.mp4", time.Time{}, content)
-	*/
-	/*
-		ctx := r.Context()
-		itm := r.PathValue("item")
-		ds := allRepos.DataSourceByID(itm)
-		if ds == nil {
-			errorHandler(ctx, w, r, http.StatusNotFound)
-			logger.WarnContext(ctx, "datasource unknown", "id", itm)
-			return
-		}*/
-	spew.Dump(r)
-	//hdlr := http.StripPrefix("/", http.FileServer(http.Dir(filepath.Dir(m.MediaFile))))
-
+func (m MediaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	content, err := os.Open(m.MediaFile)
+	if err != nil {
+		Logger.ErrorContext(r.Context(), "read of media", "failed", err)
+		w.WriteHeader(404)
+		return
+	}
+	http.ServeContent(w, r, "foo.mp4", time.Time{}, content)
 }
 
 type DashServer struct {
@@ -54,11 +39,11 @@ func (d DashServer) DashURLPath() string {
 	}
 	return ""
 }
-func (d DashServer) ServeHTTP(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
+func (d DashServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//We expect r.URL.Path to host e.g. "/dash/manifest.mpd"
 	splits := strings.SplitN(r.URL.Path, "/", 3)
 	r.URL.Path = splits[2]
-	logger.Info("Serving  dash", "splits", splits, "got 2", r.URL.Path, "file location", d.MpdFile)
+	Logger.Info("Serving  dash", "splits", splits, "got 2", r.URL.Path, "file location", d.MpdFile)
 	hdlr := http.FileServer(http.Dir(filepath.Dir(d.MpdFile)))
 	hdlr.ServeHTTP(w, r)
 }

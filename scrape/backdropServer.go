@@ -1,7 +1,6 @@
 package scrape
 
 import (
-	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -18,10 +17,10 @@ func (b BackdropServer) BackdropURLPath() string {
 	return ""
 }
 
-func (b BackdropServer) ServeHTTP(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
+func (b BackdropServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	content, err := os.Open(b.BackdropFile)
 	if err != nil {
-		logger.ErrorContext(r.Context(), "read of backdrop", "failed", err)
+		Logger.ErrorContext(r.Context(), "read of backdrop", "failed", err)
 		w.WriteHeader(404)
 		return
 	}

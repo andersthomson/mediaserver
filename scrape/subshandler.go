@@ -67,14 +67,14 @@ func (_ SubsServer) SubsURLPath() string {
 	return "subs/"
 }
 
-func (s *SubsServer) ServeHTTP(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
-	logger.Info("SubsServer got", "urlfrag", r.URL.String())
+func (s *SubsServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	Logger.Info("SubsServer got", "urlfrag", r.URL.String())
 	idx := slices.IndexFunc(s.Subs, func(x langURL) bool {
 		return s.urlPathFrag(x.Language, x.SubsFile) == r.URL.String()
 	})
 	if idx == -1 {
 		w.WriteHeader(http.StatusNotFound)
-		logger.Error("SubsServer unknown URLPath", "URLPath", r.URL.String())
+		Logger.Error("SubsServer unknown URLPath", "URLPath", r.URL.String())
 		return
 	}
 	if strings.HasSuffix(s.Subs[idx].SubsFile, ".srt") {
@@ -86,7 +86,7 @@ func (s *SubsServer) ServeHTTP(w http.ResponseWriter, r *http.Request, logger *s
 
 		if err := ffmpegCmd.Start(); err != nil {
 			slog.Info("svtplayItem/ffmpeg start", "err", err)
-			logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
+			Logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
 			w.WriteHeader(500)
 			return
 		}
@@ -109,18 +109,18 @@ func (s *SubsServer) ServeHTTP(w http.ResponseWriter, r *http.Request, logger *s
 		}()
 		stdwg.Wait()
 		if errerr != nil {
-			logger.Error("svtplayItem/ffmpeg", "errerr", errerr)
+			Logger.Error("svtplayItem/ffmpeg", "errerr", errerr)
 			w.WriteHeader(500)
 			return
 		}
 		if len(errbuf) != 0 {
-			logger.Error("svtplayItem/OpenSubs/ffmpeg stderr", "stderr", string(errbuf))
+			Logger.Error("svtplayItem/OpenSubs/ffmpeg stderr", "stderr", string(errbuf))
 			w.WriteHeader(500)
 			return
 		}
 
 		if outerr != nil {
-			logger.Error("svtplayItem/OpenSubs/ffmpeg stdout", "err", outerr)
+			Logger.Error("svtplayItem/OpenSubs/ffmpeg stdout", "err", outerr)
 			w.WriteHeader(500)
 			return
 		}
@@ -134,7 +134,7 @@ func (s *SubsServer) ServeHTTP(w http.ResponseWriter, r *http.Request, logger *s
 	content, err := os.Open(s.Subs[idx].SubsFile)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		logger.Error("SubsServer os.Open failed", "name", s.Subs[idx].SubsFile, "error", err.Error())
+		Logger.Error("SubsServer os.Open failed", "name", s.Subs[idx].SubsFile, "error", err.Error())
 	}
 	http.ServeContent(w, r, "foo.vtt", time.Time{}, content)
 }

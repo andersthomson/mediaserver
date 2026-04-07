@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -53,14 +52,14 @@ func readGenerateFromFile(path string) (map[string]string, error) {
 	return res, nil
 }
 
-func DataSourceFromGenerate(logger *slog.Logger, caches []string, dir string, fname string) datasource.DataSource {
+func DataSourceFromGenerate(caches []string, dir string, fname string) datasource.DataSource {
 	g, err := readGenerateFromFile(dir + "/" + fname)
 	if err != nil {
 		return nil
 	}
 	if _, ok := g["TMDBMOVIE"]; ok {
 		//spew.Dump(g)
-		if d, ok := TMDBMovieFromGenerate(logger, caches, g, dir); ok {
+		if d, ok := TMDBMovieFromGenerate(caches, g, dir); ok {
 			return d
 		}
 	}

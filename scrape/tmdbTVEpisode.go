@@ -1,7 +1,6 @@
 package scrape
 
 import (
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,7 +15,6 @@ type TMDBTVEpisode struct {
 	PosterServer
 	BackdropServer
 	SubsServer
-	logger       *slog.Logger
 	id           string
 	showName     string
 	title        string
@@ -77,18 +75,18 @@ func (_ TMDBTVEpisode) derivePlot(fname string, dir string) string {
 }
 
 func (i TMDBTVEpisode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	i.logger.Info("tmdbtvepisode serving", "Url", r.URL.String())
+	Logger.Info("tmdbtvepisode serving", "Url", r.URL.String())
 	switch {
 	case r.URL.Path == i.MediaURLPath():
-		i.MediaServer.ServeHTTP(w, r, i.logger)
+		i.MediaServer.ServeHTTP(w, r)
 	case r.URL.Path == i.PosterURLPath():
-		i.PosterServer.ServeHTTP(w, r, i.logger)
+		i.PosterServer.ServeHTTP(w, r)
 	case r.URL.Path == i.BackdropURLPath():
-		i.BackdropServer.ServeHTTP(w, r, i.logger)
+		i.BackdropServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
-		i.SubsServer.ServeHTTP(w, r, i.logger)
+		i.SubsServer.ServeHTTP(w, r)
 	default:
-		i.logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
+		Logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
 		w.WriteHeader(404)
 		return
 	}
@@ -103,38 +101,38 @@ func getFirstString(strings ...*string) *string {
 	return nil
 }
 
-func scrapeAsTMDBTVEpisode(logger *slog.Logger, itm *TMDBTVEpisode, ffdata FFProbeRoot) bool {
+func scrapeAsTMDBTVEpisode(itm *TMDBTVEpisode, ffdata FFProbeRoot) bool {
 	if ffdata.Format.Tags.TmdbSeries == "" {
 		return false
 	}
 	id, err := strconv.Atoi(ffdata.Format.Tags.TmdbSeries)
 	if err != nil {
-		logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.TmdbSeries", ffdata.Format.Tags.TmdbSeries)
+		Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.TmdbSeries", ffdata.Format.Tags.TmdbSeries)
 		return false
 	}
 	episode, err := strconv.Atoi(ffdata.Format.Tags.Episode_id)
 	if err != nil {
-		logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.Episode_id", ffdata.Format.Tags.Episode_id)
+		Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.Episode_id", ffdata.Format.Tags.Episode_id)
 		return false
 	}
 	season, err := strconv.Atoi(ffdata.Format.Tags.Season)
 	if err != nil {
-		logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.Season", ffdata.Format.Tags.Season)
+		Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.Season", ffdata.Format.Tags.Season)
 		return false
 	}
 	tvEpisodeDetails, err := TMDBTVEpisodeDetails(id, season, episode)
 	if err != nil {
-		logger.Warn("TMDBTVEpisodeDetails failed. Skipping", "err", err)
+		Logger.Warn("TMDBTVEpisodeDetails failed. Skipping", "err", err)
 		return false
 	}
 	tvSeasonDetails, err := TMDBTVSeasonDetails(id, season)
 	if err != nil {
-		logger.Warn("TMDBTVSeasonDetails failed. Skipping", "err", err)
+		Logger.Warn("TMDBTVSeasonDetails failed. Skipping", "err", err)
 		return false
 	}
 	tvDetails, err := TMDBTVDetails(id)
 	if err != nil {
-		logger.Warn("TMDBTVDetails failed. Skipping", "err", err)
+		Logger.Warn("TMDBTVDetails failed. Skipping", "err", err)
 		return false
 	}
 	//Given all the data, complete the itm record.
@@ -184,16 +182,12 @@ func scrapeAsTMDBTVEpisode(logger *slog.Logger, itm *TMDBTVEpisode, ffdata FFPro
 	return true
 }
 
-func NewTMDBTVEpisode(logger *slog.Logger, dir string, fname string, ffdata FFProbeRoot) (*TMDBTVEpisode, bool) {
+func NewTMDBTVEpisode(dir string, fname string, ffdata FFProbeRoot) (*TMDBTVEpisode, bool) {
 	res := &TMDBTVEpisode{
-		logger: logger,
-		tags:   make(map[string][]string, 4),
+		tags: make(map[string][]string, 4),
 	}
 
-	logger = res.logger.With(
-		slog.String("scraper", "TVMDBTVEpisode"),
-		slog.String("file", filepath.Join(dir, fname)))
-	if !scrapeAsTMDBTVEpisode(logger, res, ffdata) {
+	if !scrapeAsTMDBTVEpisode(res, ffdata) {
 		return nil, false
 	}
 	res.id = res.deriveID(fname)
@@ -205,12 +199,12 @@ func NewTMDBTVEpisode(logger *slog.Logger, dir string, fname string, ffdata FFPr
 	target := filepath.Join(dir, basename+"-poster.jpg")
 	if fileExists(target) {
 		res.PosterFile = target
-		logger.Info("", "source", "filename", "posterfile", res.PosterFile)
+		Logger.Info("", "source", "filename", "posterfile", res.PosterFile)
 	}
 
 	if ffdata.Format.Tags.Grouping != "" {
 		res.tags["grouping"] = append(res.tags["grouping"], strings.TrimSpace(ffdata.Format.Tags.Grouping))
-		logger.Info("", "source", "mp4 Format.Tags.Grouping", "grouping", ffdata.Format.Tags.Grouping)
+		Logger.Info("", "source", "mp4 Format.Tags.Grouping", "grouping", ffdata.Format.Tags.Grouping)
 	}
 	res.tags["dir"] = append(res.tags["dir"], filepath.Base(dir))
 	res.tags["fulldir"] = append(res.tags["fulldir"], (dir))

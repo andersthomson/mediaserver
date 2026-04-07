@@ -1,7 +1,6 @@
 package scrape
 
 import (
-	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -18,10 +17,10 @@ func (p PosterServer) PosterURLPath() string {
 	return ""
 }
 
-func (p PosterServer) ServeHTTP(w http.ResponseWriter, r *http.Request, logger *slog.Logger) {
+func (p PosterServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	content, err := os.Open(p.PosterFile)
 	if err != nil {
-		logger.ErrorContext(r.Context(), "read of poster", "failed", err)
+		Logger.ErrorContext(r.Context(), "read of poster", "failed", err)
 		w.WriteHeader(404)
 		return
 	}

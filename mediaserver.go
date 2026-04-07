@@ -63,13 +63,19 @@ func ScanDir(dir string) []datasource.DataSource {
 	res := make([]datasource.DataSource, 0, len(entries))
 	for _, d := range entries {
 		if strings.HasSuffix(d.Name(), ".mp4") {
-			if itm := scrape.ScrapeFile(logger, dir, d.Name()); itm != nil {
+			if itm := scrape.ScrapeFile(dir, d.Name()); itm != nil {
 				res = append(res, itm)
 			}
 			continue
 		}
 		if strings.HasSuffix(d.Name(), ".generate") {
-			if itm := scrape.DataSourceFromGenerate(logger, Config.Caches, dir, d.Name()); itm != nil {
+			if itm := scrape.DataSourceFromGenerate(Config.Caches, dir, d.Name()); itm != nil {
+				res = append(res, itm)
+			}
+			continue
+		}
+		if strings.HasSuffix(d.Name(), ".msp") {
+			if itm := scrape.DataSourceFromMsp(Config.Caches, dir, d.Name()); itm != nil {
 				res = append(res, itm)
 			}
 			continue
@@ -248,6 +254,7 @@ func setupLogger() {
 		})*/
 	customHandler := slogctx.NewHandler(slog.Default().Handler(), nil)
 	logger = slog.New(customHandler)
+	scrape.Logger = slog.New(customHandler)
 }
 
 func BruteLoggingMiddleware(next http.Handler) http.Handler {
@@ -1259,6 +1266,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 	type object struct {
 		Html5URL      string
 		ShakaURL      string
+		DashURL       string
 		CastURL       string
 		MediaURL      string
 		PosterURL     string
@@ -1282,6 +1290,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 			dsObject := object{
 				Html5URL:      html5URL(ds),
 				ShakaURL:      shakaURL(ds),
+				DashURL:       dashURL(ds),
 				CastURL:       castURL(ds),
 				MediaURL:      mediaURL(ds),
 				PosterURL:     posterURL(ds),
@@ -1506,9 +1515,13 @@ NADA
 						{{ end }}
 						<p>
 						<div id="navigation">
-						<a href="{{.MediaURL}}">&lt;Download&gt;</a>
-						<a href="{{ .Html5URL}}">&lt;Play in browser&gt;</a>
-						<a href="{{ .ShakaURL}}">&lt;Play in Shaka&gt;</a>
+						{{ if .MediaURL }}
+							<a href="{{.MediaURL}}">&lt;Download&gt;</a>
+							<a href="{{ .Html5URL}}">&lt;Play in browser&gt;</a>
+						{{ end }}
+						{{ if .DashURL }}
+							<a href="{{ .ShakaURL}}">&lt;Play in Shaka&gt;</a>
+						{{ end }}
 						<a href="{{ .CastURL}}">&lt;Play on ChromeCast&gt;</a><br> 
 						</div>
 						</div>

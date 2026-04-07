@@ -72,11 +72,11 @@ func (s SvtplayItem) Plot() string {
 func (s SvtplayItem) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == s.MediaURLPath():
-		s.MediaServer.ServeHTTP(w, r, s.Logger)
+		s.MediaServer.ServeHTTP(w, r)
 	case r.URL.Path == s.PosterURLPath():
-		s.PosterServer.ServeHTTP(w, r, s.Logger)
+		s.PosterServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), s.SubsURLPath()):
-		s.SubsServer.ServeHTTP(w, r, s.Logger)
+		s.SubsServer.ServeHTTP(w, r)
 	default:
 		s.Logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
 		w.WriteHeader(404)

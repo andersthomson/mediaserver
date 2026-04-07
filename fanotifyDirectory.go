@@ -124,7 +124,7 @@ func (f *faNotifyDirectoryRepo) Refresh() {
 				}
 				if filepath.Ext(eventInfo.Filename) == ".mp4" {
 					logger.Info("fanotify", "event", "CLOSE_WRITE", "dir", f.dir, "file", eventInfo.Filename)
-					ds := scrape.ScrapeFile(logger, f.dir, eventInfo.Filename)
+					ds := scrape.ScrapeFile(f.dir, eventInfo.Filename)
 					f.dsLck.Lock()
 					f.ds[eventInfo.Filename] = ds
 					f.dsLck.Unlock()
@@ -137,7 +137,7 @@ func (f *faNotifyDirectoryRepo) Refresh() {
 				}
 				if filepath.Ext(eventInfo.Filename) == ".mp4" {
 					logger.Info("fanotify", "event", "MOVED_TO", "dir", f.dir, "file", eventInfo.Filename)
-					ds := scrape.ScrapeFile(logger, f.dir, eventInfo.Filename)
+					ds := scrape.ScrapeFile(f.dir, eventInfo.Filename)
 					f.dsLck.Lock()
 					f.ds[eventInfo.Filename] = ds
 					f.dsLck.Unlock()
@@ -198,7 +198,7 @@ func (f *faNotifyDirectoryRepo) Refresh() {
 				if IsMP4File(fname) {
 					go func(fname string) {
 						//spew.Dump(fname)
-						if ds := scrape.ScrapeFile(logger, f.dir, fname); ds != nil {
+						if ds := scrape.ScrapeFile(f.dir, fname); ds != nil {
 							f.dsLck.Lock()
 							f.ds[fname] = ds
 							f.dsLck.Unlock()

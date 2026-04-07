@@ -14,7 +14,6 @@ type ItemData struct {
 	PosterServer
 	SubsServer
 	BackdropServer
-	logger       *slog.Logger
 	id           string
 	showName     string
 	title        string
@@ -26,10 +25,9 @@ type ItemData struct {
 	tags         map[string][]string
 }
 
-func NewItem(logger *slog.Logger) *ItemData {
+func NewItem() *ItemData {
 	return &ItemData{
-		logger: logger,
-		tags:   make(map[string][]string, 4),
+		tags: make(map[string][]string, 4),
 	}
 }
 
@@ -87,62 +85,59 @@ func (_ ItemData) derivePlot(fname string, dir string) string {
 }
 
 func (i ItemData) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	i.logger.Info("itemdata serving", "Url", r.URL.String())
+	Logger.Info("itemdata serving", "Url", r.URL.String())
 	switch {
 	case r.URL.Path == i.MediaURLPath():
-		i.MediaServer.ServeHTTP(w, r, i.logger)
+		i.MediaServer.ServeHTTP(w, r)
 	case r.URL.Path == i.PosterURLPath():
-		i.PosterServer.ServeHTTP(w, r, i.logger)
+		i.PosterServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
-		i.SubsServer.ServeHTTP(w, r, i.logger)
+		i.SubsServer.ServeHTTP(w, r)
 	default:
-		i.logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
+		Logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
 		w.WriteHeader(404)
 		return
 	}
 }
 
-func scrapeAsIndividualmp4tags(logger *slog.Logger, itm *ItemData, ffdata FFProbeRoot) bool {
+func scrapeAsIndividualmp4tags(itm *ItemData, ffdata FFProbeRoot) bool {
 	if ffdata.Format.Tags.Title != "" {
 		itm.title = ffdata.Format.Tags.Title
-		logger.Info("", "source", "mp4 Format.Tags.Title", "title", itm.title)
+		Logger.Info("", "source", "mp4 Format.Tags.Title", "title", itm.title)
 	}
 	if ffdata.Format.Tags.Description != "" {
-		logger.Info("", "source", "mp4 Format.Tags.Description", "plot", itm.plot)
+		Logger.Info("", "source", "mp4 Format.Tags.Description", "plot", itm.plot)
 		itm.plot = ffdata.Format.Tags.Description
 	}
 	if ffdata.Format.Tags.Genre != "" {
 		splits := strings.Split(ffdata.Format.Tags.Genre, "/")
 		for _, s := range splits {
 			itm.tags["genre"] = append(itm.tags["genre"], strings.TrimSpace(s))
-			logger.Info("", "source", "mp4 Format.Tags.Genre", "genre+=", strings.TrimSpace(s))
+			Logger.Info("", "source", "mp4 Format.Tags.Genre", "genre+=", strings.TrimSpace(s))
 		}
 	}
 	if ffdata.Format.Tags.Season != "" {
 		d, err := strconv.Atoi(strings.TrimSpace(ffdata.Format.Tags.Season))
 		if err != nil {
-			logger.Warn("strconv.Atoi failed", "data", ffdata.Format.Tags.Season, "err", err)
+			Logger.Warn("strconv.Atoi failed", "data", ffdata.Format.Tags.Season, "err", err)
 		} else {
 			itm.episode = d
-			logger.Info("", "source", "mp4 Format.Tags.Season", "season", itm.season)
+			Logger.Info("", "source", "mp4 Format.Tags.Season", "season", itm.season)
 		}
 	}
 	if ffdata.Format.Tags.Episode_id != "" {
 		d, err := strconv.Atoi(strings.TrimSpace(ffdata.Format.Tags.Episode_id))
 		if err != nil {
-			logger.Warn("strconv.Atoi failed", "data", ffdata.Format.Tags.Episode_id, "err", err)
+			Logger.Warn("strconv.Atoi failed", "data", ffdata.Format.Tags.Episode_id, "err", err)
 		} else {
 			itm.episode = d
-			logger.Info("", "source", "mp4 Format.Tags.Episode_id", "episode_id", itm.episode)
+			Logger.Info("", "source", "mp4 Format.Tags.Episode_id", "episode_id", itm.episode)
 		}
 	}
 	return true
 }
 
 func (itm *ItemData) Scrape(dir, fname string) {
-	logger := itm.logger.With(
-		slog.String("scraper", "item"),
-		slog.String("file", filepath.Join(dir, fname)))
 	var ffdata FFProbeRoot
 	var err error
 	if ffdata, err = FFProbe(filepath.Join(dir, fname)); err != nil {
@@ -157,23 +152,23 @@ func (itm *ItemData) Scrape(dir, fname string) {
 	target := filepath.Join(dir, basename+"-poster.jpg")
 	if fileExists(target) {
 		itm.PosterFile = target
-		logger.Info("", "source", "filename", "posterfile", itm.PosterFile)
+		Logger.Info("", "source", "filename", "posterfile", itm.PosterFile)
 	}
 
-	scrapeAsIndividualmp4tags(logger, itm, ffdata)
+	scrapeAsIndividualmp4tags(itm, ffdata)
 	if itm.title == "" {
 		itm.title = strings.TrimSuffix(fname, ".mp4")
-		logger.Info("", "source", "filename", "title", itm.title)
+		Logger.Info("", "source", "filename", "title", itm.title)
 	}
 	target = filepath.Join(dir, basename+"-plot.txt")
 	if itm.plot == "" && fileExists(target) {
 		itm.plotFile = target
-		logger.Info("", "source", "filename", "plotFile", itm.plotFile)
+		Logger.Info("", "source", "filename", "plotFile", itm.plotFile)
 	}
 
 	if ffdata.Format.Tags.Grouping != "" {
 		itm.tags["grouping"] = append(itm.tags["grouping"], strings.TrimSpace(ffdata.Format.Tags.Grouping))
-		logger.Info("", "source", "mp4 Format.Tags.Grouping", "grouping", ffdata.Format.Tags.Grouping)
+		Logger.Info("", "source", "mp4 Format.Tags.Grouping", "grouping", ffdata.Format.Tags.Grouping)
 	}
 	itm.tags["dir"] = append(itm.tags["dir"], filepath.Base(dir))
 	itm.tags["fulldir"] = append(itm.tags["fulldir"], (dir))
