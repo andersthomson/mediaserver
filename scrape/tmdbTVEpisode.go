@@ -48,6 +48,10 @@ func (i TMDBTVEpisode) ID() string {
 	return i.id
 }
 
+func (i TMDBTVEpisode) PrettyID() string {
+	return i.Title() + "-" + i.ID()
+}
+
 func (i TMDBTVEpisode) Episode() int {
 	return i.episode
 }

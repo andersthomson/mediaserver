@@ -33,6 +33,6 @@ func (d *directoryRepo) AllDataSources() []datasource.DataSource {
 	if r == nil {
 		return nil
 	}
-	logger.Warn("returning", "dir", d.dir, "res", r)
+	//logger.Warn("returning", "dir", d.dir, "res", r)
 	return r
 }

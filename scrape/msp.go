@@ -7,6 +7,7 @@ import (
 type Msp struct {
 	Version    int
 	Id         string
+	ShortName  string
 	Tmdb       TmdbT
 	Input      InputT
 	Video      VideoT

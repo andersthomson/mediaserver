@@ -47,6 +47,9 @@ func (i ItemData) ID() string {
 	return i.id
 }
 
+func (i ItemData) PrettyID() string {
+	return i.Title() + "-" + i.ID()
+}
 func (i ItemData) Episode() int {
 	return i.episode
 }

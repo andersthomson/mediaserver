@@ -95,7 +95,7 @@ type allReposT struct {
 func (a *allReposT) Add(r repo) {
 	a.reposMu.Lock()
 	a.repos = append(a.repos, r)
-	logger.Info("allrepos now", "var", a.repos)
+	//logger.Info("allrepos now", "var", a.repos)
 	a.reposMu.Unlock()
 }
 
@@ -124,6 +124,21 @@ func (a allReposT) AllDataSources() []datasource.DataSource {
 	a.reposMu.Unlock()
 	return res
 }
+func (a allReposT) DataSourceByPrettyID(id string) datasource.DataSource {
+	a.reposMu.Lock()
+	defer a.reposMu.Unlock()
+	for _, r := range a.repos {
+		if r != nil {
+			for _, src := range r.AllDataSources() {
+				if src.PrettyID() == id {
+					return src
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (a allReposT) DataSourceByID(id string) datasource.DataSource {
 	a.reposMu.Lock()
 	defer a.reposMu.Unlock()
@@ -153,7 +168,7 @@ func dashURL(ds datasource.DataSource) string {
 	if p := datasource.DashURLPathOrZero(ds); p == "" {
 		return ""
 	} else {
-		return Config.WebRoot + "/item/" + url.PathEscape(ds.ID()) + "/part/" + p
+		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + p
 	}
 }
 
@@ -166,7 +181,7 @@ func html5URL(ds datasource.DataSource) string {
 }
 
 func shakaURL(ds datasource.DataSource) string {
-	return Config.WebRoot + "/view/shaka/" + url.PathEscape(ds.ID())
+	return Config.WebRoot + "/view/shaka/" + url.PathEscape(ds.PrettyID())
 }
 func backdropURL(ds datasource.DataSource) string {
 	if p := datasource.BackdropURLPathOrZero(ds); p == "" {
@@ -199,7 +214,7 @@ type dataSourceServer struct {
 func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	itm := r.PathValue("item")
-	ds := allRepos.DataSourceByID(itm)
+	ds := allRepos.DataSourceByPrettyID(itm)
 	if ds == nil {
 		errorHandler(ctx, w, r, http.StatusNotFound)
 		logger.WarnContext(ctx, "datasource unknown", "id", itm)
@@ -535,13 +550,14 @@ func SplitByGenre(dss []datasource.DataSource) map[string][]datasource.DataSourc
 func serveItemCast(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	itm := r.PathValue("item")
-	ds := allRepos.DataSourceByID(itm)
+	ds := allRepos.DataSourceByPrettyID(itm)
 	if ds == nil {
 		errorHandler(ctx, w, r, http.StatusNotFound)
 		logger.WarnContext(ctx, "datasource unknown", "id", itm)
 		return
 	}
 
+	//<button onclick="startCasting('{{$.MediaURL}}','{{$.PosterURL}}','','{{$.Title}}','{{$.Tagline}}')">Play Movie</button><br>
 	type dataT struct {
 		Title     string
 		PosterURL string
@@ -558,286 +574,80 @@ func serveItemCast(w http.ResponseWriter, r *http.Request) {
 		Tagline:   datasource.TaglineOrZero(ds),
 	}
 	html2templ := `
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Chromecast Movie Demo</title>
-
-    <!-- Load Cast Framework -->
-    <script
-      type="text/javascript"
-      src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"
-    ></script>
-
+		<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Chromecast Sender</title>
     <style>
-      body {
-        font-family: system-ui, sans-serif;
-        background: #f8f9fa;
-        text-align: center;
-        padding: 3rem;
-      }
-      google-cast-launcher {
-        --disconnected-color: #555;
-        --connected-color: #4285f4;
-        width: 48px;
-        height: 48px;
-        cursor: pointer;
-      }
-      button {
-        margin-top: 2rem;
-        padding: 0.8rem 1.4rem;
-        font-size: 1rem;
-        border: none;
-        border-radius: 8px;
-        background: #4285f4;
-        color: white;
-        cursor: pointer;
-      }
-      button:hover {
-        background: #3367d6;
-      }
-      .controls {
-            margin-top: 1rem;
-       }
-    #progress-container {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          margin-top: 1rem;
-   }
-   #progress {
-          flex: 1;
-          width: 100%;
-   }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding-top: 50px; }
+        #castBtn { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #4285f4; color: white; border: none; border-radius: 4px; }
+        #playBtn { padding: 10px 20px; font-size: 16px; margin-top: 10px; background: #34a853; color: white; border: none; border-radius: 4px; }
+        #status { margin-top: 20px; color: #666; }
     </style>
+</head>
+<body>
 
-  </head>
-  <body>
-    <h1>🎥 Chromecast Movie Demo</h1>
-    <p>Click the Cast button, then press “Play Movie” below.</p>
+    <h2>Chromecast MP4 Player</h2>
 
-    <!-- Cast button provided by the framework -->
-    <google-cast-launcher></google-cast-launcher>
+    <!-- Custom button to trigger the Cast dialog -->
+    <button id="castBtn">Choose Cast Device</button>
+    <button id="playBtn" style="display:none;">Start Video</button>
+    <div id="status">Ready</div>
 
-    <br />
-    {{range $s := .SubsURLs }}
-    <button onclick="startCasting({{$.MediaURL}},{{$.PosterURL}},{{$s.URL}},{{$.Title}},{{$.Tagline}})">Play Movie in {{$s.Language}}</button><br>
-    {{ end}}
-    <div id="log">Log messages will appear here...</div>
-     <div>
-	    <button id="load">Load Media</button>
-	    <button id="play">Play ▶️</button>
-	    <button id="pause">Pause ⏸️</button>
-	    <button id="stop">Stop ⏹️</button>
-	    <button id="skip">Skip +30s ⏩</button>
-	    <button id="rewind">Rewind -10s ⏪</button>
-	    <button id="mute">Mute 🔇</button>
-	    <button id="unmute">Unmute 🔊</button>
-     </div>
-    <div id="progress-container">
-       <span id="currentTime">0:00</span>
-        <input type="range" id="progress" min="0" max="100" value="0">
-       <span id="duration">0:00</span>
-    </div>
-	       
-   <script>
-	function waitForCastApi() {
-	    if (window.cast && window.cast.framework) {
-	        initializeCast();
-	    } else {
-	        console.log("Waiting for Cast API...");
-	        setTimeout(waitForCastApi, 500);
-	    }
-	}
-	waitForCastApi();
+    <script>
+        // 1. Define the callback BEFORE loading the script
+        window['__onGCastApiAvailable'] = function(isAvailable) {
+            if (isAvailable) {
+                initializeCastApi();
+            } else {
+                document.getElementById('status').innerText = "Cast SDK not available.";
+            }
+        };
 
-	function initializeCast() {
-	    //logmessage("Cast Framework initialized");
-	    const context = cast.framework.CastContext.getInstance();
-	    context.setOptions({
-	        receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
-	        autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
-	    });
-	    console.log("Cast Framework initialized");
+        function initializeCastApi() {
+            const context = cast.framework.CastContext.getInstance();
+            context.setOptions({
+                receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+                autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
+            });
 
-	    // ===== Modern Progress Updater (RemotePlayer API) =====
-	    player = new cast.framework.RemotePlayer();
-	    controller = new cast.framework.RemotePlayerController(player);
-	    setupPlayerListeners();
-	}
+            // Monitor state changes
+            context.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, (event) => {
+                const state = event.sessionState;
+                if (state === cast.framework.SessionState.SESSION_STARTED) {
+                    document.getElementById('status').innerText = "Connected!";
+                    document.getElementById('playBtn').style.display = "block";
+                    document.getElementById('castBtn').style.display = "none";
+                }
+            });
+        }
 
-	async function startCasting(mediaURL, posterURL, subsURL, title, tagline) {
-	    const context = cast.framework.CastContext.getInstance();
+        // 2. Manual trigger for the Cast Dialog
+        document.getElementById('castBtn').addEventListener('click', () => {
+            cast.framework.CastContext.getInstance().requestSession()
+                .catch(err => console.log("User cancelled or error: ", err));
+        });
 
-	    // Ensure a Cast session exists
-	    await context.requestSession();
-	    const session = context.getCurrentSession();
-
-	    // Define media
-	    const mediaInfo = new chrome.cast.media.MediaInfo(mediaURL, "video/mp4");
-
-	    // Attach movie metadata (this is what shows up in Google Home!)
-	    const metadata = new chrome.cast.media.MovieMediaMetadata();
-	    metadata.title = title;
-	    metadata.subtitle = tagline;
-	    metadata.studio = "Blender Studio";
-	    metadata.images = [
-	        new chrome.cast.Image(
-	            "posterURL"
-	        ),
-	    ];
-	    mediaInfo.metadata = metadata;
-	    if (subsURL.length > 0) {
-	        const tracks = [
-	            new chrome.cast.media.Track(1, chrome.cast.media.TrackType.TEXT),
-	        ];
-	        tracks[0].trackContentId = subsURL;
-	        tracks[0].trackContentType = "text/vtt";
-	        tracks[0].subtype = chrome.cast.media.TextTrackType.SUBTITLES;
-	        tracks[0].name = "Swedish";
-	        tracks[0].language = "sv";
-	        mediaInfo.tracks = tracks;
-	    }
-
-	    // Load media
-	    const request = new chrome.cast.media.LoadRequest(mediaInfo);
-	    request.autoplay = true;
-	    if (subsURL.length > 0) {
-	        request.activeTrackIds = [1]; // enable subtitles
-	    }
-
-	    try {
-	        await session.loadMedia(request);
-	        console.log("Media loaded successfully!");
-	    } catch (err) {
-	        console.error("Error loading media:", err);
-	    }
-	}
-	// --- Helper to get media session ---
-	function getMedia() {
-	    const session = cast.framework.CastContext.getInstance().getCurrentSession();
-	    if (!session) {
-	        alert("No cast session.");
-	        return null;
-	    }
-	    return session.getMediaSession();
-	}
-
-	// --- Controls ---
-	function play() {
-	    const media = getMedia();
-	    if (media) media.play(null,
-	        () => console.log("▶️ Playing"),
-	        err => console.error("play() failed", err)
-	    );
-	}
-
-	function pause() {
-	    const media = getMedia();
-	    if (media) media.pause(null,
-	        () => console.log("⏸️ Paused"),
-	        err => console.error("pause() failed", err)
-	    );
-	}
-
-	function stop() {
-	    const media = getMedia();
-	    if (media) media.stop(null,
-	        () => console.log("⏹️ Stopped"),
-	        err => console.error("stop() failed", err)
-	    );
-	}
-
-	function skipForward() {
-	    const media = getMedia();
-	    if (!media) return;
-	    const seek = new chrome.cast.media.SeekRequest();
-	    seek.currentTime = media.currentTime + 30;
-	    media.seek(seek);
-	}
-
-	function rewind() {
-	    const media = getMedia();
-	    if (!media) return;
-	    const seek = new chrome.cast.media.SeekRequest();
-	    seek.currentTime = Math.max(media.currentTime - 10, 0);
-	    media.seek(seek);
-	}
-
-	function mute() {
-	    const session = cast.framework.CastContext.getInstance().getCurrentSession();
-	    if (session) session.setMute(true);
-	}
-
-	function unmute() {
-	    const session = cast.framework.CastContext.getInstance().getCurrentSession();
-	    if (session) session.setMute(false);
-	}
-
-	function formatTime(seconds) {
-	    if (!seconds || isNaN(seconds)) return "0:00";
-	    const m = Math.floor(seconds / 60);
-	    const s = Math.floor(seconds % 60);
-	    return ` + "`${m}: ${s.toString().padStart(2, \"0\")}`" + `;
-	}
-
-	function setupPlayerListeners() {
-	    controller.addEventListener(
-	        cast.framework.RemotePlayerEventType.CURRENT_TIME_CHANGED,
-	        () => {
-	            document.getElementById("progress").value = player.currentTime;
-	            document.getElementById("currentTime").textContent = formatTime(player.currentTime);
-	        }
-	    );
-
-	    controller.addEventListener(
-	        cast.framework.RemotePlayerEventType.DURATION_CHANGED,
-	        () => {
-	            document.getElementById("progress").max = player.duration;
-	            document.getElementById("duration").textContent = formatTime(player.duration);
-	        }
-	    );
-
-	    controller.addEventListener(
-	        cast.framework.RemotePlayerEventType.PLAYER_STATE_CHANGED,
-	        () => {
-	            const playBtn = document.getElementById("play");
-	            const pauseBtn = document.getElementById("pause");
-
-	            if (player.playerState === chrome.cast.media.PlayerState.PLAYING) {
-	                playBtn.disabled = true;
-	                pauseBtn.disabled = false;
-	            } else if (player.playerState === chrome.cast.media.PlayerState.PAUSED) {
-	                playBtn.disabled = false;
-	                pauseBtn.disabled = true;
-	            } else {
-	                playBtn.disabled = false;
-	                pauseBtn.disabled = false;
-	            }
-	        }
-	    );
-
-	};
-
-
-	// --- Wire buttons ---
-	document.getElementById("play").onclick = play;
-	document.getElementById("pause").onclick = pause;
-	document.getElementById("stop").onclick = stop;
-	document.getElementById("skip").onclick = skipForward;
-	document.getElementById("rewind").onclick = rewind;
-	document.getElementById("mute").onclick = mute;
-	document.getElementById("unmute").onclick = unmute;
-
-	// ===== Scrubbing =====
-	document.getElementById("progress").addEventListener("input", (e) => {
-	    player.currentTime = parseFloat(e.target.value);
-	    controller.seek();
-	});
+        // 3. Playback Logic
+        document.getElementById('playBtn').addEventListener('click', () => {
+            const castSession = cast.framework.CastContext.getInstance().getCurrentSession();
+            const mediaInfo = new chrome.cast.media.MediaInfo(
+                'https://media.famthomson.se/ms-beta/item/2040%20-%20framtidsfilmen.mp4/part/media',
+                    'video/mp4'
+            );
+            const request = new chrome.cast.media.LoadRequest(mediaInfo);
+            castSession.loadMedia(request).then(
+                () => { document.getElementById('status').innerText = "Playing on TV..."; },
+                (err) => { document.getElementById('status').innerText = "Error: " + err; }
+            );
+        });
     </script>
-  </body>
+
+    <!-- The Cast Framework SDK -->
+    <script src="https://www.gstatic.com/cv/js/sender/v3/cast_sender.js?loadCastFramework=1"></script>
+</body>
 </html>
+
 `
 
 	_ = html2templ
@@ -888,7 +698,7 @@ func serveItemHtml5(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	itm := r.PathValue("item")
-	ds := allRepos.DataSourceByID(itm)
+	ds := allRepos.DataSourceByPrettyID(itm)
 	if ds == nil {
 		errorHandler(ctx, w, r, http.StatusNotFound)
 		logger.WarnContext(ctx, "datasource unknown", "id", itm)
@@ -965,7 +775,7 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	itm := r.PathValue("item")
-	ds := allRepos.DataSourceByID(itm)
+	ds := allRepos.DataSourceByPrettyID(itm)
 	if ds == nil {
 		errorHandler(ctx, w, r, http.StatusNotFound)
 		logger.WarnContext(ctx, "datasource unknown", "id", itm)

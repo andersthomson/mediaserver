@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
-	"github.com/davecgh/go-spew/spew"
 )
 
 type TMDBMovie struct {
@@ -16,14 +15,14 @@ type TMDBMovie struct {
 	SubsServer
 	PosterServer
 	BackdropServer
-	id       string
-	uuid     string
-	language string
-	title    string
-	genres   []string
-	tagline  string
-	overview string
-	tags     map[string][]string
+	id        string
+	shortName string
+	language  string
+	title     string
+	genres    []string
+	tagline   string
+	overview  string
+	tags      map[string][]string
 }
 
 func (i TMDBMovie) Title() string {
@@ -50,11 +49,15 @@ func (i TMDBMovie) Tags() map[string][]string {
 }
 
 func (i TMDBMovie) ID() string {
-	return i.id + "-" + i.uuid
+	return i.id
 }
 
-func (i TMDBMovie) UUID() string {
-	return i.uuid
+func (i TMDBMovie) ShortName() string {
+	return i.shortName
+}
+
+func (i TMDBMovie) PrettyID() string {
+	return i.ShortName() + "-" + i.ID()
 }
 
 func (_ TMDBMovie) deriveID(fname string) string {
@@ -203,16 +206,16 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 	if !extractTMDBMovieData(res, *m.Tmdb.MovieId) {
 		return nil, false
 	}
-	res.uuid = m.Id
-	res.id = m.Input.Input
-	res.MpdFile = caches[0] + "/" + res.ID() + "/dash/" + "manifest.mpd"
+	res.id = m.Id
+	res.shortName = m.ShortName
+	res.MpdFile = caches[0] + "/" + res.PrettyID() + "/dash/" + "manifest.mpd"
 	res.SubsServer.AddSubsFromMP4Filename(caches[0]+"/"+res.ID()+"/mp4/", basename(m.Input.Input+".mp4"))
 
 	res.language = m.Audio.Language
 	res.tags["dir"] = append(res.tags["dir"], filepath.Base(dir))
 	res.tags["fulldir"] = append(res.tags["fulldir"], (dir))
 	res.tags["scraper"] = append(res.tags["scraper"], "TMDBMovie")
-	spew.Dump(res)
+	//spew.Dump(res)
 	return res, true
 
 }
@@ -231,7 +234,6 @@ func TMDBMovieFromGenerate(caches []string, g map[string]string, dir string) (*T
 	if !extractTMDBMovieData(res, id) {
 		return nil, false
 	}
-	res.uuid = g["INPUTID"]
 	res.id = res.deriveID(g["INPUT"])
 
 	methods, ok := g["methods"]

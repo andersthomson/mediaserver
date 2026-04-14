@@ -48,6 +48,9 @@ func (s SvtplayItem) ID() string {
 	return s.ID_
 }
 
+func (s SvtplayItem) PrettyID() string {
+	return s.Title() + "-" + s.ID()
+}
 func (s SvtplayItem) Episode() int {
 	return s.Episode_
 }
