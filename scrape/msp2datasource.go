@@ -7,7 +7,7 @@ import (
 	"github.com/andersthomson/mediaserver/datasource"
 )
 
-func readMspFromFile(f string) (Msp, error) {
+func ReadMspFromFile(f string) (Msp, error) {
 	buf, err := os.ReadFile(f)
 	if err != nil {
 		return Msp{}, err
@@ -21,7 +21,7 @@ func readMspFromFile(f string) (Msp, error) {
 }
 
 func DataSourceFromMsp(caches []string, dir string, fname string) datasource.DataSource {
-	m, err := readMspFromFile(dir + "/" + fname)
+	m, err := ReadMspFromFile(dir + "/" + fname)
 	if err != nil {
 		Logger.Error("Parsing error", "file", dir+"/"+fname, "error", err)
 		return nil

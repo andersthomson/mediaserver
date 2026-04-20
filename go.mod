@@ -7,6 +7,8 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/a-h/templ v0.3.1001 // indirect
 	github.com/barbashov/iso639-3 v1.0.0 // indirect
+	github.com/clbanning/mxj v1.8.4 // indirect
+	github.com/clbanning/mxj/v2 v2.7.0 // indirect
 	github.com/cyruzin/golang-tmdb v1.8.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect

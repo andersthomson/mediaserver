@@ -1,6 +1,7 @@
 package scrape
 
 import (
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -76,9 +77,9 @@ func (i TMDBMovie) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		i.MediaServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), "/dash/"):
 		i.DashServer.ServeHTTP(w, r)
-	case r.URL.Path == i.PosterURLPath():
+	case r.URL.Path == "/"+i.PosterURLPath():
 		i.PosterServer.ServeHTTP(w, r)
-	case r.URL.Path == i.BackdropURLPath():
+	case r.URL.Path == "/"+i.BackdropURLPath():
 		i.BackdropServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
 		i.SubsServer.ServeHTTP(w, r)
@@ -89,30 +90,34 @@ func (i TMDBMovie) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getTMDBMovieIdFromFFdata(ffdata FFProbeRoot) (int, bool) {
+func getTMDBMovieIdFromFFdata(ffdata FFProbeRoot) (int, error) {
 	if ffdata.Format.Tags.TmdbMovie == "" {
-		return 0, false
+		return 0, nil
 	}
 	id, err := strconv.Atoi(ffdata.Format.Tags.TmdbMovie)
 	if err != nil {
-		Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.TmdbMovie", ffdata.Format.Tags.TmdbMovie, "err", err)
-		return 0, false
+		Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.TmdbMovie", ffdata.Format.Tags.TmdbMovie, "err")
+		return 0, fmt.Errorf("TmdbMovie metadata not an int. Is %v", ffdata.Format.Tags.TmdbMovie)
 
 	}
-	return id, true
+	return id, nil
 }
 func extractTMDBMovieData(itm *TMDBMovie, tmdbId int) bool {
 	movie, err := TMDBMovieDetails(tmdbId)
 	if err != nil {
-		Logger.Warn("TMDBTVMovie failed. Skipping", "err", err)
+		Logger.Warn("TMDBTVMovie failed. Skipping", "tmdbId", tmdbId, "err", err)
 		return false
 	}
 	//Given all the data, complete the itm record.
 	itm.title = movie.Title
 	itm.tags["Movie"] = []string{itm.title}
 	itm.overview = movie.Overview
-	if fname, err := TMDBImage(movie.PosterPath, tmdb.W500); err == nil {
-		itm.PosterFile = fname
+	if movie.PosterPath != "" {
+		if fname, err := TMDBImage(movie.PosterPath, tmdb.W500); err == nil {
+			itm.PosterFile = fname
+		}
+	} else {
+		Logger.Warn("Has no poster image", "id", tmdbId, "title", movie.Title)
 	}
 	if movie.BackdropPath != "" {
 		if fname, err := TMDBImage(movie.BackdropPath, tmdb.W1280); err == nil {
@@ -165,11 +170,12 @@ func NewTMDBMovie(dir string, fname string, ffdata FFProbeRoot) (*TMDBMovie, boo
 		tags: make(map[string][]string, 4),
 	}
 
-	id, ok := getTMDBMovieIdFromFFdata(ffdata)
-	if !ok {
+	id, err := getTMDBMovieIdFromFFdata(ffdata)
+	if err != nil {
+		Logger.Error("Illegal TMDBMovieId", "source", dir+"/"+fname, "Error", err.Error())
 		return nil, false
 	}
-	if !extractTMDBMovieData(res, id) {
+	if id != 0 && !extractTMDBMovieData(res, id) {
 		return nil, false
 	}
 	res.id = res.deriveID(fname)
@@ -209,7 +215,7 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 	res.id = m.Id
 	res.shortName = m.ShortName
 	res.MpdFile = caches[0] + "/" + res.PrettyID() + "/dash/" + "manifest.mpd"
-	res.SubsServer.AddSubsFromMP4Filename(caches[0]+"/"+res.ID()+"/mp4/", basename(m.Input.Input+".mp4"))
+	res.SubsServer.AddSubsFromMP4Filename(caches[0]+"/"+res.ID()+"/mp4/", basename(m.ShortName+".mp4"))
 
 	res.language = m.Audio.Language
 	res.tags["dir"] = append(res.tags["dir"], filepath.Base(dir))

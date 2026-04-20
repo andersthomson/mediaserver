@@ -187,7 +187,7 @@ func backdropURL(ds datasource.DataSource) string {
 	if p := datasource.BackdropURLPathOrZero(ds); p == "" {
 		return ""
 	} else {
-		return Config.WebRoot + "/item/" + url.PathEscape(ds.ID()) + "/part/" + url.PathEscape(p)
+		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + url.PathEscape(p)
 	}
 }
 
@@ -195,7 +195,7 @@ func posterURL(ds datasource.DataSource) string {
 	if p := datasource.PosterURLPathOrZero(ds); p == "" {
 		return ""
 	} else {
-		return Config.WebRoot + "/item/" + url.PathEscape(ds.ID()) + "/part/" + url.PathEscape(p)
+		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + url.PathEscape(p)
 	}
 }
 

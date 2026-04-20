@@ -9,11 +9,25 @@ type Msp struct {
 	Id         string
 	ShortName  string
 	Tmdb       TmdbT
-	Input      InputT
+	Inputs     InputT
 	Video      VideoT
 	Audio      AudioT
 	Subtitles  []SubsT
 	OutStreams []OutStream
+	Dash       DashT
+}
+
+type DashT struct {
+	Subtitles []SubsT
+	Streams   []StreamT
+}
+
+type StreamT struct {
+	Source   string // ffmpeg format
+	Language string // 3 letters
+	Codec    string // "x264", "x265" or the sentinels "reference" to create a symlink to the source
+	Profile  string // if Codec calls for encoding
+	Tune     string
 }
 
 type OutStream struct {
@@ -22,9 +36,7 @@ type OutStream struct {
 	Maxrate int
 }
 
-type InputT struct {
-	Input string
-}
+type InputT []string
 
 type VideoT struct {
 	Source     string
