@@ -23,11 +23,12 @@ type DashT struct {
 }
 
 type StreamT struct {
-	Source   string // ffmpeg format
-	Language string // 3 letters
-	Codec    string // "x264", "x265" or the sentinels "reference" to create a symlink to the source
-	Profile  string // if Codec calls for encoding
-	Tune     string
+	ReferenceFile int    //zero based index of the input file used as ref (used as-is for a dash representation)
+	Source        string // ffmpeg format
+	Language      string // 3 letters
+	Codec         string // "x264", "x265" or the sentinels "reference" to create a symlink to the source
+	Profile       string // if Codec calls for encoding
+	Tune          string
 }
 
 type OutStream struct {

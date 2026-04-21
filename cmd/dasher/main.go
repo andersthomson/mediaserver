@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/andersthomson/mediaserver/scrape"
-	"github.com/davecgh/go-spew/spew"
 )
 
 func main() {
@@ -42,11 +41,19 @@ func DasherReadyFilename(streamno int, m scrape.Msp) string {
 }
 
 func InputFName(streamno int, m scrape.Msp) string {
-	splits := strings.Split(m.Dash.Streams[streamno].Source, ":")
-	inputNumber, err := strconv.Atoi(splits[0])
-	if err != nil {
-		panic(err)
+	var inputNumber int
+	var err error
+	if m.Dash.Streams[streamno].Source != "" {
+		splits := strings.Split(m.Dash.Streams[streamno].Source, ":")
+		inputNumber, err = strconv.Atoi(splits[0])
+		if err != nil {
+			panic(err)
+		}
 	}
+	if m.Dash.Streams[streamno].ReferenceFile != 0 {
+		inputNumber = m.Dash.Streams[streamno].ReferenceFile
+	}
+
 	return m.Inputs[inputNumber].Filename
 }
 
@@ -60,10 +67,10 @@ func Input(streamno int, m scrape.Msp) scrape.InputT {
 }
 
 // source is e.g. "0:v:0"
-func gop(fname string, source string, dir string) (float64, float64) { //milliseconds,frames
+func gop(fname string, dir string) (float64, float64) { //milliseconds,frames
 	//ffprobe -v error -select_streams v:0 -skip_frame nokey -show_entries frame=pts_time -print_format json -read_intervals %+2 "input.mp4"
-	videostream := strings.SplitN(source, ":", 2)
-	cmd := exec.Command("/usr/bin/ffprobe", "-v", "error", "-select_streams", videostream[1], "-skip_frame", "nokey", "-show_entries", "frame=pts_time", "-of", "json", "-read_intervals", "%+20", dir+"/"+fname)
+	fmt.Printf("XXXXXXX %s\n", fname)
+	cmd := exec.Command("/usr/bin/ffprobe", "-v", "error", "-select_streams", "v:0", "-skip_frame", "nokey", "-show_entries", "frame=pts_time", "-of", "json", "-read_intervals", "%+20", dir+"/"+fname)
 	buf := new(bytes.Buffer)
 	cmd.Stdout = buf
 	cmd.Stderr = os.Stderr
@@ -84,7 +91,7 @@ func gop(fname string, source string, dir string) (float64, float64) { //millise
 	t1, _ := strconv.ParseFloat(data.Frames[0].PtsTime, 64)
 	t2, _ := strconv.ParseFloat(data.Frames[1].PtsTime, 64)
 	diff := t2 - t1
-	gopFrames := diff * fps(fname, source, dir)
+	gopFrames := diff * fps(fname, dir)
 	ms := diff * 1000
 
 	fmt.Printf("Offset:     %f\n", t1)
@@ -94,9 +101,8 @@ func gop(fname string, source string, dir string) (float64, float64) { //millise
 	return ms, gopFrames
 }
 
-func fps(fname string, source string, dir string) float64 {
-	videostream := strings.SplitN(source, ":", 2)
-	cmd := exec.Command("/usr/bin/ffprobe", "-v", "error", "-select_streams", videostream[1], "-show_entries", "stream=r_frame_rate", "-of", "json", dir+"/"+fname)
+func fps(fname string, dir string) float64 {
+	cmd := exec.Command("/usr/bin/ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "json", dir+"/"+fname)
 	buf := new(bytes.Buffer)
 	cmd.Stdout = buf
 	cmd.Stderr = os.Stderr
@@ -109,7 +115,7 @@ func fps(fname string, source string, dir string) float64 {
 			RFrameRate string `json:"r_frame_rate"`
 		} `json:"streams"`
 	}
-	spew.Dump(buf.Bytes())
+	//spew.Dump(buf.Bytes())
 	var res resT
 	if err := json.Unmarshal(buf.Bytes(), &res); err != nil {
 		panic(err.Error() + string(buf.Bytes()))
@@ -127,16 +133,17 @@ func fps(fname string, source string, dir string) float64 {
 }
 
 type properties struct {
+	streamType  string // video, audio, subtitles
 	fps         float64
 	gopMilliSec float64
 	gopFrames   float64
 }
 
-func sourceProperties(fname string, source string, dir string) properties {
-	gopMs, gopFrames := gop(fname, source, dir)
+func sourceProperties(fname string, dir string) properties {
+	gopMs, gopFrames := gop(fname, dir)
 
 	var res properties
-	res.fps = fps(fname, source, dir)
+	res.fps = fps(fname, dir)
 	res.gopMilliSec = gopMs
 	res.gopFrames = gopFrames
 	return res
@@ -303,10 +310,7 @@ func encodeAction(streamno int, m scrape.Msp, dir string, props targetProperties
 
 func linkAction(streamno int, m scrape.Msp, dir string) {
 	//Get the source file
-	inputNumber, err := strconv.Atoi(m.Dash.Streams[streamno].Source)
-	if err != nil {
-		panic(err)
-	}
+	inputNumber := m.Dash.Streams[streamno].ReferenceFile
 	srcFile := m.Inputs[inputNumber].Filename
 	dstFile := DasherReadyFilename(streamno, m)
 	fmt.Printf("Creating symlink %s -> %s\n", dstFile, srcFile)
@@ -323,7 +327,7 @@ func dasherAction(m scrape.Msp, gopMs float64) {
 	}
 	args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", DashDir(m) + "/manifest.mpd"}
 	args = append(args, inputs...)
-	spew.Dump(args)
+	//spew.Dump(args)
 	cmd := exec.Command("/usr/bin/MP4Box", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -349,23 +353,26 @@ func makeDashWorkFlow(dir string, mspFile string) error {
 		return fmt.Errorf("MSP read of %s/%s failed: %w", dir, mspFile, err)
 	}
 	//Sanity check:
-	var referencedSources = map[string]bool{}
+	var referenceFiles = map[int]bool{}
 	var tprops targetProperties
 	for streamno, stream := range m.Dash.Streams {
 		if stream.Codec == "reference" {
-			referencedSources[stream.Source] = true
+			referenceFiles[stream.ReferenceFile] = true
 			//At least one output stream want to reference an input stream.
 			//Check that the input's gop is sane
-			props := sourceProperties(InputFName(streamno, m), stream.Source, dir)
-			if props.gopMilliSec < 1500 || props.gopMilliSec > 5000 {
-				panic(fmt.Sprintf("Source %d, which you want to have referenced, has an unsupported gop %d\n", streamno, props.gopMilliSec))
+			switch {
+			case isDashReadyVideo(dir + "/" + m.Inputs[stream.ReferenceFile].Filename):
+				props := sourceProperties(m.Inputs[stream.ReferenceFile].Filename, dir)
+				if props.gopMilliSec < 1500 || props.gopMilliSec > 5000 {
+					panic(fmt.Sprintf("Source %d, which you want to have referenced, has an unsupported gop %f\n", streamno, props.gopMilliSec))
+				}
+				tprops.gopFrames = props.gopFrames
+				tprops.dashMs = dashMs(props)
+			case isDashReadyAudio(dir + "/" + m.Inputs[stream.ReferenceFile].Filename):
+			default:
+				panic(fmt.Sprintf("Source %d, which you want to have referenced, is not dash ready\n", stream.ReferenceFile))
 			}
-			tprops.gopFrames = props.gopFrames
-			tprops.dashMs = dashMs(props)
 		}
-	}
-	if len(referencedSources) > 1 {
-		panic("At most one referenced source allowed\n")
 	}
 	if tprops.gopFrames == 0 {
 		tprops.gopFrames = 100
