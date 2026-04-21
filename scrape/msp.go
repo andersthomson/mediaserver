@@ -9,7 +9,7 @@ type Msp struct {
 	Id         string
 	ShortName  string
 	Tmdb       TmdbT
-	Inputs     InputT
+	Inputs     []InputT
 	Video      VideoT
 	Audio      AudioT
 	Subtitles  []SubsT
@@ -36,7 +36,10 @@ type OutStream struct {
 	Maxrate int
 }
 
-type InputT []string
+type InputT struct {
+	Filename string
+	Kind     string
+}
 
 type VideoT struct {
 	Source     string

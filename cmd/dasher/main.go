@@ -47,6 +47,15 @@ func InputFName(streamno int, m scrape.Msp) string {
 	if err != nil {
 		panic(err)
 	}
+	return m.Inputs[inputNumber].Filename
+}
+
+func Input(streamno int, m scrape.Msp) scrape.InputT {
+	splits := strings.Split(m.Dash.Streams[streamno].Source, ":")
+	inputNumber, err := strconv.Atoi(splits[0])
+	if err != nil {
+		panic(err)
+	}
 	return m.Inputs[inputNumber]
 }
 
@@ -142,6 +151,30 @@ type targetProperties struct {
 	dashMs    float64
 }
 
+func tune264(input scrape.InputT) string {
+	switch input.Kind {
+	case "animation":
+		return "animation"
+	case "":
+		return "film"
+	default:
+		panic(fmt.Sprintf("Unsupported Kind: %s\n", input.Kind))
+		return ""
+	}
+}
+
+func tune265(input scrape.InputT) string {
+	switch input.Kind {
+	case "animation":
+		return "animation"
+	case "":
+		return ""
+	default:
+		panic(fmt.Sprintf("Unsupported Kind: %s\n", input.Kind))
+		return ""
+	}
+}
+
 func encodeAction(streamno int, m scrape.Msp, dir string, props targetProperties) {
 	inputFName := InputFName(streamno, m)
 	outputFName := DasherReadyFilename(streamno, m) + "-fragmented.mp4"
@@ -162,14 +195,6 @@ func encodeAction(streamno int, m scrape.Msp, dir string, props targetProperties
 		default:
 			panic("Unsupported profile: " + m.Dash.Streams[streamno].Profile)
 		}
-		tune := "film"
-		switch m.Dash.Streams[streamno].Tune {
-		case "animation":
-			tune = "animation"
-		case "":
-		default:
-			panic("Unsupported x264 tune: " + m.Dash.Streams[streamno].Tune)
-		}
 
 		crfMax := 5 + crf
 		bufsize := 2 * bitrate
@@ -183,7 +208,7 @@ func encodeAction(streamno int, m scrape.Msp, dir string, props targetProperties
 			"-pix_fmt", "yuv420p",
 			"-crf:v", strconv.Itoa(crf),
 			"-preset:v", "veryfast",
-			"-tune:v", tune,
+			"-tune:v", tune264(Input(streamno, m)),
 			"-x264-params:v", "keyint=" + strconv.FormatFloat(props.gopFrames, 'f', 0, 64) + ":min-keyint=" + strconv.FormatFloat(props.gopFrames, 'f', 0, 64) + ":scenecut=0:open-gop=0:vbv-maxrate=" + strconv.Itoa(bitrate) + ":vbv-bufsize=" + strconv.Itoa(bufsize) + ":crf-max=" + strconv.Itoa(crfMax),
 			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
 			outputFName,
@@ -202,15 +227,6 @@ func encodeAction(streamno int, m scrape.Msp, dir string, props targetProperties
 			panic("Unsupported profile: " + m.Dash.Streams[streamno].Profile)
 		}
 
-		tune := ""
-		switch m.Dash.Streams[streamno].Tune {
-		case "animation":
-			tune = "animation"
-		case "":
-		default:
-			panic("Unsupported x265 tune: " + m.Dash.Streams[streamno].Tune)
-		}
-
 		bufsize := 2 * bitrate
 		args = []string{
 			"-i", dir + "/" + inputFName,
@@ -222,7 +238,7 @@ func encodeAction(streamno int, m scrape.Msp, dir string, props targetProperties
 			"-crf:v", strconv.Itoa(crf),
 			"-preset:v", "veryfast",
 		}
-		if tune != "" {
+		if tune := tune265(Input(streamno, m)); tune != "" {
 			args = append(args, "-tune:v", tune)
 		}
 		args = append(args,
@@ -291,7 +307,7 @@ func linkAction(streamno int, m scrape.Msp, dir string) {
 	if err != nil {
 		panic(err)
 	}
-	srcFile := m.Inputs[inputNumber]
+	srcFile := m.Inputs[inputNumber].Filename
 	dstFile := DasherReadyFilename(streamno, m)
 	fmt.Printf("Creating symlink %s -> %s\n", dstFile, srcFile)
 	if err := os.Symlink(dir+"/"+srcFile, dstFile); err != nil {
@@ -316,8 +332,6 @@ func dasherAction(m scrape.Msp, gopMs float64) {
 		fmt.Printf("Error: %v\n", err)
 		panic(err)
 	}
-	fmt.Printf("FIXME replace the new dasher files with symlinks to the 'dasherReady' files\n")
-
 }
 
 func replaceWithSymlink(src, target string) {
