@@ -38,8 +38,9 @@ type OutStream struct {
 }
 
 type InputT struct {
-	Filename string
-	Kind     string
+	Filename   string
+	Interlaced bool
+	Kind       string
 }
 
 type VideoT struct {
