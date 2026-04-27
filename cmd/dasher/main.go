@@ -107,7 +107,7 @@ func Input(streamno int, m scrape.Msp) (scrape.InputT, error) {
 	return m.Inputs[inputNumber], nil
 }
 
-type properties struct {
+type SrcProperties struct {
 	streamType  string // video, audio, subtitles
 	fps         float64
 	gopMilliSec float64
@@ -119,7 +119,7 @@ type ProbeParams struct {
 }
 
 // GetSourcePropertiesActivity combines GOP and FPS detection into a single remote call.
-func GetSourcePropertiesActivity(ctx context.Context, params ProbeParams) (properties, error) {
+func GetSourcePropertiesActivity(ctx context.Context, params ProbeParams) (SrcProperties, error) {
 	path := filepath.Join(params.Dir, params.Filename)
 
 	// We call ffprobe once, asking for both stream info (FPS) and frame info (GOP)
@@ -137,7 +137,7 @@ func GetSourcePropertiesActivity(ctx context.Context, params ProbeParams) (prope
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	if err := cmd.Run(); err != nil {
-		return properties{}, fmt.Errorf("ffprobe failed: %w", errors.WithStack(err))
+		return SrcProperties{}, fmt.Errorf("ffprobe failed: %w", errors.WithStack(err))
 	}
 
 	// Internal anonymous struct to match the combined ffprobe JSON output
@@ -151,41 +151,41 @@ func GetSourcePropertiesActivity(ctx context.Context, params ProbeParams) (prope
 	}
 
 	if err := json.Unmarshal(buf.Bytes(), &data); err != nil {
-		return properties{}, fmt.Errorf("failed to unmarshal ffprobe output: %w", errors.WithStack(err))
+		return SrcProperties{}, fmt.Errorf("failed to unmarshal ffprobe output: %w", errors.WithStack(err))
 	}
 
 	if len(data.Streams) == 0 {
-		return properties{}, errors.New("no video streams found")
+		return SrcProperties{}, errors.New("no video streams found")
 	}
 
 	// 1. Calculate FPS
 	splits := strings.Split(data.Streams[0].RFrameRate, "/")
 	if len(splits) != 2 {
-		return properties{}, fmt.Errorf("invalid frame rate format: %s", data.Streams[0].RFrameRate)
+		return SrcProperties{}, fmt.Errorf("invalid frame rate format: %s", data.Streams[0].RFrameRate)
 	}
 	dividend, _ := strconv.ParseFloat(splits[0], 64)
 	divisor, _ := strconv.ParseFloat(splits[1], 64)
 	if divisor == 0 {
-		return properties{}, errors.New("divisor is zero in frame rate")
+		return SrcProperties{}, errors.New("divisor is zero in frame rate")
 	}
 	calculatedFPS := dividend / divisor
 
 	// 2. Calculate GOP
 	if len(data.Frames) < 2 {
-		return properties{}, errors.New("could not find at least two keyframes for GOP calculation")
+		return SrcProperties{}, errors.New("could not find at least two keyframes for GOP calculation")
 	}
 	t1, err := strconv.ParseFloat(data.Frames[0].PtsTime, 64)
 	if err != nil {
-		return properties{}, fmt.Errorf("Failed to parse as float: %v", data.Frames[0].PtsTime)
+		return SrcProperties{}, fmt.Errorf("Failed to parse as float: %v", data.Frames[0].PtsTime)
 	}
 	t2, err := strconv.ParseFloat(data.Frames[1].PtsTime, 64)
 	if err != nil {
-		return properties{}, fmt.Errorf("Failed to parse as float: %v", data.Frames[0].PtsTime)
+		return SrcProperties{}, fmt.Errorf("Failed to parse as float: %v", data.Frames[0].PtsTime)
 	}
 
 	diff := t2 - t1
 
-	return properties{
+	return SrcProperties{
 		streamType:  "video",
 		fps:         calculatedFPS,
 		gopMilliSec: diff * 1000,
@@ -193,7 +193,7 @@ func GetSourcePropertiesActivity(ctx context.Context, params ProbeParams) (prope
 	}, nil
 }
 
-func dashMs(p properties) float64 {
+func dashMs(p SrcProperties) float64 {
 	diff := p.gopMilliSec / 1000
 	return math.Max(1.0, math.Round(4.0/diff)) * diff * 1000
 }
@@ -253,6 +253,7 @@ func adjustFPSIfNeeded(in, out string, high bool) string {
 }
 
 type EncodeParams struct {
+	Preset      string
 	StreamNo    int
 	Msp         scrape.Msp
 	Dir         string
@@ -323,7 +324,7 @@ func EncodeStreamActivity(ctx context.Context, p EncodeParams) (string, error) {
 			"-level:v", "4.1",
 			"-pix_fmt", "yuv420p",
 			"-crf:v", strconv.Itoa(crf),
-			"-preset:v", preset(),
+			"-preset:v", p.Preset,
 			"-tune:v", tune264(inp),
 			"-x264-params:v", "keyint=" + strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64) + ":min-keyint=" + strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64) + ":scenecut=0:open-gop=0:vbv-maxrate=" + strconv.Itoa(bitrate) + ":vbv-bufsize=" + strconv.Itoa(bufsize) + ":crf-max=" + strconv.Itoa(crfMax),
 			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
@@ -337,7 +338,7 @@ func EncodeStreamActivity(ctx context.Context, p EncodeParams) (string, error) {
 			crf = 21
 			bitrate = 2000
 		case "low":
-			crf = 21
+			crf = 24
 			bitrate = 800
 		default:
 			return "", fmt.Errorf("Unsupported profile: " + p.Msp.Dash.Streams[p.StreamNo].Profile)
@@ -355,7 +356,7 @@ func EncodeStreamActivity(ctx context.Context, p EncodeParams) (string, error) {
 			"-level:v", "5.1",
 			"-pix_fmt", "yuv420p",
 			"-crf:v", strconv.Itoa(crf),
-			"-preset:v", preset(),
+			"-preset:v", p.Preset,
 		}
 		inp, err := Input(p.StreamNo, p.Msp)
 		if err != nil {
@@ -532,7 +533,7 @@ func makeDashWorkFlow(dir string, mspFile string) error {
 				return errors.WithStack(err)
 			}
 			spew.Dump(srcAnalysis)
-			if _, err := EncodeStreamActivity(context.Background(), EncodeParams{streamno, m, dir, tprops, srcAnalysis}); err != nil {
+			if _, err := EncodeStreamActivity(context.Background(), EncodeParams{preset(), streamno, m, dir, tprops, srcAnalysis}); err != nil {
 				return err
 			}
 		case "reference":
@@ -553,6 +554,12 @@ func makeDashWorkFlow(dir string, mspFile string) error {
 		replaceWithSymlink(strings.TrimSuffix(dashFName, ".mp4")+"_dashinit.mp4", dashFName)
 	}
 	fixAudioPresentationTimeOffset(DashDir(m) + "/" + "manifest.mpd")
+	if fast() {
+		if err := os.WriteFile(DashDir(m)+"/"+"dasher_fast=1", nil, 0644); err != nil {
+			return errors.WithStack(err)
+		}
+	}
+
 	tmpSuffix := uuid.NewString()
 	if err := os.Symlink(filepath.Base(DashDir(m)), DashDirProd(m)+tmpSuffix); err != nil {
 		return fmt.Errorf("Symlinking for production failed: %v", errors.WithStack(err))
