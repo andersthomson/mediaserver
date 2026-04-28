@@ -87,13 +87,13 @@ func InputFName(streamno int, m scrape.Msp) (string, error) {
 			return "", errors.WithStack(err)
 		}
 		if inputNumber+1 > len(m.Inputs) {
-			return "", errors.New("inputnumber out of bounds")
+			return "", errors.WithStack(fmt.Errorf("inputnumber out of bounds %v", m))
 		}
 		return m.Inputs[inputNumber].Filename, nil
 	}
 	inputNumber = m.Dash.Streams[streamno].ReferenceFile
 	if inputNumber+1 > len(m.Inputs) {
-		return "", errors.New("inputnumber out of bounds")
+		return "", errors.WithStack(fmt.Errorf("inputnumber out of bounds %v", m))
 	}
 	return m.Inputs[inputNumber].Filename, nil
 }
@@ -467,7 +467,7 @@ func replaceWithSymlink(src, target string) error {
 		return errors.WithStack(err)
 	}
 	if err := os.Symlink(target, src); err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	return nil
 }
@@ -539,9 +539,11 @@ func makeDashWorkFlow(dir string, mspFile string) error {
 	for streamno, _ := range m.Dash.Streams {
 		dashFName, err := DasherReadyFilename(streamno, m)
 		if err != nil {
-			return errors.WithStack(err)
+			return err
 		}
-		replaceWithSymlink(strings.TrimSuffix(dashFName, ".mp4")+"_dashinit.mp4", dashFName)
+		if err := replaceWithSymlink(strings.TrimSuffix(dashFName, ".mp4")+"_dashinit.mp4", dashFName); err != nil {
+			return err
+		}
 	}
 	fixAudioPresentationTimeOffset(DashDir(m) + "/" + "manifest.mpd")
 	if fast() {
