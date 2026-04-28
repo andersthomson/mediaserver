@@ -203,26 +203,62 @@ type targetProperties struct {
 	dashMs    float64
 }
 
-func tune264(input scrape.InputT) string {
-	switch input.Kind {
-	case "animation":
-		return "animation"
-	default:
-		return "film"
+func tune(codec string, kind string) []string {
+	switch codec {
+	case "x264":
+		switch kind {
+		case "animation":
+			return []string{"-tune:v", "animation"}
+		default:
+			return []string{"-tune:v", "film"}
+		}
+	case "x265":
+		switch kind {
+		case "animation":
+			return []string{"-tune:v", "animation"}
+		}
 	}
+	return nil
 }
 
-func tune265(input scrape.InputT) string {
-	switch input.Kind {
-	case "animation":
-		return "animation"
-	case "":
-		return ""
-	default:
-		return ""
+func bitrate(stream scrape.StreamT) string {
+	type Tbl map[string]map[string]string
+	T := Tbl{
+		"x264": {
+			"high": "6000",
+			"low":  "800",
+		},
+		"x265": {
+			"high": "2000",
+			"low":  "800",
+		},
 	}
+	return T[stream.Codec][stream.Profile]
 }
 
+func crf(stream scrape.StreamT) string {
+	type crfTbl map[string]map[string]string
+	crfT := crfTbl{
+		"x264": {
+			"high": "18",
+			"low":  "18",
+		},
+		"x265": {
+			"high": "21",
+			"low":  "24",
+		},
+	}
+	return crfT[stream.Codec][stream.Profile]
+}
+
+func crfMax(crf string) string {
+	c, _ := strconv.Atoi(crf)
+	return strconv.Itoa(c + 5)
+}
+func bufSize(bitrate string) string {
+	c, _ := strconv.Atoi(bitrate)
+	return strconv.Itoa(2 * c)
+}
 func preset() string {
 	if fast() {
 		return "ultrafast"
@@ -231,25 +267,24 @@ func preset() string {
 	}
 }
 
-func CanUseRPiHW() bool {
-	// Attempt a 1-frame dummy transcode using the HW block
-	cmd := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=s=64x64", "-c:v", "h264_v4l2m2m", "-frames:v", "1", "-f", "null", "-")
-	err := cmd.Run()
-	return err == nil
-}
-
 func interlaceIfNeeded(in, out string, filter string) string {
 	return fmt.Sprintf("[%s]%s[%s]", in, filter, out)
 }
 func scaleIfNeeded(in, out string, filter string) string {
 	return fmt.Sprintf("[%s]%s[%s]", in, filter, out)
 }
-func adjustFPSIfNeeded(in, out string, high bool) string {
-	s := "null"
-	if high {
-		s = "mpdecimate, fps=25"
+
+func scaleFilter(stream scrape.StreamT) string {
+	switch stream.Codec {
+	case "x264", "x265":
+		switch stream.Profile {
+		case "high":
+			return "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1080,ih))'"
+		case "low":
+			return "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))'"
+		}
 	}
-	return fmt.Sprintf("[%s]%s[%s]", in, s, out)
+	return ""
 }
 
 type EncodeParams struct {
@@ -277,41 +312,15 @@ func EncodeStreamActivity(ctx context.Context, p EncodeParams) (string, error) {
 		return "", errors.WithStack(err)
 	}
 	outputFName := drFname + "-fragmented.mp4"
+	inp, err := Input(p.StreamNo, p.Msp)
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
 
 	var args []string
-	var scaleFilter string
-	switch p.Msp.Dash.Streams[p.StreamNo].Codec {
-	case "x264", "x265":
-		switch p.Msp.Dash.Streams[p.StreamNo].Profile {
-		case "high":
-			scaleFilter = "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1080,ih))'"
-		case "low":
-			scaleFilter = "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))'"
-		default:
-			return "", fmt.Errorf("Unsupported profile: " + p.Msp.Dash.Streams[p.StreamNo].Profile)
-		}
-	}
+	scaleFilter := scaleFilter(p.Msp.Dash.Streams[p.StreamNo])
 	switch p.Msp.Dash.Streams[p.StreamNo].Codec {
 	case "x264":
-		var crf int
-		var bitrate int
-		switch p.Msp.Dash.Streams[p.StreamNo].Profile {
-		case "high":
-			crf = 18
-			bitrate = 6000
-		case "low":
-			crf = 21
-			bitrate = 800
-		default:
-			return "", fmt.Errorf("Unsupported profile: " + p.Msp.Dash.Streams[p.StreamNo].Profile)
-		}
-
-		crfMax := 5 + crf
-		bufsize := 2 * bitrate
-		inp, err := Input(p.StreamNo, p.Msp)
-		if err != nil {
-			return "", errors.WithStack(err)
-		}
 		args = []string{
 			"-itsoffset", fmt.Sprintf("%.3f", p.SrcAnalysis.FirstPTS),
 			//"-c:v", "h264_v4l2m2m",
@@ -323,28 +332,15 @@ func EncodeStreamActivity(ctx context.Context, p EncodeParams) (string, error) {
 			"-profile:v", "high",
 			"-level:v", "4.1",
 			"-pix_fmt", "yuv420p",
-			"-crf:v", strconv.Itoa(crf),
-			"-preset:v", p.Preset,
-			"-tune:v", tune264(inp),
-			"-x264-params:v", "keyint=" + strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64) + ":min-keyint=" + strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64) + ":scenecut=0:open-gop=0:vbv-maxrate=" + strconv.Itoa(bitrate) + ":vbv-bufsize=" + strconv.Itoa(bufsize) + ":crf-max=" + strconv.Itoa(crfMax),
+			"-crf:v", crf(p.Msp.Dash.Streams[p.StreamNo]),
+			"-preset:v", p.Preset}
+		args = append(args, tune(p.Msp.Dash.Streams[p.StreamNo].Codec, inp.Kind)...)
+		args = append(args, []string{
+			"-x264-params:v", "keyint=" + strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64) + ":min-keyint=" + strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64) + ":scenecut=0:open-gop=0:vbv-maxrate=" + bitrate(p.Msp.Dash.Streams[p.StreamNo]) + ":vbv-bufsize=" + bufSize(bitrate(p.Msp.Dash.Streams[p.StreamNo])) + ":crf-max=" + crfMax(crf(p.Msp.Dash.Streams[p.StreamNo])),
 			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
 			outputFName,
-		}
+		}...)
 	case "x265":
-		var crf int
-		var bitrate int
-		switch p.Msp.Dash.Streams[p.StreamNo].Profile {
-		case "high":
-			crf = 21
-			bitrate = 2000
-		case "low":
-			crf = 24
-			bitrate = 800
-		default:
-			return "", fmt.Errorf("Unsupported profile: " + p.Msp.Dash.Streams[p.StreamNo].Profile)
-		}
-
-		bufsize := 2 * bitrate
 		args = []string{
 			"-itsoffset", fmt.Sprintf("%.3f", p.SrcAnalysis.FirstPTS),
 			"-i", p.Dir + "/" + inputFName,
@@ -355,19 +351,13 @@ func EncodeStreamActivity(ctx context.Context, p EncodeParams) (string, error) {
 			"-profile:v", "main10",
 			"-level:v", "5.1",
 			"-pix_fmt", "yuv420p",
-			"-crf:v", strconv.Itoa(crf),
+			"-crf:v", crf(p.Msp.Dash.Streams[p.StreamNo]),
 			"-preset:v", p.Preset,
 		}
-		inp, err := Input(p.StreamNo, p.Msp)
-		if err != nil {
-			return "", errors.WithStack(err)
-		}
-		if tune := tune265(inp); tune != "" {
-			args = append(args, "-tune:v", tune)
-		}
+		args = append(args, tune(p.Msp.Dash.Streams[p.StreamNo].Codec, inp.Kind)...)
 		args = append(args,
 			"-tag:v", "hvc1",
-			"-x265-params:v", "keyint="+strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+strconv.Itoa(bitrate)+":vbv-bufsize="+strconv.Itoa(bufsize),
+			"-x265-params:v", "keyint="+strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate(p.Msp.Dash.Streams[p.StreamNo])+":vbv-bufsize="+bufSize(bitrate(p.Msp.Dash.Streams[p.StreamNo])),
 			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
 			outputFName,
 		)

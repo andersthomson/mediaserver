@@ -5,16 +5,43 @@ import (
 )
 
 type Msp struct {
-	Version    int
-	Id         string
-	ShortName  string
-	Tmdb       TmdbT
-	Inputs     []InputT
-	Video      VideoT
-	Audio      AudioT
-	Subtitles  []SubsT
-	OutStreams []OutStream
-	Dash       DashT
+	Version   int
+	Id        string
+	ShortName string
+	Tmdb      TmdbT
+	Inputs    []InputT
+	InStreams []InStreamsT
+	Dash      DashT
+	Audio     Audio
+}
+
+type TmdbT struct {
+	MovieId  *int
+	SeriesId *int
+	Season   *int
+	Episode  *int
+}
+
+type InStreamsT struct {
+	Filename string
+	Stream   string // "v:1" (ffprobe notation)
+	Video    *VideoT
+	Audio    *AudioT
+}
+
+type VideoT struct {
+	Kind     string
+	Language string
+}
+
+type AudioT struct {
+	Language string
+}
+
+type InputT struct {
+	Filename   string
+	Interlaced bool
+	Kind       string
 }
 
 type DashT struct {
@@ -22,6 +49,9 @@ type DashT struct {
 	Streams   []StreamT
 }
 
+type Audio struct {
+	Language string
+}
 type StreamT struct {
 	ReferenceFile int    //zero based index of the input file used as ref (used as-is for a dash representation)
 	Source        string // ffmpeg format
@@ -31,39 +61,9 @@ type StreamT struct {
 	Tune          string
 }
 
-type OutStream struct {
-	Codec   string
-	CRF     int
-	Maxrate int
-}
-
-type InputT struct {
-	Filename   string
-	Interlaced bool
-	Kind       string
-}
-
-type VideoT struct {
-	Source     string
-	Language   string
-	Interlaced bool
-}
-
-type AudioT struct {
-	Source   string
-	Language string
-}
-
 type SubsT struct {
 	Language string
 	File     string
-}
-
-type TmdbT struct {
-	MovieId  *int
-	SeriesId *int
-	Season   *int
-	Episode  *int
 }
 
 func (t *TmdbT) UnmarshalTOML(in interface{}) error {
