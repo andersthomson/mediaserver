@@ -100,6 +100,14 @@ func AnalyzeMediaActivity(ctx context.Context, dir, fname string) (InterlaceAnal
 
 			if analysis.InterlacedRatio > 0.15 {
 				// TRUE INTERLACED
+				// Determine parity based on idet counts
+				if tff > bff {
+					analysis.DetectedParity = "tff"
+				} else if bff > tff {
+					analysis.DetectedParity = "bff"
+				} else {
+					analysis.DetectedParity = "auto"
+				}
 				analysis.FilterRecommendation = fmt.Sprintf("bwdif=mode=0:parity=%s:deint=all", analysis.DetectedParity)
 			} else if analysis.ProgressiveRatio > 0.85 {
 				// PIXELS ARE PROGRESSIVE - Check if Metadata is lying (PsF)

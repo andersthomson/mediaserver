@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -13,25 +14,37 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker"
 	"github.com/andersthomson/mediaserver/scrape"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"go.temporal.io/sdk/client"
 )
 
 func main() {
+	// Create the client once
+	c, err := client.Dial(client.Options{
+		HostPort: "localhost:7233",
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer c.Close()
+
 	dir := filepath.Dir(os.Args[1])
 	base := filepath.Base(os.Args[1])
 	if base == "" || dir == "" {
 		panic("Need as arg 1 path to msp file\n")
 	}
 	//if err := makeDashWorkFlow("/var/lib/media/temp/testfil", "flaskhals.msp"); err != nil {
-	if err := makeDashWorkFlow(dir, base); err != nil {
+	if err := makeDashWorkFlow(c, dir, base); err != nil {
 		fmt.Printf("ERROR: %+v\n", err)
 	} else {
 		fmt.Printf("Done.\n")
 	}
 }
+
 func LookupEnvCaseInsensitive(key string) (string, bool) {
 	targetKey := strings.ToLower(key)
 
@@ -296,7 +309,7 @@ type EncodeParams struct {
 	SrcAnalysis InterlaceAnalysis
 }
 
-func EncodeStreamActivity(ctx context.Context, p EncodeParams) (string, error) {
+func EncodeStreamActivity(ctx context.Context, tc client.Client, p EncodeParams) (string, error) {
 	/*
 		DEINTERLACE := "[$VIDEOSOURCE]bwdif=mode=0:parity=auto:deint=all,"
 		SCALE_1080 := "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1080,ih))'"
@@ -376,17 +389,44 @@ func EncodeStreamActivity(ctx context.Context, p EncodeParams) (string, error) {
 			outputFName,
 		}
 	}
-	fmt.Printf("Starting %v\n", args)
-	cmd := exec.Command("/usr/bin/ffmpeg", args...)
-	cmd.Dir = DashDir(p.Msp)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = nil
-	fmt.Printf("FFMpeg encoding stream %d. %s becomes %s \n", p.StreamNo, inputFName, outputFName)
-	err = cmd.Run()
+	//fmt.Printf("Starting %v\n", args)
+	//cmd := exec.Command("/usr/bin/ffmpeg", args...)
+	//cmd.Dir = DashDir(p.Msp)
+	//cmd.Stdout = os.Stdout
+	//cmd.Stderr = os.Stderr
+	//cmd.Stdin = nil
+
+	//fmt.Printf("FFMpeg encoding stream %d. %s becomes %s \n", p.StreamNo, inputFName, outputFName)
+	//err = cmd.Run()
+	//if err != nil {
+	//	return "", errors.WithStack(err)
+	//}
+
+	// ExecuteWorkflow(ctx, options, workflowFunc, args...)
+	run, err := tc.ExecuteWorkflow(context.Background(),
+		client.StartWorkflowOptions{
+			ID:        "MyWorkflowID",  // Unique ID for business logic
+			TaskQueue: "encodingQueue", // Which worker group should handle this
+		},
+		"EncodingWorkflow",
+		dasherworker.EncodingWorkflowArgs{
+			FfmpegArgs: dasherworker.FfmpegArgs{
+				Args:            args,
+				Workdir:         DashDir(p.Msp),
+				TotalDurationUs: 7 * 60 * 1000000,
+			},
+		})
 	if err != nil {
-		return "", errors.WithStack(err)
+		slog.Info("Couldn't start workflow", "err", err)
+		return "", fmt.Errorf("Couldn't start workflow", "err", err)
 	}
+	fmt.Printf("Started Workflow ID: %s\n", run.GetID())
+	var res dasherworker.EncodingWorkflowResp
+	if err = run.Get(context.Background(), &res); err != nil {
+		slog.Info("Couldn't start workflow", "err", err)
+		return "", fmt.Errorf("Couldn't start workflow", "err", err)
+	}
+	fmt.Printf("Result %v\n", res)
 
 	args = []string{
 		"-dash", strconv.FormatFloat(p.Props.dashMs, 'f', 0, 64),
@@ -396,7 +436,7 @@ func EncodeStreamActivity(ctx context.Context, p EncodeParams) (string, error) {
 		"-segment-name", outputFName + "-postDash.mp4",
 		"-out", "manifest.mpd",
 		outputFName}
-	cmd = exec.Command("/usr/bin/MP4Box", args...)
+	cmd := exec.Command("/usr/bin/MP4Box", args...)
 	cmd.Dir = DashDir(p.Msp)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -411,6 +451,7 @@ func EncodeStreamActivity(ctx context.Context, p EncodeParams) (string, error) {
 	if err != nil {
 		return "", errors.WithStack(err)
 	}
+	//remove unneded files
 	if err := os.Remove(DashDir(p.Msp) + "/" + outputFName); err != nil {
 		return "", errors.WithStack(err)
 	}
@@ -472,7 +513,7 @@ func replaceWithSymlink(src, target string) error {
 	return nil
 }
 
-func makeDashWorkFlow(dir string, mspFile string) error {
+func makeDashWorkFlow(tc client.Client, dir string, mspFile string) error {
 	DirTimestamp = time.Now().UTC().Format("2006-01-02T15-04-05Z")
 	m, err := ActionReadMSP(dir, mspFile)
 	if err != nil {
@@ -523,7 +564,7 @@ func makeDashWorkFlow(dir string, mspFile string) error {
 				return errors.WithStack(err)
 			}
 			spew.Dump(srcAnalysis)
-			if _, err := EncodeStreamActivity(context.Background(), EncodeParams{preset(), streamno, m, dir, tprops, srcAnalysis}); err != nil {
+			if _, err := EncodeStreamActivity(context.Background(), tc, EncodeParams{preset(), streamno, m, dir, tprops, srcAnalysis}); err != nil {
 				return err
 			}
 		case "reference":
@@ -541,7 +582,7 @@ func makeDashWorkFlow(dir string, mspFile string) error {
 		if err != nil {
 			return err
 		}
-		if err := replaceWithSymlink(strings.TrimSuffix(dashFName, ".mp4")+"_dashinit.mp4", dashFName); err != nil {
+		if err := replaceWithSymlink(DashDir(m)+"/"+strings.TrimSuffix(dashFName, ".mp4")+"_dashinit.mp4", dashFName); err != nil {
 			return err
 		}
 	}
