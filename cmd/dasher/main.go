@@ -306,7 +306,7 @@ type EncodeParams struct {
 	Msp         scrape.Msp
 	Dir         string
 	Props       targetProperties
-	SrcAnalysis InterlaceAnalysis
+	SrcAnalysis dasherworker.InterlaceAnalysis
 }
 
 func EncodeStreamActivity(ctx context.Context, tc client.Client, p EncodeParams) (string, error) {
@@ -405,12 +405,13 @@ func EncodeStreamActivity(ctx context.Context, tc client.Client, p EncodeParams)
 	// ExecuteWorkflow(ctx, options, workflowFunc, args...)
 	run, err := tc.ExecuteWorkflow(context.Background(),
 		client.StartWorkflowOptions{
-			ID:        "MyWorkflowID",  // Unique ID for business logic
-			TaskQueue: "encodingQueue", // Which worker group should handle this
+			ID:        "MyWorkflowID", // Unique ID for business logic
+			TaskQueue: "dasherQueue",  // Which worker group should handle this
 		},
 		"EncodingWorkflow",
 		dasherworker.EncodingWorkflowArgs{
-			FfmpegArgs: dasherworker.FfmpegArgs{
+			InputFilePath: p.Dir + "/" + inputFName,
+			FfmpegEncodeArgs: dasherworker.FfmpegEncodeArgs{
 				Args:            args,
 				Workdir:         DashDir(p.Msp),
 				TotalDurationUs: 7 * 60 * 1000000,
@@ -418,13 +419,13 @@ func EncodeStreamActivity(ctx context.Context, tc client.Client, p EncodeParams)
 		})
 	if err != nil {
 		slog.Info("Couldn't start workflow", "err", err)
-		return "", fmt.Errorf("Couldn't start workflow", "err", err)
+		return "", fmt.Errorf("Couldn't start workflow. %+v", err)
 	}
 	fmt.Printf("Started Workflow ID: %s\n", run.GetID())
 	var res dasherworker.EncodingWorkflowResp
 	if err = run.Get(context.Background(), &res); err != nil {
 		slog.Info("Couldn't start workflow", "err", err)
-		return "", fmt.Errorf("Couldn't start workflow", "err", err)
+		return "", fmt.Errorf("Couldn't start workflow. %s", err.Error())
 	}
 	fmt.Printf("Result %v\n", res)
 
@@ -441,10 +442,6 @@ func EncodeStreamActivity(ctx context.Context, tc client.Client, p EncodeParams)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = nil
-	drFname, err = DasherReadyFilename(p.StreamNo, p.Msp)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
 	fmt.Printf("MP4Box dashing stream %d.  %s becomes %s \n", p.StreamNo, outputFName, drFname)
 	fmt.Printf("Starting /usr/bin/MP4Box %v\n", args)
 	err = cmd.Run()
@@ -559,7 +556,7 @@ func makeDashWorkFlow(tc client.Client, dir string, mspFile string) error {
 			if err != nil {
 				return errors.WithStack(err)
 			}
-			srcAnalysis, err := AnalyzeMediaActivity(context.Background(), dir, inFname)
+			srcAnalysis, err := dasherworker.AnalyzeMediaActivity(context.Background(), dir, inFname)
 			if err != nil {
 				return errors.WithStack(err)
 			}

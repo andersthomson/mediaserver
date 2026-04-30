@@ -17,45 +17,54 @@ import (
 )
 
 type EncodingWorkflowArgs struct {
-	FfmpegArgs FfmpegArgs
+	InputFilePath    string
+	FfmpegEncodeArgs FfmpegEncodeArgs
 }
 
 type EncodingWorkflowResp struct {
-	FfmpegResp FfmpegResp
+	FfmpegEncodeResp FfmpegEncodeResp
 }
 
 func EncodingWorkflow(ctx workflow.Context, args EncodingWorkflowArgs) (EncodingWorkflowResp, error) {
-	options := workflow.ActivityOptions{
-		StartToCloseTimeout: time.Hour * 5,
-		HeartbeatTimeout:    10 * time.Second,
+	// Step 1: Probe
+	ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 30 * time.Second,
+	})
+	err := workflow.ExecuteActivity(ctx1, GetVideoDurationUsec, args.InputFilePath).Get(ctx, &args.FfmpegEncodeArgs.TotalDurationUs)
+	if err != nil {
+		return EncodingWorkflowResp{}, err
 	}
-	ctx = workflow.WithActivityOptions(ctx, options)
 
-	var result FfmpegResp
-	err := workflow.ExecuteActivity(ctx, Ffmpeg, args.FfmpegArgs).Get(ctx, &result)
+	ctx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: time.Hour * 5,
+		TaskQueue:           "encodingQueue",
+		HeartbeatTimeout:    10 * time.Second,
+	})
+	var result FfmpegEncodeResp
+	err = workflow.ExecuteActivity(ctx2, FfmpegEncode, args.FfmpegEncodeArgs).Get(ctx, &result)
 	if err != nil {
 		slog.Error("activity failed", "err", err.Error())
 		return EncodingWorkflowResp{}, err
 	}
 	return EncodingWorkflowResp{
-		FfmpegResp: result,
+		FfmpegEncodeResp: result,
 	}, nil
 }
 
-type FfmpegArgs struct {
+type FfmpegEncodeArgs struct {
 	Args            []string
 	Workdir         string
 	TotalDurationUs int64
 }
 
-type FfmpegResp struct {
+type FfmpegEncodeResp struct {
 	Exitcode int
 	Stdout   string
 	Stderr   string
 }
 
-func Ffmpeg(ctx context.Context, args FfmpegArgs) (FfmpegResp, error) {
-	var resp FfmpegResp
+func FfmpegEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncodeResp, error) {
+	var resp FfmpegEncodeResp
 
 	// Create an extra pipe for progress only
 	pr, pw, _ := os.Pipe()

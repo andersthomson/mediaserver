@@ -18,11 +18,24 @@ func main() {
 	}
 	defer c.Close()
 
+	encodeWorker := worker.New(c, "encodingQueue", worker.Options{
+		Identity:                           "encoding-worker-01",
+		MaxConcurrentActivityExecutionSize: 1,
+	})
+	encodeWorker.RegisterActivity(dasherworker.FfmpegEncode)
+
+	go func() {
+		if err := encodeWorker.Run(worker.InterruptCh()); err != nil {
+			log.Fatalln("Encoding worker failed", err)
+		}
+	}()
+
 	// Create a worker on a specific Task Queue
-	w := worker.New(c, "encodingQueue", worker.Options{})
+	w := worker.New(c, "dasherQueue", worker.Options{})
 
 	w.RegisterWorkflow(dasherworker.EncodingWorkflow)
-	w.RegisterActivity(dasherworker.Ffmpeg)
+
+	w.RegisterActivity(dasherworker.GetVideoDurationUsec)
 
 	// Run the worker (blocks until interrupted)
 	err = w.Run(worker.InterruptCh())
