@@ -205,43 +205,6 @@ func EncodeStreamActivity(ctx context.Context, tc client.Client, p dasherworker.
 	}
 	fmt.Printf("Result %v\n", res)
 
-	//--------------------------------------------------- activities....
-
-	drFname, err := dasherworker.DasherReadyFilename(p.StreamNo, p.Msp)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	outputFName := drFname + "-fragmented.mp4"
-
-	args := []string{
-		"-dash", strconv.FormatFloat(p.Props.DashMs, 'f', 0, 64),
-		"-rap",
-		"-profile",
-		"onDemand",
-		"-segment-name", outputFName + "-postDash.mp4",
-		"-out", "manifest.mpd",
-		outputFName}
-	cmd := exec.Command("/usr/bin/MP4Box", args...)
-	cmd.Dir = DashDir(p.Msp)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = nil
-	fmt.Printf("MP4Box dashing stream %d.  %s becomes %s \n", p.StreamNo, outputFName, drFname)
-	fmt.Printf("Starting /usr/bin/MP4Box %v\n", args)
-	err = cmd.Run()
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	//remove unneded files
-	if err := os.Remove(DashDir(p.Msp) + "/" + outputFName); err != nil {
-		return "", errors.WithStack(err)
-	}
-	if err := os.Remove(DashDir(p.Msp) + "/manifest.mpd"); err != nil {
-		return "", errors.WithStack(err)
-	}
-	if err := os.Rename(DashDir(p.Msp)+"/"+outputFName+"-postDash.mp4init.mp4", DashDir(p.Msp)+"/"+drFname); err != nil {
-		return "", errors.WithStack(err)
-	}
 	return "", nil
 }
 

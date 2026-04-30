@@ -53,16 +53,6 @@ type EncodeParams struct {
 	SrcAnalysis InterlaceAnalysis
 }
 
-type EncodingWorkflowArgs struct {
-	InputFilePath string
-	WorkDir       string
-	P             EncodeParams
-}
-
-type EncodingWorkflowResp struct {
-	FfmpegEncodeResp FfmpegEncodeResp
-}
-
 func Input(streamno int, m scrape.Msp) (scrape.InputT, error) {
 	splits := strings.Split(m.Dash.Streams[streamno].Source, ":")
 	inputNumber, err := strconv.Atoi(splits[0])
@@ -152,6 +142,15 @@ func DasherReadyFilename(streamno int, m scrape.Msp) (string, error) {
 		return "", err
 	}
 	return fname + "-encoded-" + fmt.Sprintf("%d", streamno) + ".mp4", nil
+}
+
+type EncodingWorkflowArgs struct {
+	InputFilePath string
+	WorkDir       string
+	P             EncodeParams
+}
+
+type EncodingWorkflowResp struct {
 }
 
 func EncodingWorkflow(ctx workflow.Context, args EncodingWorkflowArgs) (EncodingWorkflowResp, error) {
@@ -252,11 +251,12 @@ func EncodingWorkflow(ctx workflow.Context, args EncodingWorkflowArgs) (Encoding
 		StartToCloseTimeout: 30 * time.Second,
 	})
 	var duration int64
-	err = workflow.ExecuteActivity(ctx1, GetVideoDurationUsec, args.P.Dir+"/"+inputFName).Get(ctx, &duration)
+	err = workflow.ExecuteActivity(ctx1, GetVideoDurationUsec, args.P.Dir+"/"+inputFName).Get(ctx1, &duration)
 	if err != nil {
 		return EncodingWorkflowResp{}, err
 	}
 
+	//Step 2: Encode
 	ctx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: time.Hour * 5,
 		TaskQueue:           "encodingQueue",
@@ -267,14 +267,30 @@ func EncodingWorkflow(ctx workflow.Context, args EncodingWorkflowArgs) (Encoding
 		Args:            ffmpegArgs,
 		Workdir:         args.WorkDir,
 		TotalDurationUs: duration,
-	}).Get(ctx, &result)
+	}).Get(ctx2, &result)
 	if err != nil {
 		slog.Error("activity failed", "err", err.Error())
 		return EncodingWorkflowResp{}, err
 	}
-	return EncodingWorkflowResp{
-		FfmpegEncodeResp: result,
-	}, nil
+
+	//Step 3: make Dash Ready
+	ctx3 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: time.Minute * 5,
+		TaskQueue:           "encodingQueue",
+		HeartbeatTimeout:    1000 * time.Second,
+	})
+
+	var MP4BoxDashReadyResp MP4BoxDashReadyResp
+	err = workflow.ExecuteActivity(ctx3, MP4BoxDashReady, MP4BoxDashReadyArgs{
+		WorkDir: args.WorkDir,
+		P:       args.P,
+	}).Get(ctx3, &MP4BoxDashReadyResp)
+	if err != nil {
+		slog.Error("MP4BoxDashReady activity failed", "err", err.Error())
+		return EncodingWorkflowResp{}, err
+	}
+
+	return EncodingWorkflowResp{}, nil
 }
 
 type FfmpegEncodeArgs struct {

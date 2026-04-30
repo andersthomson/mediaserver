@@ -23,6 +23,7 @@ func main() {
 		MaxConcurrentActivityExecutionSize: 1,
 	})
 	encodeWorker.RegisterActivity(dasherworker.FfmpegEncode)
+	encodeWorker.RegisterActivity(dasherworker.MP4BoxDashReady)
 
 	go func() {
 		if err := encodeWorker.Run(worker.InterruptCh()); err != nil {
