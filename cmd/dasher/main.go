@@ -82,44 +82,6 @@ func DashDirProd(m scrape.Msp) string {
 	return "/var/cache/mediacache/" + m.ShortName + "-" + m.Id + "/dash"
 }
 
-func DasherReadyFilename(streamno int, m scrape.Msp) (string, error) {
-	fname, err := InputFName(streamno, m)
-	if err != nil {
-		return "", err
-	}
-	return fname + "-encoded-" + fmt.Sprintf("%d", streamno) + ".mp4", nil
-}
-
-func InputFName(streamno int, m scrape.Msp) (string, error) {
-	var inputNumber int
-	var err error
-	if m.Dash.Streams[streamno].Source != "" {
-		splits := strings.Split(m.Dash.Streams[streamno].Source, ":")
-		inputNumber, err = strconv.Atoi(splits[0])
-		if err != nil {
-			return "", errors.WithStack(err)
-		}
-		if inputNumber+1 > len(m.Inputs) {
-			return "", errors.WithStack(fmt.Errorf("inputnumber out of bounds %v", m))
-		}
-		return m.Inputs[inputNumber].Filename, nil
-	}
-	inputNumber = m.Dash.Streams[streamno].ReferenceFile
-	if inputNumber+1 > len(m.Inputs) {
-		return "", errors.WithStack(fmt.Errorf("inputnumber out of bounds %v", m))
-	}
-	return m.Inputs[inputNumber].Filename, nil
-}
-
-func Input(streamno int, m scrape.Msp) (scrape.InputT, error) {
-	splits := strings.Split(m.Dash.Streams[streamno].Source, ":")
-	inputNumber, err := strconv.Atoi(splits[0])
-	if err != nil {
-		return scrape.InputT{}, errors.WithStack(err)
-	}
-	return m.Inputs[inputNumber], nil
-}
-
 type SrcProperties struct {
 	streamType  string // video, audio, subtitles
 	fps         float64
@@ -211,67 +173,6 @@ func dashMs(p SrcProperties) float64 {
 	return math.Max(1.0, math.Round(4.0/diff)) * diff * 1000
 }
 
-type targetProperties struct {
-	gopFrames float64
-	dashMs    float64
-}
-
-func tune(codec string, kind string) []string {
-	switch codec {
-	case "x264":
-		switch kind {
-		case "animation":
-			return []string{"-tune:v", "animation"}
-		default:
-			return []string{"-tune:v", "film"}
-		}
-	case "x265":
-		switch kind {
-		case "animation":
-			return []string{"-tune:v", "animation"}
-		}
-	}
-	return nil
-}
-
-func bitrate(stream scrape.StreamT) string {
-	type Tbl map[string]map[string]string
-	T := Tbl{
-		"x264": {
-			"high": "6000",
-			"low":  "800",
-		},
-		"x265": {
-			"high": "2000",
-			"low":  "800",
-		},
-	}
-	return T[stream.Codec][stream.Profile]
-}
-
-func crf(stream scrape.StreamT) string {
-	type crfTbl map[string]map[string]string
-	crfT := crfTbl{
-		"x264": {
-			"high": "18",
-			"low":  "18",
-		},
-		"x265": {
-			"high": "21",
-			"low":  "24",
-		},
-	}
-	return crfT[stream.Codec][stream.Profile]
-}
-
-func crfMax(crf string) string {
-	c, _ := strconv.Atoi(crf)
-	return strconv.Itoa(c + 5)
-}
-func bufSize(bitrate string) string {
-	c, _ := strconv.Atoi(bitrate)
-	return strconv.Itoa(2 * c)
-}
 func preset() string {
 	if fast() {
 		return "ultrafast"
@@ -280,128 +181,7 @@ func preset() string {
 	}
 }
 
-func interlaceIfNeeded(in, out string, filter string) string {
-	return fmt.Sprintf("[%s]%s[%s]", in, filter, out)
-}
-func scaleIfNeeded(in, out string, filter string) string {
-	return fmt.Sprintf("[%s]%s[%s]", in, filter, out)
-}
-
-func scaleFilter(stream scrape.StreamT) string {
-	switch stream.Codec {
-	case "x264", "x265":
-		switch stream.Profile {
-		case "high":
-			return "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1080,ih))'"
-		case "low":
-			return "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))'"
-		}
-	}
-	return ""
-}
-
-type EncodeParams struct {
-	Preset      string
-	StreamNo    int
-	Msp         scrape.Msp
-	Dir         string
-	Props       targetProperties
-	SrcAnalysis dasherworker.InterlaceAnalysis
-}
-
-func EncodeStreamActivity(ctx context.Context, tc client.Client, p EncodeParams) (string, error) {
-	/*
-		DEINTERLACE := "[$VIDEOSOURCE]bwdif=mode=0:parity=auto:deint=all,"
-		SCALE_1080 := "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1080,ih))'"
-		SCALE_720 := "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))'"
-	*/
-
-	inputFName, err := InputFName(p.StreamNo, p.Msp)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	drFname, err := DasherReadyFilename(p.StreamNo, p.Msp)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-	outputFName := drFname + "-fragmented.mp4"
-	inp, err := Input(p.StreamNo, p.Msp)
-	if err != nil {
-		return "", errors.WithStack(err)
-	}
-
-	var args []string
-	scaleFilter := scaleFilter(p.Msp.Dash.Streams[p.StreamNo])
-	switch p.Msp.Dash.Streams[p.StreamNo].Codec {
-	case "x264":
-		args = []string{
-			"-itsoffset", fmt.Sprintf("%.3f", p.SrcAnalysis.FirstPTS),
-			//"-c:v", "h264_v4l2m2m",
-			"-i", p.Dir + "/" + inputFName,
-			"-filter_complex", strings.Join([]string{interlaceIfNeeded("0:v:0", "postdeint", p.SrcAnalysis.FilterRecommendation),
-				scaleIfNeeded("postdeint", "out", scaleFilter)}, ";"),
-			"-map", "[out]",
-			"-c:v", "libx264",
-			"-profile:v", "high",
-			"-level:v", "4.1",
-			"-pix_fmt", "yuv420p",
-			"-crf:v", crf(p.Msp.Dash.Streams[p.StreamNo]),
-			"-preset:v", p.Preset}
-		args = append(args, tune(p.Msp.Dash.Streams[p.StreamNo].Codec, inp.Kind)...)
-		args = append(args, []string{
-			"-x264-params:v", "keyint=" + strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64) + ":min-keyint=" + strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64) + ":scenecut=0:open-gop=0:vbv-maxrate=" + bitrate(p.Msp.Dash.Streams[p.StreamNo]) + ":vbv-bufsize=" + bufSize(bitrate(p.Msp.Dash.Streams[p.StreamNo])) + ":crf-max=" + crfMax(crf(p.Msp.Dash.Streams[p.StreamNo])),
-			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
-			outputFName,
-		}...)
-	case "x265":
-		args = []string{
-			"-itsoffset", fmt.Sprintf("%.3f", p.SrcAnalysis.FirstPTS),
-			"-i", p.Dir + "/" + inputFName,
-			"-filter_complex", strings.Join([]string{interlaceIfNeeded("0:v:0", "postdeint", p.SrcAnalysis.FilterRecommendation),
-				scaleIfNeeded("postdeint", "out", scaleFilter)}, ";"),
-			"-map", "[out]",
-			"-c:v", "libx265",
-			"-profile:v", "main10",
-			"-level:v", "5.1",
-			"-pix_fmt", "yuv420p",
-			"-crf:v", crf(p.Msp.Dash.Streams[p.StreamNo]),
-			"-preset:v", p.Preset,
-		}
-		args = append(args, tune(p.Msp.Dash.Streams[p.StreamNo].Codec, inp.Kind)...)
-		args = append(args,
-			"-tag:v", "hvc1",
-			"-x265-params:v", "keyint="+strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(p.Props.gopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate(p.Msp.Dash.Streams[p.StreamNo])+":vbv-bufsize="+bufSize(bitrate(p.Msp.Dash.Streams[p.StreamNo])),
-			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
-			outputFName,
-		)
-	case "aac":
-		args = []string{
-			"-i", p.Dir + "/" + inputFName,
-			"-map", p.Msp.Dash.Streams[p.StreamNo].Source,
-			"-c", "aac",
-			outputFName,
-		}
-	case "copy":
-		args = []string{
-			"-i", p.Dir + "/" + inputFName,
-			"-map", p.Msp.Dash.Streams[p.StreamNo].Source,
-			"-c", "copy",
-			outputFName,
-		}
-	}
-	//fmt.Printf("Starting %v\n", args)
-	//cmd := exec.Command("/usr/bin/ffmpeg", args...)
-	//cmd.Dir = DashDir(p.Msp)
-	//cmd.Stdout = os.Stdout
-	//cmd.Stderr = os.Stderr
-	//cmd.Stdin = nil
-
-	//fmt.Printf("FFMpeg encoding stream %d. %s becomes %s \n", p.StreamNo, inputFName, outputFName)
-	//err = cmd.Run()
-	//if err != nil {
-	//	return "", errors.WithStack(err)
-	//}
-
+func EncodeStreamActivity(ctx context.Context, tc client.Client, p dasherworker.EncodeParams) (string, error) {
 	// ExecuteWorkflow(ctx, options, workflowFunc, args...)
 	run, err := tc.ExecuteWorkflow(context.Background(),
 		client.StartWorkflowOptions{
@@ -410,12 +190,8 @@ func EncodeStreamActivity(ctx context.Context, tc client.Client, p EncodeParams)
 		},
 		"EncodingWorkflow",
 		dasherworker.EncodingWorkflowArgs{
-			InputFilePath: p.Dir + "/" + inputFName,
-			FfmpegEncodeArgs: dasherworker.FfmpegEncodeArgs{
-				Args:            args,
-				Workdir:         DashDir(p.Msp),
-				TotalDurationUs: 7 * 60 * 1000000,
-			},
+			WorkDir: DashDir(p.Msp),
+			P:       p,
 		})
 	if err != nil {
 		slog.Info("Couldn't start workflow", "err", err)
@@ -429,8 +205,16 @@ func EncodeStreamActivity(ctx context.Context, tc client.Client, p EncodeParams)
 	}
 	fmt.Printf("Result %v\n", res)
 
-	args = []string{
-		"-dash", strconv.FormatFloat(p.Props.dashMs, 'f', 0, 64),
+	//--------------------------------------------------- activities....
+
+	drFname, err := dasherworker.DasherReadyFilename(p.StreamNo, p.Msp)
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
+	outputFName := drFname + "-fragmented.mp4"
+
+	args := []string{
+		"-dash", strconv.FormatFloat(p.Props.DashMs, 'f', 0, 64),
 		"-rap",
 		"-profile",
 		"onDemand",
@@ -465,7 +249,7 @@ func linkAction(streamno int, m scrape.Msp, dir string) error {
 	//Get the source file
 	inputNumber := m.Dash.Streams[streamno].ReferenceFile
 	srcFile := m.Inputs[inputNumber].Filename
-	dstFile, err := DasherReadyFilename(streamno, m)
+	dstFile, err := dasherworker.DasherReadyFilename(streamno, m)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -480,7 +264,7 @@ func dasherAction(m scrape.Msp, gopMs float64) error {
 	fmt.Printf("dasherAction\n")
 	var inputs []string
 	for streamno, _ := range m.Dash.Streams {
-		drFname, err := DasherReadyFilename(streamno, m)
+		drFname, err := dasherworker.DasherReadyFilename(streamno, m)
 		if err != nil {
 			return errors.WithStack(err)
 		}
@@ -518,7 +302,7 @@ func makeDashWorkFlow(tc client.Client, dir string, mspFile string) error {
 	}
 	//Sanity check:
 	var referenceFiles = map[int]bool{}
-	var tprops targetProperties
+	var tprops dasherworker.TargetProperties
 	for streamno, stream := range m.Dash.Streams {
 		if stream.Codec == "reference" {
 			referenceFiles[stream.ReferenceFile] = true
@@ -533,17 +317,17 @@ func makeDashWorkFlow(tc client.Client, dir string, mspFile string) error {
 				if props.gopMilliSec < 1500 || props.gopMilliSec > 5000 {
 					return fmt.Errorf("Source %d, which you want to have referenced, has an unsupported gop %f\n", streamno, props.gopMilliSec)
 				}
-				tprops.gopFrames = props.gopFrames
-				tprops.dashMs = dashMs(props)
+				tprops.GopFrames = props.gopFrames
+				tprops.DashMs = dashMs(props)
 			case isDashReadyAudio(dir + "/" + m.Inputs[stream.ReferenceFile].Filename):
 			default:
 				return fmt.Errorf("Source %d, which you want to have referenced, is not dash ready\n", stream.ReferenceFile)
 			}
 		}
 	}
-	if tprops.gopFrames == 0 {
-		tprops.gopFrames = 100
-		tprops.dashMs = 4000
+	if tprops.GopFrames == 0 {
+		tprops.GopFrames = 100
+		tprops.DashMs = 4000
 	}
 	if err := os.MkdirAll(DashDir(m), os.ModePerm); err != nil {
 		return errors.WithStack(err)
@@ -552,7 +336,7 @@ func makeDashWorkFlow(tc client.Client, dir string, mspFile string) error {
 	for streamno, stream := range m.Dash.Streams {
 		switch stream.Codec {
 		case "x264", "x265", "copy", "aac":
-			inFname, err := InputFName(streamno, m)
+			inFname, err := dasherworker.InputFName(streamno, m)
 			if err != nil {
 				return errors.WithStack(err)
 			}
@@ -561,7 +345,7 @@ func makeDashWorkFlow(tc client.Client, dir string, mspFile string) error {
 				return errors.WithStack(err)
 			}
 			spew.Dump(srcAnalysis)
-			if _, err := EncodeStreamActivity(context.Background(), tc, EncodeParams{preset(), streamno, m, dir, tprops, srcAnalysis}); err != nil {
+			if _, err := EncodeStreamActivity(context.Background(), tc, dasherworker.EncodeParams{preset(), streamno, m, dir, tprops, srcAnalysis}); err != nil {
 				return err
 			}
 		case "reference":
@@ -572,10 +356,10 @@ func makeDashWorkFlow(tc client.Client, dir string, mspFile string) error {
 
 	}
 	//Build Dash
-	dasherAction(m, tprops.dashMs)
+	dasherAction(m, tprops.DashMs)
 
 	for streamno, _ := range m.Dash.Streams {
-		dashFName, err := DasherReadyFilename(streamno, m)
+		dashFName, err := dasherworker.DasherReadyFilename(streamno, m)
 		if err != nil {
 			return err
 		}
