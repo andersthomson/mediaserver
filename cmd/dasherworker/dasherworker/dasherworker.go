@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/workflow"
@@ -50,7 +51,7 @@ type EncodeParams struct {
 	Msp         scrape.Msp
 	Dir         string
 	Props       TargetProperties
-	SrcAnalysis InterlaceAnalysis
+	SrcAnalysis MediaInterlaceAnalysis
 }
 
 func Input(streamno int, m scrape.Msp) (scrape.InputT, error) {
@@ -142,6 +143,106 @@ func DasherReadyFilename(streamno int, m scrape.Msp) (string, error) {
 		return "", err
 	}
 	return fname + "-encoded-" + fmt.Sprintf("%d", streamno) + ".mp4", nil
+}
+func preset(fast bool) string {
+	if fast {
+		return "ultrafast"
+	} else {
+		return "slow"
+	}
+}
+
+type AllEncodingWorkflowArgs struct {
+	Dir       string
+	TargetDir string
+	ProdDir   string
+	M         scrape.Msp
+	Tprops    TargetProperties
+	Fast      bool
+}
+
+type AllEncodingWorkflowResp struct {
+}
+
+func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (AllEncodingWorkflowResp, error) {
+	//Find the encoding needs
+	slog.Info("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+	for streamno, stream := range args.M.Dash.Streams {
+		switch stream.Codec {
+		case "x264", "x265", "copy", "aac":
+			inFname, err := InputFName(streamno, args.M)
+			if err != nil {
+				return AllEncodingWorkflowResp{}, errors.WithStack(err)
+			}
+			//Activity
+			ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+				StartToCloseTimeout: 10 * time.Minute,
+				TaskQueue:           "dasherQueue",
+				//HeartbeatTimeout:    1000 * time.Second,
+			})
+			var MediaInterlaceAnalysis MediaInterlaceAnalysis
+			slog.Info("XXXXXXXX starting AnalyzeMediaInterlace activity")
+			err = workflow.ExecuteActivity(ctx1, AnalyzeMediaInterlace, AnalyzeMediaInterlaceArgs{
+				Dir:   args.Dir,
+				Fname: inFname,
+			}).Get(ctx1, &MediaInterlaceAnalysis)
+			if err != nil {
+				return AllEncodingWorkflowResp{}, errors.WithStack(err)
+			}
+			spew.Dump(MediaInterlaceAnalysis)
+
+			//WF ffmpeg encode
+			var EncodingWorkflowResp EncodingWorkflowResp
+			err = workflow.ExecuteChildWorkflow(ctx, EncodingWorkflow, EncodingWorkflowArgs{
+				InputFilePath: args.Dir + "/" + inFname,
+				WorkDir:       args.TargetDir,
+				P:             EncodeParams{preset(args.Fast), streamno, args.M, args.Dir, args.Tprops, MediaInterlaceAnalysis},
+			}).Get(ctx, &EncodingWorkflowResp)
+			if err != nil {
+				slog.Info("Couldn't start child workflow", "err", err)
+				return AllEncodingWorkflowResp{}, fmt.Errorf("Couldn't start child workflow. %+v", err)
+			}
+			fmt.Printf("Result %v\n", EncodingWorkflowResp)
+		case "reference":
+			ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+				StartToCloseTimeout: 10 * time.Minute,
+				TaskQueue:           "dasherQueue",
+				//HeartbeatTimeout:    1000 * time.Second,
+			})
+			slog.Info("XXXXXXXX starting LinkSrcMedia activity")
+			err := workflow.ExecuteActivity(ctx1, LinkSrcMedia, LinkSrcMediaArgs{
+				Streamno:  streamno,
+				M:         args.M,
+				Dir:       args.Dir,
+				TargetDir: args.TargetDir,
+			}).Get(ctx1, nil)
+			if err != nil {
+				return AllEncodingWorkflowResp{}, errors.WithStack(err)
+			}
+		default:
+			return AllEncodingWorkflowResp{}, fmt.Errorf("Msp malformed: Unsupported Codec %s in stream %d\n", stream.Codec, streamno)
+		}
+
+	}
+	ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Minute,
+		TaskQueue:           "dasherQueue",
+		//HeartbeatTimeout:    1000 * time.Second,
+	})
+	slog.Info("XXXXXXXX starting Finalize activity")
+	err := workflow.ExecuteActivity(ctx1, Finalize, FinalizeArgs{
+		M:         args.M,
+		DashMs:    args.Tprops.DashMs,
+		TargetDir: args.TargetDir,
+		ProdDir:   args.ProdDir,
+		Fast:      args.Fast,
+	}).Get(ctx1, nil)
+	if err != nil {
+		return AllEncodingWorkflowResp{}, errors.WithStack(err)
+	}
+
+	return AllEncodingWorkflowResp{}, nil
+
 }
 
 type EncodingWorkflowArgs struct {

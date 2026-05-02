@@ -1,4 +1,4 @@
-package main
+package dasherworker
 
 import (
 	"encoding/json"

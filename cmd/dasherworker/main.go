@@ -20,7 +20,7 @@ func main() {
 
 	encodeWorker := worker.New(c, "encodingQueue", worker.Options{
 		Identity:                           "encoding-worker-01",
-		MaxConcurrentActivityExecutionSize: 1,
+		MaxConcurrentActivityExecutionSize: 10,
 	})
 	encodeWorker.RegisterActivity(dasherworker.FfmpegEncode)
 	encodeWorker.RegisterActivity(dasherworker.MP4BoxDashReady)
@@ -35,7 +35,11 @@ func main() {
 	w := worker.New(c, "dasherQueue", worker.Options{})
 
 	w.RegisterWorkflow(dasherworker.EncodingWorkflow)
+	w.RegisterWorkflow(dasherworker.AllEncodingWorkflow)
 
+	w.RegisterActivity(dasherworker.LinkSrcMedia)
+	w.RegisterActivity(dasherworker.Finalize)
+	w.RegisterActivity(dasherworker.AnalyzeMediaInterlace)
 	w.RegisterActivity(dasherworker.GetVideoDurationUsec)
 
 	// Run the worker (blocks until interrupted)

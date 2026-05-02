@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,7 +32,12 @@ func getVideoDuration(ctx context.Context, fullPath string) (float64, error) {
 	return strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
 }
 
-type InterlaceAnalysis struct {
+type AnalyzeMediaInterlaceArgs struct {
+	Dir   string
+	Fname string
+}
+
+type MediaInterlaceAnalysis struct {
 	FilterRecommendation string  `json:"filter_recommendation"`
 	FirstPTS             float64 `json:"first_pts"`
 	ProgressiveRatio     float64 `json:"progressive_ratio"`
@@ -40,9 +46,10 @@ type InterlaceAnalysis struct {
 	IsFakeHighFPS        bool
 }
 
-func AnalyzeMediaActivity(ctx context.Context, dir, fname string) (InterlaceAnalysis, error) {
-	fullPath := filepath.Join(dir, fname)
-	analysis := InterlaceAnalysis{FilterRecommendation: "null"}
+func AnalyzeMediaInterlace(ctx context.Context, args AnalyzeMediaInterlaceArgs) (MediaInterlaceAnalysis, error) {
+	slog.Info("AnalyzeMediaInterlace started")
+	fullPath := filepath.Join(args.Dir, args.Fname)
+	analysis := MediaInterlaceAnalysis{FilterRecommendation: "null"}
 
 	// 1. SYNC PROBE: Capture the First PTS (The 0.08s sync mystery)
 	// We do this separately because the main probe uses -ss which resets PTS.
@@ -58,7 +65,7 @@ func AnalyzeMediaActivity(ctx context.Context, dir, fname string) (InterlaceAnal
 	seekPoint := 0.0
 	duration, err := getVideoDuration(ctx, fullPath)
 	if err != nil {
-		return InterlaceAnalysis{}, errors.WithStack(err)
+		return MediaInterlaceAnalysis{}, errors.WithStack(err)
 	}
 	if duration > 2.0 {
 		seekPoint = duration / 2
@@ -157,7 +164,7 @@ func AnalyzeMediaActivity(ctx context.Context, dir, fname string) (InterlaceAnal
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Analysis Complete: %s | PTS: %v | Filter: %s\n", fname, analysis.FirstPTS, analysis.FilterRecommendation)
+	fmt.Fprintf(os.Stderr, "Analysis Complete: %s | PTS: %v | Filter: %s\n", args.Fname, analysis.FirstPTS, analysis.FilterRecommendation)
 	return analysis, nil
 }
 
