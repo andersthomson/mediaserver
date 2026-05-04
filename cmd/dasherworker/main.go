@@ -37,6 +37,7 @@ func main() {
 	w.RegisterWorkflow(dasherworker.EncodingWorkflow)
 	w.RegisterWorkflow(dasherworker.AllEncodingWorkflow)
 
+	w.RegisterActivity(dasherworker.Prelude)
 	w.RegisterActivity(dasherworker.LinkSrcMedia)
 	w.RegisterActivity(dasherworker.Finalize)
 	w.RegisterActivity(dasherworker.AnalyzeMediaInterlace)

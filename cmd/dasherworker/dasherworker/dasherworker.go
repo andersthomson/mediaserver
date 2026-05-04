@@ -153,24 +153,35 @@ func preset(fast bool) string {
 }
 
 type AllEncodingWorkflowArgs struct {
-	Dir       string
-	TargetDir string
-	ProdDir   string
-	M         scrape.Msp
-	Tprops    TargetProperties
-	Fast      bool
+	Dir     string
+	MspFile string
+	Fast    bool
 }
 
 type AllEncodingWorkflowResp struct {
 }
 
 func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (AllEncodingWorkflowResp, error) {
+	ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Minute,
+		TaskQueue:           "dasherQueue",
+		//HeartbeatTimeout:    1000 * time.Second,
+	})
+	var preludeResp PreludeResp
+	slog.Info("XXXXXXXX starting Prelude activity")
+	err := workflow.ExecuteActivity(ctx1, Prelude, PreludeArgs{
+		MspFile: args.MspFile,
+		Dir:     args.Dir,
+	}).Get(ctx1, &preludeResp)
+	if err != nil {
+		return AllEncodingWorkflowResp{}, errors.WithStack(err)
+	}
 	//Find the encoding needs
 	slog.Info("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
-	for streamno, stream := range args.M.Dash.Streams {
+	for streamno, stream := range preludeResp.M.Dash.Streams {
 		switch stream.Codec {
 		case "x264", "x265", "copy", "aac":
-			inFname, err := InputFName(streamno, args.M)
+			inFname, err := InputFName(streamno, preludeResp.M)
 			if err != nil {
 				return AllEncodingWorkflowResp{}, errors.WithStack(err)
 			}
@@ -195,8 +206,8 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 			var EncodingWorkflowResp EncodingWorkflowResp
 			err = workflow.ExecuteChildWorkflow(ctx, EncodingWorkflow, EncodingWorkflowArgs{
 				InputFilePath: args.Dir + "/" + inFname,
-				WorkDir:       args.TargetDir,
-				P:             EncodeParams{preset(args.Fast), streamno, args.M, args.Dir, args.Tprops, MediaInterlaceAnalysis},
+				WorkDir:       preludeResp.DashDir,
+				P:             EncodeParams{preset(args.Fast), streamno, preludeResp.M, args.Dir, preludeResp.Tprops, MediaInterlaceAnalysis},
 			}).Get(ctx, &EncodingWorkflowResp)
 			if err != nil {
 				slog.Info("Couldn't start child workflow", "err", err)
@@ -212,9 +223,9 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 			slog.Info("XXXXXXXX starting LinkSrcMedia activity")
 			err := workflow.ExecuteActivity(ctx1, LinkSrcMedia, LinkSrcMediaArgs{
 				Streamno:  streamno,
-				M:         args.M,
+				M:         preludeResp.M,
 				Dir:       args.Dir,
-				TargetDir: args.TargetDir,
+				TargetDir: preludeResp.DashDir,
 			}).Get(ctx1, nil)
 			if err != nil {
 				return AllEncodingWorkflowResp{}, errors.WithStack(err)
@@ -224,17 +235,17 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 		}
 
 	}
-	ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+	ctx1 = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
 		TaskQueue:           "dasherQueue",
 		//HeartbeatTimeout:    1000 * time.Second,
 	})
 	slog.Info("XXXXXXXX starting Finalize activity")
-	err := workflow.ExecuteActivity(ctx1, Finalize, FinalizeArgs{
-		M:         args.M,
-		DashMs:    args.Tprops.DashMs,
-		TargetDir: args.TargetDir,
-		ProdDir:   args.ProdDir,
+	err = workflow.ExecuteActivity(ctx1, Finalize, FinalizeArgs{
+		M:         preludeResp.M,
+		DashMs:    preludeResp.Tprops.DashMs,
+		TargetDir: preludeResp.DashDir,
+		ProdDir:   preludeResp.ProdDir,
 		Fast:      args.Fast,
 	}).Get(ctx1, nil)
 	if err != nil {
