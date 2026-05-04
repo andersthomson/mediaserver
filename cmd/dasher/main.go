@@ -69,8 +69,8 @@ func makeDashWorkFlow(tc client.Client, dir string, mspFile string) error {
 	slog.Info("Starting wf")
 	run, err := tc.ExecuteWorkflow(context.Background(),
 		client.StartWorkflowOptions{
-			ID:        "MyWorkflowID", // Unique ID for business logic
-			TaskQueue: "dasherQueue",  // Which worker group should handle this
+			ID:        "EncodeMsp-" + filepath.Base(mspFile), // Unique ID for business logic
+			TaskQueue: "dasherQueue",                         // Which worker group should handle this
 		},
 		"AllEncodingWorkflow",
 		dasherworker.AllEncodingWorkflowArgs{

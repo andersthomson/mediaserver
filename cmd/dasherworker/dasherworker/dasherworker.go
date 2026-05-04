@@ -176,6 +176,10 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 	if err != nil {
 		return AllEncodingWorkflowResp{}, errors.WithStack(err)
 	}
+	dirTimestamp := workflow.Now(ctx).UTC().Format("2006-01-02T15-04-05Z")
+	ProdDir := "/var/cache/mediacache/" + preludeResp.M.ShortName + "-" + preludeResp.M.Id + "/dash"
+	DashDir := ProdDir + "." + dirTimestamp
+
 	//Find the encoding needs
 	slog.Info("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 	for streamno, stream := range preludeResp.M.Dash.Streams {
@@ -206,7 +210,7 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 			var EncodingWorkflowResp EncodingWorkflowResp
 			err = workflow.ExecuteChildWorkflow(ctx, EncodingWorkflow, EncodingWorkflowArgs{
 				InputFilePath: args.Dir + "/" + inFname,
-				WorkDir:       preludeResp.DashDir,
+				WorkDir:       DashDir,
 				P:             EncodeParams{preset(args.Fast), streamno, preludeResp.M, args.Dir, preludeResp.Tprops, MediaInterlaceAnalysis},
 			}).Get(ctx, &EncodingWorkflowResp)
 			if err != nil {
@@ -225,7 +229,7 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 				Streamno:  streamno,
 				M:         preludeResp.M,
 				Dir:       args.Dir,
-				TargetDir: preludeResp.DashDir,
+				TargetDir: DashDir,
 			}).Get(ctx1, nil)
 			if err != nil {
 				return AllEncodingWorkflowResp{}, errors.WithStack(err)
@@ -244,8 +248,8 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 	err = workflow.ExecuteActivity(ctx1, Finalize, FinalizeArgs{
 		M:         preludeResp.M,
 		DashMs:    preludeResp.Tprops.DashMs,
-		TargetDir: preludeResp.DashDir,
-		ProdDir:   preludeResp.ProdDir,
+		TargetDir: DashDir,
+		ProdDir:   ProdDir,
 		Fast:      args.Fast,
 	}).Get(ctx1, nil)
 	if err != nil {

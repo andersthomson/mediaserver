@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
 	"github.com/pkg/errors"
@@ -18,20 +17,16 @@ var DirTimestamp string
 func DashDir(m scrape.Msp) string {
 	return "/var/cache/mediacache/" + m.ShortName + "-" + m.Id + "/dash." + DirTimestamp
 }
-func DashDirProd(m scrape.Msp) string {
-	return "/var/cache/mediacache/" + m.ShortName + "-" + m.Id + "/dash"
-}
 
 type PreludeArgs struct {
+	DashDir string
 	MspFile string
 	Dir     string
 }
 
 type PreludeResp struct {
-	DashDir string
-	ProdDir string
-	M       scrape.Msp
-	Tprops  TargetProperties
+	M      scrape.Msp
+	Tprops TargetProperties
 }
 
 func ActionReadMSP(dir string, mspFile string) (scrape.Msp, error) {
@@ -44,7 +39,6 @@ func dashMs(p SrcProperties) float64 {
 
 func Prelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
 	//FIXME use temporal
-	DirTimestamp = time.Now().UTC().Format("2006-01-02T15-04-05Z")
 	m, err := ActionReadMSP(args.Dir, args.MspFile)
 	if err != nil {
 		return PreludeResp{}, fmt.Errorf("MSP read of %s/%s failed: %w", args.Dir, args.MspFile, errors.WithStack(err))
@@ -78,13 +72,11 @@ func Prelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
 		tprops.GopFrames = 100
 		tprops.DashMs = 4000
 	}
-	if err := os.MkdirAll(DashDir(m), os.ModePerm); err != nil {
+	if err := os.MkdirAll(args.DashDir, os.ModePerm); err != nil {
 		return PreludeResp{}, errors.WithStack(err)
 	}
 	return PreludeResp{
-		DashDir: DashDir(m),
-		ProdDir: DashDirProd(m),
-		M:       m,
-		Tprops:  tprops,
+		M:      m,
+		Tprops: tprops,
 	}, nil
 }
