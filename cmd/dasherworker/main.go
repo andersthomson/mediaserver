@@ -18,12 +18,24 @@ func main() {
 	}
 	defer c.Close()
 
-	encodeWorker := worker.New(c, "encodingQueue", worker.Options{
-		Identity:                           "encoding-worker-01",
-		MaxConcurrentActivityExecutionSize: 10,
+	remoteEncodeWorker := worker.New(c, "encodingQueue", worker.Options{
+		EnableSessionWorker:                true,
+		Identity:                           "remote-encoding-worker-01",
+		MaxConcurrentActivityExecutionSize: 1,
 	})
-	encodeWorker.RegisterActivity(dasherworker.FfmpegEncode)
-	encodeWorker.RegisterActivity(dasherworker.MP4BoxDashReady)
+	remoteEncodeWorker.RegisterActivity(&dasherworker.RemoteEncode{})
+	go func() {
+		if err := remoteEncodeWorker.Run(worker.InterruptCh()); err != nil {
+			log.Fatalln("remoteEncoding worker failed", err)
+		}
+	}()
+
+	encodeWorker := worker.New(c, "encodingQueue", worker.Options{
+		EnableSessionWorker:                true,
+		Identity:                           "local-encoding-worker-01",
+		MaxConcurrentActivityExecutionSize: 1,
+	})
+	encodeWorker.RegisterActivity(&dasherworker.LocalEncode{})
 
 	go func() {
 		if err := encodeWorker.Run(worker.InterruptCh()); err != nil {
@@ -32,13 +44,18 @@ func main() {
 	}()
 
 	// Create a worker on a specific Task Queue
-	w := worker.New(c, "dasherQueue", worker.Options{})
+	w := worker.New(c, "dasherQueue", worker.Options{
+		Identity:                           "dasherQueueWorker",
+		MaxConcurrentActivityExecutionSize: 10,
+	})
 
 	w.RegisterWorkflow(dasherworker.EncodingWorkflow)
 	w.RegisterWorkflow(dasherworker.AllEncodingWorkflow)
 
+	w.RegisterActivity(dasherworker.ReadMspFile)
 	w.RegisterActivity(dasherworker.Prelude)
 	w.RegisterActivity(dasherworker.LinkSrcMedia)
+	w.RegisterActivity(dasherworker.MP4BoxDashReady)
 	w.RegisterActivity(dasherworker.Finalize)
 	w.RegisterActivity(dasherworker.AnalyzeMediaInterlace)
 	w.RegisterActivity(dasherworker.GetVideoDurationUsec)

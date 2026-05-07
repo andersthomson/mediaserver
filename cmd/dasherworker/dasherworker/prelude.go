@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 
 	"github.com/andersthomson/mediaserver/scrape"
 	"github.com/pkg/errors"
@@ -20,40 +19,31 @@ func DashDir(m scrape.Msp) string {
 
 type PreludeArgs struct {
 	DashDir string
-	MspFile string
 	Dir     string
+	M       scrape.Msp
 }
 
 type PreludeResp struct {
-	M      scrape.Msp
 	Tprops TargetProperties
 }
 
-func ActionReadMSP(dir string, mspFile string) (scrape.Msp, error) {
-	return scrape.ReadMspFromFile(filepath.Join(dir, mspFile))
-}
 func dashMs(p SrcProperties) float64 {
 	diff := p.gopMilliSec / 1000
 	return math.Max(1.0, math.Round(4.0/diff)) * diff * 1000
 }
 
 func Prelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
-	//FIXME use temporal
-	m, err := ActionReadMSP(args.Dir, args.MspFile)
-	if err != nil {
-		return PreludeResp{}, fmt.Errorf("MSP read of %s/%s failed: %w", args.Dir, args.MspFile, errors.WithStack(err))
-	}
 	//Sanity check:
 	var referenceFiles = map[int]bool{}
 	var tprops TargetProperties
-	for streamno, stream := range m.Dash.Streams {
+	for streamno, stream := range args.M.Dash.Streams {
 		if stream.Codec == "reference" {
 			referenceFiles[stream.ReferenceFile] = true
 			//At least one output stream want to reference an input stream.
 			//Check that the input's gop is sane
 			switch {
-			case isDashReadyVideo(args.Dir + "/" + m.Inputs[stream.ReferenceFile].Filename):
-				props, err := GetSourcePropertiesActivity(context.Background(), ProbeParams{m.Inputs[stream.ReferenceFile].Filename, args.Dir})
+			case isDashReadyVideo(args.Dir + "/" + args.M.Inputs[stream.ReferenceFile].Filename):
+				props, err := GetSourcePropertiesActivity(context.Background(), ProbeParams{args.M.Inputs[stream.ReferenceFile].Filename, args.Dir})
 				if err != nil {
 					return PreludeResp{}, errors.WithStack(err)
 				}
@@ -62,7 +52,7 @@ func Prelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
 				}
 				tprops.GopFrames = props.gopFrames
 				tprops.DashMs = dashMs(props)
-			case isDashReadyAudio(args.Dir + "/" + m.Inputs[stream.ReferenceFile].Filename):
+			case isDashReadyAudio(args.Dir + "/" + args.M.Inputs[stream.ReferenceFile].Filename):
 			default:
 				return PreludeResp{}, fmt.Errorf("Source %d, which you want to have referenced, is not dash ready\n", stream.ReferenceFile)
 			}
@@ -73,10 +63,9 @@ func Prelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
 		tprops.DashMs = 4000
 	}
 	if err := os.MkdirAll(args.DashDir, os.ModePerm); err != nil {
-		return PreludeResp{}, errors.WithStack(err)
+		return PreludeResp{}, errors.WithStack(fmt.Errorf("XYZ %+v: %s", err, args.DashDir))
 	}
 	return PreludeResp{
-		M:      m,
 		Tprops: tprops,
 	}, nil
 }
