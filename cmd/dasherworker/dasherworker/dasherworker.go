@@ -282,74 +282,151 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 
 }
 
-type Stringer func() string
+type DirFile struct {
+	Dir   string
+	Fname string
+}
 
-func FName(s string) Stringer {
-	return func() string {
-		return s
+func File(dir, fname string) DirFile {
+	return DirFile{
+		Dir:   dir,
+		Fname: fname,
 	}
 }
 
-func stringifySlice(s []any) []string {
-	res := make([]string, len(s))
+type FFMpegArgs struct {
+	InputDir    string
+	InputFname  string
+	Args        []string
+	OutputDir   string
+	OutputFname string
+}
+
+func NewFFMpegArgs(s []any) FFMpegArgs {
+	res := FFMpegArgs{}
+	res.Args = make([]string, len(s))
 	for idx, _ := range s {
 		switch x := s[idx].(type) {
 		case string:
-			res[idx] = x
-		case Stringer:
-			res[idx] = x()
+			res.Args[idx] = x
+		case DirFile:
+			res.Args[idx] = x.Fname
+			if res.InputFname == "" {
+				res.InputFname = x.Fname
+				res.InputDir = x.Dir
+				continue
+			}
+			if res.OutputFname == "" {
+				res.OutputFname = x.Fname
+				res.OutputDir = x.Dir
+				continue
+			}
+			panic(fmt.Sprintf("Found more than 2 DirFile:s in the ffmpeg args %+v", s))
 		default:
 			panic(fmt.Sprintf("Unsupported type %T", x))
 		}
+	}
+	//Secure that we have input and output (by checkinng that output is set)
+	if res.OutputFname == "" {
+		panic(fmt.Sprintf("input and output not identified: %+v", s))
 	}
 	return res
 }
 
 type EncoderPreludeArgs struct {
-	Args []any
-}
-type Encoder interface {
-	FfmpegEncodePrelude(ctx context.Context, args EncoderPreludeArgs) (string, error)
-	FfmpegEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncodeResp, error)
-	FfmpegEncodePostlude(ctx context.Context, args FfmpegEncodeArgs) (string, error)
+	FfmpegArgs FFMpegArgs
 }
 
+type EncoderPreludeResp struct {
+	FfmpegArgs FFMpegArgs
+}
+
+type EncoderArgs struct {
+	FfmpegArgs      FFMpegArgs
+	TotalDurationUs int64
+}
+
+type EncoderResp struct {
+	FfmpegArgs FFMpegArgs
+}
+
+type EncoderPostludeArgs struct {
+	FfmpegArgs FFMpegArgs
+}
+
+type EncoderPostludeResp struct {
+	FfmpegArgs FFMpegArgs
+}
+
+type Encoder interface {
+	FfmpegEncodePrelude(ctx context.Context, args EncoderPreludeArgs) (EncoderPreludeResp, error)
+	FfmpegEncode(ctx context.Context, args EncoderArgs) (EncoderResp, error)
+	FfmpegEncodePostlude(ctx context.Context, args EncoderPostludeArgs) (EncoderPostludeResp, error)
+}
+
+/*
 var _ Encoder = &RemoteEncode{}
 
 type RemoteEncode struct {
 }
 
-func (r *RemoteEncode) FfmpegEncodePrelude(ctx context.Context, args EncoderPreludeArgs) (string, error) {
-	slog.Info("Remote/Prelude", "args", args)
-	time.Sleep(4 * time.Minute)
-	return "", nil
-}
-func (r *RemoteEncode) FfmpegEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncodeResp, error) {
-	slog.Info("Remote/Encode", "args", args)
-	return FfmpegEncode2(ctx, args)
-}
-func (r *RemoteEncode) FfmpegEncodePostlude(ctx context.Context, args FfmpegEncodeArgs) (string, error) {
-	slog.Info("Remote/postlude", "args", args)
-	time.Sleep(8 * time.Minute)
-	return "", nil
-}
+	func (r *RemoteEncode) FfmpegEncodePrelude(ctx context.Context, args EncoderPreludeArgs) (EncoderPreludeResp, error) {
+		slog.Info("Remote/Prelude", "args", args)
+		time.Sleep(4 * time.Minute)
+		return EncoderPreludeResp{}, nil
+	}
 
+	func (r *RemoteEncode) FfmpegEncode(ctx context.Context, args EncoderArgs) (EncoderResp, error) {
+		slog.Info("Remote/Encode", "args", args)
+		_, err := FfmpegEncode2(ctx, FfmpegEncodeArgs{
+			Args:            (args.FfmpegArgs),
+			Workdir:         args.Workdir,
+			TotalDurationUs: args.TotalDurationUs,
+		})
+		return EncoderResp{}, err
+	}
+
+	func (r *RemoteEncode) FfmpegEncodePostlude(ctx context.Context, args EncoderPostludeArgs) (EncoderPostludeResp, error) {
+		slog.Info("Remote/postlude", "args", args)
+		time.Sleep(8 * time.Minute)
+		return EncoderPostludeResp{}, nil
+	}
+*/
 var _ Encoder = &LocalEncode{}
 
 type LocalEncode struct {
 }
 
-func (l *LocalEncode) FfmpegEncodePrelude(ctx context.Context, args EncoderPreludeArgs) (string, error) {
+func (l *LocalEncode) FfmpegEncodePrelude(ctx context.Context, args EncoderPreludeArgs) (EncoderPreludeResp, error) {
 	slog.Info("local/prelude", "args", args)
-	return "", nil
+	slog.Info("local/prelude: symlinking input file")
+	if err := os.Symlink(args.FfmpegArgs.InputDir+"/"+args.FfmpegArgs.InputFname, args.FfmpegArgs.OutputDir+"/"+args.FfmpegArgs.InputFname); err != nil {
+		return EncoderPreludeResp{}, fmt.Errorf("Failed to symlink inpout file (%s): %s", args.FfmpegArgs.InputFname, err)
+	}
+	return EncoderPreludeResp{
+		FfmpegArgs: args.FfmpegArgs,
+	}, nil
 }
-func (l *LocalEncode) FfmpegEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncodeResp, error) {
+func (l *LocalEncode) FfmpegEncode(ctx context.Context, args EncoderArgs) (EncoderResp, error) {
 	slog.Info("local/Encode", "args", args)
-	return FfmpegEncode2(ctx, args)
+	_, err := FfmpegEncode2(ctx, FfmpegEncodeArgs{
+		Args:            args.FfmpegArgs.Args,
+		Workdir:         args.FfmpegArgs.OutputDir,
+		TotalDurationUs: args.TotalDurationUs,
+	})
+	return EncoderResp{
+		FfmpegArgs: args.FfmpegArgs,
+	}, err
 }
-func (l *LocalEncode) FfmpegEncodePostlude(ctx context.Context, args FfmpegEncodeArgs) (string, error) {
+func (l *LocalEncode) FfmpegEncodePostlude(ctx context.Context, args EncoderPostludeArgs) (EncoderPostludeResp, error) {
 	slog.Info("local/postlude", "args", args)
-	return "", nil
+	slog.Info("local/postlude: removing input symlink")
+	if err := os.Remove(args.FfmpegArgs.OutputDir + "/" + args.FfmpegArgs.InputFname); err != nil {
+		return EncoderPostludeResp{}, fmt.Errorf("Failed to remove symlink to inpout file (%s): %s", args.FfmpegArgs.OutputDir+"/"+args.FfmpegArgs.InputFname, err)
+	}
+	return EncoderPostludeResp{
+		FfmpegArgs: args.FfmpegArgs,
+	}, nil
 }
 
 type EncodingWorkflowArgs struct {
@@ -376,7 +453,7 @@ func EncodingWorkflow(ctx workflow.Context, args EncodingWorkflowArgs) (Encoding
 	if err != nil {
 		return EncodingWorkflowResp{}, errors.WithStack(err)
 	}
-	outputFName := drFname + "-fragmented.mp4"
+	outputDirFile := File(args.WorkDir, drFname+"-fragmented.mp4")
 	inp, err := Input(args.P.StreamNo, args.P.Msp)
 	if err != nil {
 		return EncodingWorkflowResp{}, errors.WithStack(err)
@@ -391,7 +468,7 @@ func EncodingWorkflow(ctx workflow.Context, args EncodingWorkflowArgs) (Encoding
 		ffmpegArgs = []any{
 			"-itsoffset", fmt.Sprintf("%.3f", args.P.SrcAnalysis.FirstPTS),
 			//"-c:v", "h264_v4l2m2m",
-			"-i", FName(args.P.Dir + "/" + inputFName),
+			"-i", File(args.P.Dir, inputFName),
 			"-filter_complex", strings.Join([]string{interlaceIfNeeded("0:v:0", "postdeint", args.P.SrcAnalysis.FilterRecommendation),
 				scaleIfNeeded("postdeint", "out", scaleFilter)}, ";"),
 			"-map", "[out]",
@@ -405,13 +482,13 @@ func EncodingWorkflow(ctx workflow.Context, args EncodingWorkflowArgs) (Encoding
 		ffmpegArgs = append(ffmpegArgs, []any{
 			"-x264-params:v", "keyint=" + strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64) + ":min-keyint=" + strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64) + ":scenecut=0:open-gop=0:vbv-maxrate=" + bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo]) + ":vbv-bufsize=" + bufSize(bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo])) + ":crf-max=" + crfMax(crf(args.P.Msp.Dash.Streams[args.P.StreamNo])),
 			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
-			FName(outputFName),
+			outputDirFile,
 		}...)
 	case "x265":
 		isVideoEncode = true
 		ffmpegArgs = []any{
 			"-itsoffset", fmt.Sprintf("%.3f", args.P.SrcAnalysis.FirstPTS),
-			"-i", args.P.Dir + "/" + inputFName,
+			"-i", File(args.P.Dir, inputFName),
 			"-filter_complex", strings.Join([]string{interlaceIfNeeded("0:v:0", "postdeint", args.P.SrcAnalysis.FilterRecommendation),
 				scaleIfNeeded("postdeint", "out", scaleFilter)}, ";"),
 			"-map", "[out]",
@@ -427,21 +504,21 @@ func EncodingWorkflow(ctx workflow.Context, args EncodingWorkflowArgs) (Encoding
 			"-tag:v", "hvc1",
 			"-x265-params:v", "keyint="+strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo])+":vbv-bufsize="+bufSize(bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo])),
 			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
-			FName(outputFName),
+			outputDirFile,
 		)
 	case "aac":
 		ffmpegArgs = []any{
-			"-i", args.P.Dir + "/" + inputFName,
+			"-i", File(args.P.Dir, inputFName),
 			"-map", args.P.Msp.Dash.Streams[args.P.StreamNo].Source,
 			"-c", "aac",
-			outputFName,
+			outputDirFile,
 		}
 	case "copy":
 		ffmpegArgs = []any{
-			"-i", args.P.Dir + "/" + inputFName,
+			"-i", File(args.P.Dir, inputFName),
 			"-map", args.P.Msp.Dash.Streams[args.P.StreamNo].Source,
 			"-c", "copy",
-			outputFName,
+			outputDirFile,
 		}
 	}
 	// Step 1: Probe
@@ -456,63 +533,53 @@ func EncodingWorkflow(ctx workflow.Context, args EncodingWorkflowArgs) (Encoding
 
 	var a *LocalEncode
 	//Step 2: Encode
+	var queue string
 	if isVideoEncode {
-
-		aoBase := workflow.ActivityOptions{
-			TaskQueue: "encodingQueue", // Necessary so CreateSession knows where to go
-		}
-		ctx = workflow.WithActivityOptions(ctx, aoBase)
-
-		sessionCtx, err := workflow.CreateSession(ctx, &workflow.SessionOptions{
-			CreationTimeout:  24 * time.Hour,
-			ExecutionTimeout: 24 * time.Hour,
-		})
-		if err != nil {
-			return EncodingWorkflowResp{}, err
-		}
-		defer workflow.CompleteSession(sessionCtx)
-
-		ctx2 := workflow.WithActivityOptions(sessionCtx, workflow.ActivityOptions{
-			StartToCloseTimeout: 24 * time.Hour,
-			HeartbeatTimeout:    10 * time.Hour,
-		})
-		err = workflow.ExecuteActivity(ctx2, a.FfmpegEncodePrelude, EncoderPreludeArgs{
-			Args: ffmpegArgs,
-		}).Get(ctx2, nil)
-
-		var result FfmpegEncodeResp
-		err = workflow.ExecuteActivity(ctx2, a.FfmpegEncode, FfmpegEncodeArgs{
-			Args:            stringifySlice(ffmpegArgs),
-			Workdir:         args.WorkDir,
-			TotalDurationUs: duration,
-		}).Get(ctx2, &result)
-		if err != nil {
-			slog.Error("activity failed", "err", err.Error())
-			return EncodingWorkflowResp{}, err
-		}
-
-		err = workflow.ExecuteActivity(ctx2, a.FfmpegEncodePostlude, FfmpegEncodeArgs{
-			Args:            stringifySlice(ffmpegArgs),
-			Workdir:         args.WorkDir,
-			TotalDurationUs: duration,
-		}).Get(ctx2, nil)
+		queue = "encodingQueue"
 	} else {
-		ctx2 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-			StartToCloseTimeout: 24 * time.Hour,
-			TaskQueue:           "encodingQueue",
-			HeartbeatTimeout:    60 * time.Second,
-		})
-		var result FfmpegEncodeResp
-		err = workflow.ExecuteActivity(ctx2, a.FfmpegEncode, FfmpegEncodeArgs{
-			Args:            stringifySlice(ffmpegArgs),
-			Workdir:         args.WorkDir,
-			TotalDurationUs: duration,
-		}).Get(ctx2, &result)
-		if err != nil {
-			slog.Error("activity failed", "err", err.Error())
-			return EncodingWorkflowResp{}, err
-		}
+		queue = "dasherQueue"
 	}
+
+	aoBase := workflow.ActivityOptions{
+		TaskQueue: queue, // Necessary so CreateSession knows where to go
+	}
+	ctx = workflow.WithActivityOptions(ctx, aoBase)
+
+	sessionCtx, err := workflow.CreateSession(ctx, &workflow.SessionOptions{
+		CreationTimeout:  24 * time.Hour,
+		ExecutionTimeout: 24 * time.Hour,
+	})
+	if err != nil {
+		return EncodingWorkflowResp{}, err
+	}
+	defer workflow.CompleteSession(sessionCtx)
+
+	ctx2 := workflow.WithActivityOptions(sessionCtx, workflow.ActivityOptions{
+		StartToCloseTimeout: 24 * time.Hour,
+		HeartbeatTimeout:    10 * time.Hour,
+	})
+	var encoderPreludeResp EncoderPreludeResp
+	err = workflow.ExecuteActivity(ctx2, a.FfmpegEncodePrelude, EncoderPreludeArgs{
+		FfmpegArgs: NewFFMpegArgs(ffmpegArgs),
+	}).Get(ctx2, &encoderPreludeResp)
+	if err != nil {
+		slog.Error(" FfmpegEncodePreludefailed", "err", err.Error())
+		return EncodingWorkflowResp{}, err
+	}
+
+	var ffmpegEncodeResp EncoderResp
+	err = workflow.ExecuteActivity(ctx2, a.FfmpegEncode, EncoderArgs{
+		FfmpegArgs:      encoderPreludeResp.FfmpegArgs,
+		TotalDurationUs: duration,
+	}).Get(ctx2, &ffmpegEncodeResp)
+	if err != nil {
+		slog.Error("activity failed", "err", err.Error())
+		return EncodingWorkflowResp{}, err
+	}
+
+	err = workflow.ExecuteActivity(ctx2, a.FfmpegEncodePostlude, EncoderPostludeArgs{
+		FfmpegArgs: ffmpegEncodeResp.FfmpegArgs,
+	}).Get(ctx2, nil)
 
 	//Step 3: make Dash Ready
 	ctx3 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
