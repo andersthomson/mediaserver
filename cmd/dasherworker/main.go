@@ -51,7 +51,7 @@ func main() {
 			re.Port = 22
 		}
 		if rw.Username != "" {
-			rw.Username = rw.Username
+			re.Username = rw.Username
 		}
 		if rw.Dir != "" {
 			re.Dir = rw.Dir
@@ -72,33 +72,6 @@ func main() {
 			}
 		}()
 	}
-	/*
-		remoteEncodeWorker := worker.New(c, "encodingQueue", worker.Options{
-			EnableSessionWorker:                true,
-			Identity:                           "remote-encoding-worker-01",
-			MaxConcurrentActivityExecutionSize: 1,
-		})
-		remoteEncodeWorker.RegisterActivity(&dasherworker.RemoteEncode{})
-		go func() {
-			if err := remoteEncodeWorker.Run(worker.InterruptCh()); err != nil {
-				log.Fatalln("remoteEncoding worker failed", err)
-			}
-		}()
-	*/
-	/*
-		encodeWorker := worker.New(c, "encodingQueue", worker.Options{
-			EnableSessionWorker:                true,
-			Identity:                           "local-encoding-worker-01",
-			MaxConcurrentActivityExecutionSize: 1,
-		})
-		encodeWorker.RegisterActivity(&dasherworker.LocalEncode{})
-
-		go func() {
-			if err := encodeWorker.Run(worker.InterruptCh()); err != nil {
-				slog.Error("Encoding worker failed", "err", err)
-			}
-		}()
-	*/
 	// Create a worker on a specific Task Queue
 	w := tworker.New(c, "dasherQueue", tworker.Options{
 		EnableSessionWorker:                true,
@@ -106,7 +79,7 @@ func main() {
 		MaxConcurrentActivityExecutionSize: 10,
 	})
 
-	w.RegisterWorkflow(dasherworker.EncodingWorkflow)
+	//w.RegisterWorkflow(dasherworker.Encode)
 	w.RegisterWorkflow(dasherworker.AllEncodingWorkflow)
 
 	w.RegisterActivity(&dasherworker.LocalEncode{})

@@ -10,13 +10,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// FIXME remove!!!
-var DirTimestamp string
-
-func DashDir(m scrape.Msp) string {
-	return "/var/cache/mediacache/" + m.ShortName + "-" + m.Id + "/dash." + DirTimestamp
-}
-
 type PreludeArgs struct {
 	DashDir string
 	Dir     string

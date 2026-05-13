@@ -6,35 +6,46 @@ import (
 	"io"
 	"log/slog"
 	"os/exec"
+	"path/filepath"
 	"regexp"
-	"strings"
+	"strconv"
 
 	"github.com/creack/pty"
 	"go.temporal.io/sdk/activity"
 )
 
 type progressWriter struct {
-	ctx context.Context
-	re  *regexp.Regexp
+	ctx      context.Context
+	re       *regexp.Regexp
+	toRemote bool
+	hostname string
+	port     int
+	fname    string
 }
 
 func (w *progressWriter) Write(p []byte) (n int, err error) {
 	str := string(p)
-	slog.Info("GOT", "string", str)
+	//slog.Info("GOT", "string", str)
 
 	// FindString looks for the first occurrence of digits followed by %
 	// This is more resilient to the leading spaces rsync uses
 	match := w.re.FindString(str)
 	if match != "" {
-		// match will be "7%" - strip the % to get just the number
-		val := strings.TrimSuffix(match, "%")
-		slog.Info("Rsync Heartbeat", "val", val)
-		activity.RecordHeartbeat(w.ctx, val)
+		// match will be "7%"
+		var dStr string
+		if w.toRemote {
+			dStr = "Local->Remote"
+		} else {
+			dStr = "Remote->Local"
+		}
+		str = fmt.Sprintf("%s %s %s completed", dStr, w.fname, match)
+		slog.Info("Rsync Heartbeat", "host", w.hostname, "port", w.port, "value", str)
+		activity.RecordHeartbeat(w.ctx, str)
 	}
 	return len(p), nil
 }
 
-func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remoteHost string, toRemote bool) error {
+func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remoteHost string, port int, toRemote bool) error {
 	var src, dst string
 	var remoteAddr string
 	if remoteUser != "" {
@@ -53,7 +64,7 @@ func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remot
 
 	// --info=progress2 is critical for the parser to see a single percentage line
 	args := []string{
-		"-avzP", "--no-inc-recursive", "--mkpath", "--info=progress2", "--append-verify", "-e", "ssh -T", src, dst}
+		"-avzP", "--no-inc-recursive", "--mkpath", "--info=progress2", "--append-verify", "-e", "ssh -p " + strconv.Itoa(port) + " -T", src, dst}
 
 	cmd := exec.CommandContext(ctx, "rsync", args...)
 	f, err := pty.Start(cmd)
@@ -63,10 +74,13 @@ func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remot
 	defer f.Close()
 
 	slog.Info("rsync here", "args", args)
-	// In your activity:
 	pw := &progressWriter{
-		ctx: ctx,
-		re:  regexp.MustCompile(`\d+%`),
+		ctx:      ctx,
+		re:       regexp.MustCompile(`\d+%`),
+		toRemote: toRemote,
+		fname:    filepath.Base(localPath),
+		hostname: remoteHost,
+		port:     port,
 	}
 
 	// Connect stdout directly to our spy writer

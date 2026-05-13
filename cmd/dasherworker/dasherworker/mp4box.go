@@ -45,7 +45,7 @@ func MP4BoxDashReady(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashR
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	fmt.Printf("MP4Box dashing stream %d.  %s becomes %s \n", args.P.StreamNo, outputFName, drFname)
+	fmt.Printf("MP4Box dashing a stream.  %s becomes %s \n", outputFName, drFname)
 	fmt.Printf("Starting /usr/bin/MP4Box %v\n", boxArgs)
 	err = cmd.Run()
 	// Get Exit Code

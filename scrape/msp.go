@@ -15,6 +15,29 @@ type Msp struct {
 	Audio     Audio
 }
 
+type Msp3 struct {
+	Version   int
+	Id        string
+	ShortName string
+	Tmdb      TmdbT
+	Inputs    []InputT3
+	Dash      DashT3
+}
+
+type InputT3 struct {
+	FileName string
+	Streams  []StreamsT3
+}
+
+type StreamsT3 struct {
+	Kind     string
+	Language string
+}
+
+type DashT3 struct {
+	Profile string
+}
+
 type TmdbT struct {
 	MovieId  *int
 	SeriesId *int

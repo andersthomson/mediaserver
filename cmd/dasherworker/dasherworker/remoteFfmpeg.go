@@ -14,7 +14,7 @@ import (
 	"go.temporal.io/sdk/activity"
 )
 
-func FfmpegRemoteEncode(ctx context.Context, args FfmpegEncodeArgs, user, host string) (FfmpegEncodeResp, error) {
+func FfmpegRemoteEncode(ctx context.Context, args FfmpegEncodeArgs, user, host string, port int) (FfmpegEncodeResp, error) {
 	var resp FfmpegEncodeResp
 
 	// 1. Construct the remote command
@@ -29,9 +29,9 @@ func FfmpegRemoteEncode(ctx context.Context, args FfmpegEncodeArgs, user, host s
 	// 2. Prepare SSH command
 	var cmd *exec.Cmd
 	if user != "" {
-		cmd = exec.CommandContext(ctx, "ssh", fmt.Sprintf("%s@%s", user, host), remoteCmd)
+		cmd = exec.CommandContext(ctx, "ssh", "-p", strconv.Itoa(port), fmt.Sprintf("%s@%s", user, host), remoteCmd)
 	} else {
-		cmd = exec.CommandContext(ctx, "ssh", fmt.Sprintf("%s", host), remoteCmd)
+		cmd = exec.CommandContext(ctx, "ssh", "-p", strconv.Itoa(port), fmt.Sprintf("%s", host), remoteCmd)
 	}
 
 	// Separate buffers for Stderr (logs)
@@ -60,7 +60,9 @@ func FfmpegRemoteEncode(ctx context.Context, args FfmpegEncodeArgs, user, host s
 				if len(parts) == 2 {
 					currentUs, _ := strconv.ParseInt(parts[1], 10, 64)
 					percent := (float64(currentUs) / float64(args.TotalDurationUs)) * 100
-					activity.RecordHeartbeat(ctx, fmt.Sprintf("%4.1f percent complete", percent))
+					str := fmt.Sprintf("%4.1f%% completed", percent)
+					slog.Info("ffmpeg", "host", host, "port", port, "value", str)
+					activity.RecordHeartbeat(ctx, str)
 				}
 			}
 		}
