@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/workflow"
@@ -207,24 +206,9 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 			if err != nil {
 				return AllEncodingWorkflowResp{}, errors.WithStack(err)
 			}
-			spew.Dump(MediaInterlaceAnalysis)
 
-			//WF ffmpeg encode
-			/*
-				var EncodeResp EncodeResp
-				err = workflow.ExecuteChildWorkflow(ctx, EncodingWorkflow, EncodingArgs{
-					InputFilePath: args.Dir + "/" + inFname,
-					WorkDir:       DashDir,
-					P:             EncodeParams{preset(args.Fast), streamno, M, args.Dir, preludeResp.Tprops, MediaInterlaceAnalysis},
-				}).Get(ctx, &EncodeResp)
-				if err != nil {
-					slog.Info("Couldn't start child workflow", "err", err)
-					return AllEncodingWorkflowResp{}, fmt.Errorf("Couldn't start child workflow. %+v", err)
-				}
-				fmt.Printf("Result %v\n", EncodeResp)
-			*/
-			var EncodeResp EncodeResp
-			EncodeResp, err = Encode(ctx, EncodingArgs{
+			var encodeStreamResp EncodeStreamResp
+			encodeStreamResp, err = EncodeStream(ctx, EncodingArgs{
 				InputFilePath: args.Dir + "/" + inFname,
 				WorkDir:       DashDir,
 				P:             EncodeParams{preset(args.Fast), streamno, M, args.Dir, preludeResp.Tprops, MediaInterlaceAnalysis},
@@ -233,7 +217,7 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 				slog.Info("Couldn't start child workflow", "err", err)
 				return AllEncodingWorkflowResp{}, fmt.Errorf("Couldn't start child workflow. %+v", err)
 			}
-			fmt.Printf("Result %v\n", EncodeResp)
+			fmt.Printf("Result %v\n", encodeStreamResp)
 		case "reference":
 			ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 				StartToCloseTimeout: 10 * time.Minute,
@@ -327,35 +311,35 @@ func NewFFMpegArgs(s []any) FFMpegArgs {
 	return res
 }
 
-type EncoderPreludeArgs struct {
+type EncodePreludeArgs struct {
 	FfmpegArgs FFMpegArgs
 }
 
-type EncoderPreludeResp struct {
+type EncodePreludeResp struct {
 	FfmpegArgs FFMpegArgs
 }
 
-type EncoderArgs struct {
+type EncodeArgs struct {
 	FfmpegArgs      FFMpegArgs
 	TotalDurationUs int64
 }
 
-type EncoderResp struct {
+type EncodeResp struct {
 	FfmpegArgs FFMpegArgs
 }
 
-type EncoderPostludeArgs struct {
+type EncodePostludeArgs struct {
 	FfmpegArgs FFMpegArgs
 }
 
-type EncoderPostludeResp struct {
+type EncodePostludeResp struct {
 	FfmpegArgs FFMpegArgs
 }
 
 type Encoder interface {
-	FfmpegEncodePrelude(ctx context.Context, args EncoderPreludeArgs) (EncoderPreludeResp, error)
-	FfmpegEncode(ctx context.Context, args EncoderArgs) (EncoderResp, error)
-	FfmpegEncodePostlude(ctx context.Context, args EncoderPostludeArgs) (EncoderPostludeResp, error)
+	EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error)
+	Encode(ctx context.Context, args EncodeArgs) (EncodeResp, error)
+	EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error)
 }
 
 var _ Encoder = &RemoteEncode{}
@@ -372,19 +356,19 @@ func (r RemoteEncode) remoteDir(ctx context.Context, fname string) string {
 	return r.Dir + "/" + fname + "-" + activity.GetInfo(ctx).WorkflowExecution.ID
 }
 
-func (r *RemoteEncode) FfmpegEncodePrelude(ctx context.Context, args EncoderPreludeArgs) (EncoderPreludeResp, error) {
+func (r *RemoteEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error) {
 	slog.Info("Remote/Prelude", "host", r.Hostname, "username", r.Username, "args", args)
 	localPath := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
 	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), args.FfmpegArgs.InputFname)
 	if err := RsyncActivity(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, true); err != nil {
-		return EncoderPreludeResp{}, err
+		return EncodePreludeResp{}, err
 	}
-	return EncoderPreludeResp{
+	return EncodePreludeResp{
 		FfmpegArgs: args.FfmpegArgs,
 	}, nil
 }
 
-func (r *RemoteEncode) FfmpegEncode(ctx context.Context, args EncoderArgs) (EncoderResp, error) {
+func (r *RemoteEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, error) {
 	slog.Info("Remote/Encode", "host", r.Hostname, "args", args)
 
 	_, err := FfmpegRemoteEncode(ctx, FfmpegEncodeArgs{
@@ -394,23 +378,23 @@ func (r *RemoteEncode) FfmpegEncode(ctx context.Context, args EncoderArgs) (Enco
 		TotalDurationUs: args.TotalDurationUs,
 	}, r.Username, r.Hostname, r.Port)
 	if err != nil {
-		return EncoderResp{}, fmt.Errorf("Remote ffmpeg failed: %+v", err)
+		return EncodeResp{}, fmt.Errorf("Remote ffmpeg failed: %+v", err)
 	}
 
-	return EncoderResp{
+	return EncodeResp{
 		FfmpegArgs: args.FfmpegArgs,
 	}, err
 }
 
-func (r *RemoteEncode) FfmpegEncodePostlude(ctx context.Context, args EncoderPostludeArgs) (EncoderPostludeResp, error) {
+func (r *RemoteEncode) EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error) {
 
 	slog.Info("Remote/postlude", "host", r.Hostname, "args", args)
 	localPath := filepath.Join(args.FfmpegArgs.OutputDir, args.FfmpegArgs.OutputFname)
 	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), args.FfmpegArgs.OutputFname)
 	if err := RsyncActivity(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, false); err != nil {
-		return EncoderPostludeResp{}, fmt.Errorf("Rsync to remote failed: %+v", err)
+		return EncodePostludeResp{}, fmt.Errorf("Rsync to remote failed: %+v", err)
 	}
-	return EncoderPostludeResp{
+	return EncodePostludeResp{
 		FfmpegArgs: args.FfmpegArgs,
 	}, nil
 }
@@ -420,35 +404,35 @@ var _ Encoder = &LocalEncode{}
 type LocalEncode struct {
 }
 
-func (l *LocalEncode) FfmpegEncodePrelude(ctx context.Context, args EncoderPreludeArgs) (EncoderPreludeResp, error) {
+func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error) {
 	slog.Info("local/prelude", "args", args)
 	slog.Info("local/prelude: symlinking input file")
 	if err := os.Symlink(args.FfmpegArgs.InputDir+"/"+args.FfmpegArgs.InputFname, args.FfmpegArgs.OutputDir+"/"+args.FfmpegArgs.InputFname); err != nil {
-		return EncoderPreludeResp{}, fmt.Errorf("Failed to symlink inpout file (%s): %s", args.FfmpegArgs.InputFname, err)
+		return EncodePreludeResp{}, fmt.Errorf("Failed to symlink inpout file (%s): %s", args.FfmpegArgs.InputFname, err)
 	}
-	return EncoderPreludeResp{
+	return EncodePreludeResp{
 		FfmpegArgs: args.FfmpegArgs,
 	}, nil
 }
-func (l *LocalEncode) FfmpegEncode(ctx context.Context, args EncoderArgs) (EncoderResp, error) {
+func (l *LocalEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, error) {
 	slog.Info("local/Encode", "args", args)
-	_, err := FfmpegEncode2(ctx, FfmpegEncodeArgs{
+	_, err := FfmpegLocalEncode(ctx, FfmpegEncodeArgs{
 		Ffmpeg:          "/usr/bin/ffmpeg",
 		Args:            args.FfmpegArgs.Args,
 		Workdir:         args.FfmpegArgs.OutputDir,
 		TotalDurationUs: args.TotalDurationUs,
 	})
-	return EncoderResp{
+	return EncodeResp{
 		FfmpegArgs: args.FfmpegArgs,
 	}, err
 }
-func (l *LocalEncode) FfmpegEncodePostlude(ctx context.Context, args EncoderPostludeArgs) (EncoderPostludeResp, error) {
+func (l *LocalEncode) EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error) {
 	slog.Info("local/postlude", "args", args)
 	slog.Info("local/postlude: removing input symlink")
 	if err := os.Remove(args.FfmpegArgs.OutputDir + "/" + args.FfmpegArgs.InputFname); err != nil {
-		return EncoderPostludeResp{}, fmt.Errorf("Failed to remove symlink to inpout file (%s): %s", args.FfmpegArgs.OutputDir+"/"+args.FfmpegArgs.InputFname, err)
+		return EncodePostludeResp{}, fmt.Errorf("Failed to remove symlink to inpout file (%s): %s", args.FfmpegArgs.OutputDir+"/"+args.FfmpegArgs.InputFname, err)
 	}
-	return EncoderPostludeResp{
+	return EncodePostludeResp{
 		FfmpegArgs: args.FfmpegArgs,
 	}, nil
 }
@@ -459,28 +443,22 @@ type EncodingArgs struct {
 	P             EncodeParams
 }
 
-type EncodeResp struct {
+type EncodeStreamResp struct {
 }
 
-func Encode(ctx workflow.Context, args EncodingArgs) (EncodeResp, error) {
-	/*
-		DEINTERLACE := "[$VIDEOSOURCE]bwdif=mode=0:parity=auto:deint=all,"
-		SCALE_1080 := "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1080,ih))'"
-		SCALE_720 := "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))'"
-	*/
-
+func EncodeStream(ctx workflow.Context, args EncodingArgs) (EncodeStreamResp, error) {
 	inputFName, err := InputFName(args.P.StreamNo, args.P.Msp)
 	if err != nil {
-		return EncodeResp{}, errors.WithStack(err)
+		return EncodeStreamResp{}, errors.WithStack(err)
 	}
 	drFname, err := DasherReadyFilename(args.P.StreamNo, args.P.Msp)
 	if err != nil {
-		return EncodeResp{}, errors.WithStack(err)
+		return EncodeStreamResp{}, errors.WithStack(err)
 	}
 	outputDirFile := File(args.WorkDir, drFname+"-fragmented.mp4")
 	inp, err := Input(args.P.StreamNo, args.P.Msp)
 	if err != nil {
-		return EncodeResp{}, errors.WithStack(err)
+		return EncodeStreamResp{}, errors.WithStack(err)
 	}
 
 	var ffmpegArgs []any
@@ -545,7 +523,7 @@ func Encode(ctx workflow.Context, args EncodingArgs) (EncodeResp, error) {
 			outputDirFile,
 		}
 	default:
-		return EncodeResp{}, fmt.Errorf("Unsupported args.P.Msp.Dash.Streams[args.P.StreamNo].Codec : %s", args.P.Msp.Dash.Streams[args.P.StreamNo].Codec)
+		return EncodeStreamResp{}, fmt.Errorf("Unsupported args.P.Msp.Dash.Streams[args.P.StreamNo].Codec : %s", args.P.Msp.Dash.Streams[args.P.StreamNo].Codec)
 	}
 	// Step 1: Probe
 	ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
@@ -554,7 +532,7 @@ func Encode(ctx workflow.Context, args EncodingArgs) (EncodeResp, error) {
 	var duration int64
 	err = workflow.ExecuteActivity(ctx1, GetVideoDurationUsec, args.P.Dir+"/"+inputFName).Get(ctx1, &duration)
 	if err != nil {
-		return EncodeResp{}, err
+		return EncodeStreamResp{}, err
 	}
 
 	var a *LocalEncode
@@ -576,7 +554,7 @@ func Encode(ctx workflow.Context, args EncodingArgs) (EncodeResp, error) {
 		ExecutionTimeout: 24 * time.Hour,
 	})
 	if err != nil {
-		return EncodeResp{}, err
+		return EncodeStreamResp{}, err
 	}
 	defer workflow.CompleteSession(sessionCtx)
 
@@ -584,26 +562,26 @@ func Encode(ctx workflow.Context, args EncodingArgs) (EncodeResp, error) {
 		StartToCloseTimeout: 24 * time.Hour,
 		HeartbeatTimeout:    20 * time.Second,
 	})
-	var encoderPreludeResp EncoderPreludeResp
-	err = workflow.ExecuteActivity(ctx2, a.FfmpegEncodePrelude, EncoderPreludeArgs{
+	var encodePreludeResp EncodePreludeResp
+	err = workflow.ExecuteActivity(ctx2, a.EncodePrelude, EncodePreludeArgs{
 		FfmpegArgs: NewFFMpegArgs(ffmpegArgs),
-	}).Get(ctx2, &encoderPreludeResp)
+	}).Get(ctx2, &encodePreludeResp)
 	if err != nil {
 		slog.Error(" FfmpegEncodePreludefailed", "err", err.Error())
-		return EncodeResp{}, err
+		return EncodeStreamResp{}, err
 	}
 
-	var ffmpegEncodeResp EncoderResp
-	err = workflow.ExecuteActivity(ctx2, a.FfmpegEncode, EncoderArgs{
-		FfmpegArgs:      encoderPreludeResp.FfmpegArgs,
+	var ffmpegEncodeResp EncodeResp
+	err = workflow.ExecuteActivity(ctx2, a.Encode, EncodeArgs{
+		FfmpegArgs:      encodePreludeResp.FfmpegArgs,
 		TotalDurationUs: duration,
 	}).Get(ctx2, &ffmpegEncodeResp)
 	if err != nil {
 		slog.Error("activity failed", "err", err.Error())
-		return EncodeResp{}, err
+		return EncodeStreamResp{}, err
 	}
 
-	err = workflow.ExecuteActivity(ctx2, a.FfmpegEncodePostlude, EncoderPostludeArgs{
+	err = workflow.ExecuteActivity(ctx2, a.EncodePostlude, EncodePostludeArgs{
 		FfmpegArgs: ffmpegEncodeResp.FfmpegArgs,
 	}).Get(ctx2, nil)
 
@@ -621,10 +599,10 @@ func Encode(ctx workflow.Context, args EncodingArgs) (EncodeResp, error) {
 	}).Get(ctx3, &MP4BoxDashReadyResp)
 	if err != nil {
 		slog.Error("MP4BoxDashReady activity failed", "err", err.Error())
-		return EncodeResp{}, err
+		return EncodeStreamResp{}, err
 	}
 
-	return EncodeResp{}, nil
+	return EncodeStreamResp{}, nil
 }
 
 type FfmpegEncodeArgs struct {
@@ -640,7 +618,7 @@ type FfmpegEncodeResp struct {
 	Stderr   string
 }
 
-func FfmpegEncode2(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncodeResp, error) {
+func FfmpegLocalEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncodeResp, error) {
 	var resp FfmpegEncodeResp
 
 	// Create an extra pipe for progress only
