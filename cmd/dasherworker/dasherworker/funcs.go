@@ -11,5 +11,9 @@ func DasherReadyFilename(streamno int, m scrape.Msp) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fname + "-encoded-" + fmt.Sprintf("%d", streamno) + ".mp4", nil
+	return DasherReadyFilename2(fname, fmt.Sprintf("%d", streamno)), nil
+}
+
+func DasherReadyFilename2(basename, streamIdx string) string {
+	return basename + "-encoded-" + streamIdx + ".mp4"
 }

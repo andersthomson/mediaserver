@@ -214,14 +214,12 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 			}
 			fmt.Printf("Result %v\n", encodeStreamResp)
 		case "reference":
-			slog.Info("0")
-			if _, err := LinkSrcMediaMsp(ctx, LinkSrcMediaArgs{
-				Streamno:  streamno,
-				M:         M,
-				Dir:       args.Dir,
-				TargetDir: DashDir,
-			}); err != nil {
-				return AllEncodingWorkflowResp{}, errors.WithStack(err)
+			inputNumber := M.Dash.Streams[streamno].ReferenceFile
+			oldFile := args.Dir + "/" + M.Inputs[inputNumber].Filename
+			newFilename, _ := DasherReadyFilename(streamno, M)
+			newFile := DashDir + "/" + newFilename
+			if _, err := LinkSrcMediaActivity(ctx, oldFile, newFile); err != nil {
+				return AllEncodingWorkflowResp{}, err
 			}
 		default:
 			return AllEncodingWorkflowResp{}, fmt.Errorf("Msp malformed: Unsupported Codec %s in stream %d\n", stream.Codec, streamno)

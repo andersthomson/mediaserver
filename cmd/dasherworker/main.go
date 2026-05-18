@@ -78,7 +78,7 @@ func main() {
 		MaxConcurrentActivityExecutionSize: 1,
 	})
 	we.RegisterActivity(&dasherworker.LocalEncode{})
-	fmt.Printf("Starting local worker")
+	fmt.Printf("Starting local worker\n")
 	go func() {
 		if err := we.Run(tworker.InterruptCh()); err != nil {
 			panic(fmt.Sprintf("localEncoding worker failed", err))
