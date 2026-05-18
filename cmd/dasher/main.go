@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker"
 	"go.temporal.io/sdk/client"
@@ -69,9 +70,9 @@ func makeDashWorkFlow(tc client.Client, dir string, mspFile string) error {
 	slog.Info("Starting wf")
 	run, err := tc.ExecuteWorkflow(context.Background(),
 		client.StartWorkflowOptions{
-			//ID:        "EncodeMsp-" + filepath.Base(mspFile) + "-" + time.Now().String(), // Unique ID for business logic
-			ID:        "EncodeMsp-" + filepath.Base(mspFile), // Unique ID for business logic
-			TaskQueue: "dasherQueue",                         // Which worker group should handle this
+			ID: "EncodeMsp-" + filepath.Base(mspFile) + "-" + time.Now().String(), // Unique ID for business logic
+			//ID:        "EncodeMsp-" + filepath.Base(mspFile), // Unique ID for business logic
+			TaskQueue: "dasherQueue", // Which worker group should handle this
 		},
 		"AllEncodingWorkflow",
 		dasherworker.AllEncodingWorkflowArgs{

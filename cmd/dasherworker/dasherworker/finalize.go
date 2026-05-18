@@ -3,6 +3,7 @@ package dasherworker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/andersthomson/mediaserver/scrape"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
@@ -27,7 +27,7 @@ func dasherAction(m scrape.Msp, gopMs float64, targetDir string) error {
 	}
 	args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
 	args = append(args, inputs...)
-	spew.Dump(args)
+	slog.Info("dasherAction", "exec", "MP4Box", "args", args)
 	cmd := exec.Command("/usr/bin/MP4Box", args...)
 	cmd.Dir = targetDir
 	cmd.Stdout = os.Stdout
@@ -61,7 +61,6 @@ type FinalizeResp struct {
 
 func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 
-	spew.Dump(args)
 	dasherAction(args.M, args.DashMs, args.TargetDir)
 
 	for streamno, _ := range args.M.Dash.Streams {

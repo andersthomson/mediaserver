@@ -72,6 +72,19 @@ func main() {
 			}
 		}()
 	}
+	we := tworker.New(c, "encodingQueue", tworker.Options{
+		EnableSessionWorker:                true,
+		Identity:                           "local-encoding",
+		MaxConcurrentActivityExecutionSize: 1,
+	})
+	we.RegisterActivity(&dasherworker.LocalEncode{})
+	fmt.Printf("Starting local worker")
+	go func() {
+		if err := we.Run(tworker.InterruptCh()); err != nil {
+			panic(fmt.Sprintf("localEncoding worker failed", err))
+		}
+	}()
+
 	// Create a worker on a specific Task Queue
 	w := tworker.New(c, "dasherQueue", tworker.Options{
 		EnableSessionWorker:                true,
@@ -82,7 +95,6 @@ func main() {
 	//w.RegisterWorkflow(dasherworker.Encode)
 	w.RegisterWorkflow(dasherworker.AllEncodingWorkflow)
 
-	w.RegisterActivity(&dasherworker.LocalEncode{})
 	w.RegisterActivity(dasherworker.ReadMspFile)
 	w.RegisterActivity(dasherworker.Prelude)
 	w.RegisterActivity(dasherworker.LinkSrcMedia)
