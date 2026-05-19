@@ -33,58 +33,61 @@ func main() {
 	defer c.Close()
 
 	for _, rw := range conf.Remotes {
-		remoteEncodeWorker := tworker.New(c, "encodingQueue", tworker.Options{
+		if rw.Start {
+			remoteEncodeWorker := tworker.New(c, "encodingQueue", tworker.Options{
+				EnableSessionWorker:                true,
+				Identity:                           "remote-" + rw.Hostname,
+				MaxConcurrentActivityExecutionSize: 1,
+			})
+
+			re := &dasherworker.RemoteEncode{}
+			if rw.Hostname == "" {
+				panic(fmt.Sprintf("Hostname must be set: %+v", rw))
+			} else {
+				re.Hostname = rw.Hostname
+			}
+			if rw.Port != 0 {
+				re.Port = rw.Port
+			} else {
+				re.Port = 22
+			}
+			if rw.Username != "" {
+				re.Username = rw.Username
+			}
+			if rw.Dir != "" {
+				re.Dir = rw.Dir
+			} else {
+				re.Dir = "dasherworker.d"
+			}
+			if rw.Ffmpeg != "" {
+				re.Ffmpeg = rw.Ffmpeg
+			} else {
+				re.Ffmpeg = "ffmpeg"
+			}
+			remoteEncodeWorker.RegisterActivity(re)
+
+			fmt.Printf("Starting remote worker for %s\n", rw.Hostname)
+			go func() {
+				if err := remoteEncodeWorker.Run(tworker.InterruptCh()); err != nil {
+					panic(fmt.Sprintf("remoteEncoding worker failed", err))
+				}
+			}()
+		}
+	}
+	if conf.Local.Start {
+		we := tworker.New(c, "encodingQueue", tworker.Options{
 			EnableSessionWorker:                true,
-			Identity:                           "remote-" + rw.Hostname,
+			Identity:                           "local-encoding",
 			MaxConcurrentActivityExecutionSize: 1,
 		})
-
-		re := &dasherworker.RemoteEncode{}
-		if rw.Hostname == "" {
-			panic(fmt.Sprintf("Hostname must be set: %+v", rw))
-		} else {
-			re.Hostname = rw.Hostname
-		}
-		if rw.Port != 0 {
-			re.Port = rw.Port
-		} else {
-			re.Port = 22
-		}
-		if rw.Username != "" {
-			re.Username = rw.Username
-		}
-		if rw.Dir != "" {
-			re.Dir = rw.Dir
-		} else {
-			re.Dir = "dasherworker.d"
-		}
-		if rw.Ffmpeg != "" {
-			re.Ffmpeg = rw.Ffmpeg
-		} else {
-			re.Ffmpeg = "ffmpeg"
-		}
-		remoteEncodeWorker.RegisterActivity(re)
-
-		fmt.Printf("Starting remote worker for %s\n", rw.Hostname)
+		we.RegisterActivity(&dasherworker.LocalEncode{})
+		fmt.Printf("Starting local worker\n")
 		go func() {
-			if err := remoteEncodeWorker.Run(tworker.InterruptCh()); err != nil {
-				panic(fmt.Sprintf("remoteEncoding worker failed", err))
+			if err := we.Run(tworker.InterruptCh()); err != nil {
+				panic(fmt.Sprintf("localEncoding worker failed", err))
 			}
 		}()
 	}
-	we := tworker.New(c, "encodingQueue", tworker.Options{
-		EnableSessionWorker:                true,
-		Identity:                           "local-encoding",
-		MaxConcurrentActivityExecutionSize: 1,
-	})
-	we.RegisterActivity(&dasherworker.LocalEncode{})
-	fmt.Printf("Starting local worker\n")
-	go func() {
-		if err := we.Run(tworker.InterruptCh()); err != nil {
-			panic(fmt.Sprintf("localEncoding worker failed", err))
-		}
-	}()
-
 	// Create a worker on a specific Task Queue
 	w := tworker.New(c, "dasherQueue", tworker.Options{
 		EnableSessionWorker:                true,

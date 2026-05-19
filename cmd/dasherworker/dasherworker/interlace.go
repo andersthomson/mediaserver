@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,6 +47,8 @@ type MediaInterlaceAnalysis struct {
 }
 
 func AnalyzeMediaInterlace(ctx context.Context, args AnalyzeMediaInterlaceArgs) (MediaInterlaceAnalysis, error) {
+	slog.Info("Start", "A", "AnalyzeMediaInterlace", "Fname", args.Fname)
+	defer slog.Info("Stop ", "A", "AnalyzeMediaInterlace", "Fname", args.Fname)
 	fullPath := filepath.Join(args.Dir, args.Fname)
 	analysis := MediaInterlaceAnalysis{FilterRecommendation: "null"}
 

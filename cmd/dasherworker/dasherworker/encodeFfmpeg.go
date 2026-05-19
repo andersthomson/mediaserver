@@ -10,9 +10,11 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kballard/go-shellquote"
 	"go.temporal.io/sdk/activity"
+	"golang.org/x/time/rate"
 )
 
 type FfmpegEncodeArgs struct {
@@ -52,6 +54,7 @@ func FfmpegLocalEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncode
 	if args.TotalDurationUs != 0 {
 		go func() {
 			defer pw.Close() // Ensure the write-end closes so scanner finishes
+			tlogger := NewThrottledLogger(rate.Every(5*time.Second), 3)
 			scanner := bufio.NewScanner(pr)
 			for scanner.Scan() {
 				line := scanner.Text()
@@ -61,6 +64,7 @@ func FfmpegLocalEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncode
 						currentUs, _ := strconv.ParseInt(parts[1], 10, 64)
 						percent := (float64(currentUs) / float64(args.TotalDurationUs)) * 100
 						activity.RecordHeartbeat(ctx, fmt.Sprintf("%4.1f percent complete", percent))
+						tlogger.Info("Progress", "F", "FfmpegLocalEncode", "workdir", args.Workdir, "percent", percent)
 					}
 				}
 			}
@@ -133,18 +137,19 @@ func FfmpegRemoteEncode(ctx context.Context, args FfmpegEncodeArgs, user, host s
 	// 3. Progress Parser (Reading from SSH Stdout)
 	go func() {
 		scanner := bufio.NewScanner(stdoutPipe)
+		tlogger := NewThrottledLogger(rate.Every(5*time.Second), 3)
+
 		for scanner.Scan() {
 			line := scanner.Text()
-
-			// Same logic as your local function
+			// Same logic as the local function
 			if strings.HasPrefix(line, "out_time_ms=") && args.TotalDurationUs != 0 {
 				parts := strings.Split(line, "=")
 				if len(parts) == 2 {
 					currentUs, _ := strconv.ParseInt(parts[1], 10, 64)
 					percent := (float64(currentUs) / float64(args.TotalDurationUs)) * 100
 					str := fmt.Sprintf("%4.1f%% completed", percent)
-					slog.Info("ffmpeg", "host", host, "port", port, "value", str)
 					activity.RecordHeartbeat(ctx, str)
+					tlogger.Info("Progress", "F", "FfmpegRemoteEncode", "id", fmt.Sprintf("%s@%s#%d", user, host, port), "workdir", args.Workdir, "percent", percent)
 				}
 			}
 		}

@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/creack/pty"
 	"go.temporal.io/sdk/activity"
+	"golang.org/x/time/rate"
 )
 
 type progressWriter struct {
@@ -21,6 +23,7 @@ type progressWriter struct {
 	hostname string
 	port     int
 	fname    string
+	logger   *ThrottledLogger
 }
 
 func (w *progressWriter) Write(p []byte) (n int, err error) {
@@ -39,7 +42,7 @@ func (w *progressWriter) Write(p []byte) (n int, err error) {
 			dStr = "Remote->Local"
 		}
 		str = fmt.Sprintf("%s %s %s completed", dStr, w.fname, match)
-		slog.Info("Rsync Heartbeat", "host", w.hostname, "port", w.port, "value", str)
+		w.logger.Info("Rsync Heartbeat", "host", w.hostname, "port", w.port, "value", str)
 		activity.RecordHeartbeat(w.ctx, str)
 	}
 	return len(p), nil
@@ -81,6 +84,7 @@ func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remot
 		fname:    filepath.Base(localPath),
 		hostname: remoteHost,
 		port:     port,
+		logger:   NewThrottledLogger(rate.Every(5*time.Second), 3),
 	}
 
 	// Connect stdout directly to our spy writer

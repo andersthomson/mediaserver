@@ -148,6 +148,8 @@ type AllEncodingWorkflowResp struct {
 }
 
 func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (AllEncodingWorkflowResp, error) {
+	slog.Info("Start", "W", "AllEncoding", "msp", args.MspFile)
+	defer slog.Info("Stop ", "W", "AllEncoding", "msp", args.MspFile)
 	ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
 		TaskQueue:           "dasherQueue",
@@ -166,7 +168,6 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 		//HeartbeatTimeout:    1000 * time.Second,
 	})
 	var preludeResp PreludeResp
-	slog.Info("XXXXXXXX starting Prelude activity")
 	err = workflow.ExecuteActivity(ctx1, Prelude, PreludeArgs{
 		DashDir: DashDir,
 		Dir:     args.Dir,
@@ -176,7 +177,6 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 	}
 
 	//Find the encoding needs
-	slog.Info("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 	for streamno, stream := range M.Dash.Streams {
 		switch stream.Codec {
 		case "x264", "x265", "copy", "aac":
@@ -191,7 +191,6 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 				//HeartbeatTimeout:    1000 * time.Second,
 			})
 			var MediaInterlaceAnalysis MediaInterlaceAnalysis
-			slog.Info("XXXXXXXX starting AnalyzeMediaInterlace activity")
 			err = workflow.ExecuteActivity(ctx1, AnalyzeMediaInterlace, AnalyzeMediaInterlaceArgs{
 				Dir:   args.Dir,
 				Fname: inFname,
@@ -200,17 +199,32 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 				return AllEncodingWorkflowResp{}, errors.WithStack(err)
 			}
 
+			inputFName, err := InputFName(streamno, M)
+			if err != nil {
+				return AllEncodingWorkflowResp{}, errors.WithStack(err)
+			}
+
+			drFname, err := DasherReadyFilename(streamno, M)
+			if err != nil {
+				return AllEncodingWorkflowResp{}, errors.WithStack(err)
+			}
+			inp, err := Input(streamno, M)
+			if err != nil {
+				return AllEncodingWorkflowResp{}, errors.WithStack(err)
+			}
+
 			var encodeStreamResp EncodeStreamResp
 
-			slog.Info("-1")
 			encodeStreamResp, err = EncodeStream(ctx, EncodeStreamArgs{
-				InputFilePath: args.Dir + "/" + inFname,
+				InputDirFile:  NewDirFile(args.Dir, inputFName),
+				OutputDirFile: NewDirFile(DashDir, drFname+"-fragmented.mp4"),
 				WorkDir:       DashDir,
 				P:             EncodeParams{preset(args.Fast), streamno, M, args.Dir, preludeResp.Tprops, MediaInterlaceAnalysis},
+				Kind:          inp.Kind,
 			})
 			if err != nil {
-				slog.Info("Couldn't start child workflow", "err", err)
-				return AllEncodingWorkflowResp{}, fmt.Errorf("Couldn't start child workflow. %+v", err)
+				slog.Info("Couldn't EncodeStream", "err", err)
+				return AllEncodingWorkflowResp{}, fmt.Errorf("Couldn't EncodeStream: %+v", err)
 			}
 			fmt.Printf("Result %v\n", encodeStreamResp)
 		case "reference":
@@ -248,8 +262,10 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 }
 
 type EncodeStreamArgs struct {
-	InputFilePath string
+	InputDirFile  DirFile
+	OutputDirFile DirFile
 	WorkDir       string
+	Kind          string
 	P             EncodeParams
 }
 
@@ -257,19 +273,6 @@ type EncodeStreamResp struct {
 }
 
 func EncodeStream(ctx workflow.Context, args EncodeStreamArgs) (EncodeStreamResp, error) {
-	inputFName, err := InputFName(args.P.StreamNo, args.P.Msp)
-	if err != nil {
-		return EncodeStreamResp{}, errors.WithStack(err)
-	}
-	drFname, err := DasherReadyFilename(args.P.StreamNo, args.P.Msp)
-	if err != nil {
-		return EncodeStreamResp{}, errors.WithStack(err)
-	}
-	outputDirFile := File(args.WorkDir, drFname+"-fragmented.mp4")
-	inp, err := Input(args.P.StreamNo, args.P.Msp)
-	if err != nil {
-		return EncodeStreamResp{}, errors.WithStack(err)
-	}
 
 	var ffmpegArgs []any
 	var isVideoEncode bool
@@ -280,7 +283,7 @@ func EncodeStream(ctx workflow.Context, args EncodeStreamArgs) (EncodeStreamResp
 		ffmpegArgs = []any{
 			"-itsoffset", fmt.Sprintf("%.3f", args.P.SrcAnalysis.FirstPTS),
 			//"-c:v", "h264_v4l2m2m",
-			"-i", File(args.P.Dir, inputFName),
+			"-i", args.InputDirFile,
 			"-filter_complex", strings.Join([]string{interlaceIfNeeded("0:v:0", "postdeint", args.P.SrcAnalysis.FilterRecommendation),
 				scaleIfNeeded("postdeint", "out", scaleFilter)}, ";"),
 			"-map", "[out]",
@@ -290,17 +293,17 @@ func EncodeStream(ctx workflow.Context, args EncodeStreamArgs) (EncodeStreamResp
 			"-pix_fmt", "yuv420p",
 			"-crf:v", crf(args.P.Msp.Dash.Streams[args.P.StreamNo]),
 			"-preset:v", args.P.Preset}
-		ffmpegArgs = append(ffmpegArgs, tune(args.P.Msp.Dash.Streams[args.P.StreamNo].Codec, inp.Kind)...)
+		ffmpegArgs = append(ffmpegArgs, tune(args.P.Msp.Dash.Streams[args.P.StreamNo].Codec, args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs, []any{
 			"-x264-params:v", "keyint=" + strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64) + ":min-keyint=" + strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64) + ":scenecut=0:open-gop=0:vbv-maxrate=" + bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo]) + ":vbv-bufsize=" + bufSize(bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo])) + ":crf-max=" + crfMax(crf(args.P.Msp.Dash.Streams[args.P.StreamNo])),
 			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
-			outputDirFile,
+			args.OutputDirFile,
 		}...)
 	case "x265":
 		isVideoEncode = true
 		ffmpegArgs = []any{
 			"-itsoffset", fmt.Sprintf("%.3f", args.P.SrcAnalysis.FirstPTS),
-			"-i", File(args.P.Dir, inputFName),
+			"-i", args.InputDirFile,
 			"-filter_complex", strings.Join([]string{interlaceIfNeeded("0:v:0", "postdeint", args.P.SrcAnalysis.FilterRecommendation),
 				scaleIfNeeded("postdeint", "out", scaleFilter)}, ";"),
 			"-map", "[out]",
@@ -311,26 +314,26 @@ func EncodeStream(ctx workflow.Context, args EncodeStreamArgs) (EncodeStreamResp
 			"-crf:v", crf(args.P.Msp.Dash.Streams[args.P.StreamNo]),
 			"-preset:v", args.P.Preset,
 		}
-		ffmpegArgs = append(ffmpegArgs, tune(args.P.Msp.Dash.Streams[args.P.StreamNo].Codec, inp.Kind)...)
+		ffmpegArgs = append(ffmpegArgs, tune(args.P.Msp.Dash.Streams[args.P.StreamNo].Codec, args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs,
 			"-tag:v", "hvc1",
 			"-x265-params:v", "keyint="+strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo])+":vbv-bufsize="+bufSize(bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo])),
 			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
-			outputDirFile,
+			args.OutputDirFile,
 		)
 	case "aac":
 		ffmpegArgs = []any{
-			"-i", File(args.P.Dir, inputFName),
+			"-i", args.InputDirFile,
 			"-map", args.P.Msp.Dash.Streams[args.P.StreamNo].Source,
 			"-c", "aac",
-			outputDirFile,
+			args.OutputDirFile,
 		}
 	case "copy":
 		ffmpegArgs = []any{
-			"-i", File(args.P.Dir, inputFName),
+			"-i", args.InputDirFile,
 			"-map", args.P.Msp.Dash.Streams[args.P.StreamNo].Source,
 			"-c", "copy",
-			outputDirFile,
+			args.OutputDirFile,
 		}
 	default:
 		return EncodeStreamResp{}, fmt.Errorf("Unsupported args.P.Msp.Dash.Streams[args.P.StreamNo].Codec : %s", args.P.Msp.Dash.Streams[args.P.StreamNo].Codec)
@@ -340,7 +343,7 @@ func EncodeStream(ctx workflow.Context, args EncodeStreamArgs) (EncodeStreamResp
 		StartToCloseTimeout: 30 * time.Second,
 	})
 	var duration int64
-	err = workflow.ExecuteActivity(ctx1, GetVideoDurationUsec, args.P.Dir+"/"+inputFName).Get(ctx1, &duration)
+	err := workflow.ExecuteActivity(ctx1, GetVideoDurationUsec, args.InputDirFile.String()).Get(ctx1, &duration)
 	if err != nil {
 		return EncodeStreamResp{}, err
 	}
@@ -374,7 +377,6 @@ func EncodeStream(ctx workflow.Context, args EncodeStreamArgs) (EncodeStreamResp
 		StartToCloseTimeout: 24 * time.Hour,
 		HeartbeatTimeout:    20 * time.Second,
 	})
-	slog.Info("Exeuting Activity prelude")
 	var encodePreludeResp EncodePreludeResp
 	err = workflow.ExecuteActivity(ctx2, a.EncodePrelude, EncodePreludeArgs{
 		FfmpegArgs: NewFFMpegArgs(ffmpegArgs),

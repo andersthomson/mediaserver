@@ -60,6 +60,8 @@ type FinalizeResp struct {
 }
 
 func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
+	slog.Info("Start", "A", "Finalize", "ProdDir", args.ProdDir)
+	defer slog.Info("Stop ", "A", "Finalize", "ProdDir", args.ProdDir)
 
 	dasherAction(args.M, args.DashMs, args.TargetDir)
 

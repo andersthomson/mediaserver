@@ -6,7 +6,9 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-type worker struct {
+type remoteworker struct {
+	Start    bool
+	Name     string
 	Hostname string
 	Port     int
 	Username string
@@ -15,8 +17,13 @@ type worker struct {
 	Id       string
 }
 
+type localworker struct {
+	Start bool
+}
+
 type config struct {
-	Remotes []worker
+	Remotes []remoteworker
+	Local   localworker
 }
 
 func ReadConfigFromFile(f string) (config, error) {

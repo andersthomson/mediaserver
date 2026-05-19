@@ -3,6 +3,7 @@ package dasherworker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 
@@ -26,6 +27,8 @@ func dashMs(p SrcProperties) float64 {
 }
 
 func Prelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
+	slog.Info("Start", "A", "Prelude", "DashDir", args.DashDir)
+	defer slog.Info("Stop ", "A", "Prelude", "DashDir", args.DashDir)
 	//Sanity check:
 	var referenceFiles = map[int]bool{}
 	var tprops TargetProperties

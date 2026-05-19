@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"go.temporal.io/sdk/activity"
 )
@@ -15,11 +16,15 @@ type DirFile struct {
 	Fname string
 }
 
-func File(dir, fname string) DirFile {
+func NewDirFile(dir, fname string) DirFile {
 	return DirFile{
 		Dir:   dir,
 		Fname: fname,
 	}
+}
+
+func (d DirFile) String() string {
+	return filepath.Join(d.Dir, d.Fname)
 }
 
 type FFMpegArgs struct {
@@ -107,7 +112,9 @@ func (r RemoteEncode) remoteDir(ctx context.Context, fname string) string {
 }
 
 func (r *RemoteEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error) {
-	slog.Info("Remote/Prelude", "host", r.Hostname, "username", r.Username, "args", args)
+	slog.Info("Start", "A", "RemoteEncode/Prelude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
+	defer slog.Info("Stop ", "A", "RemoteEncode/Prelude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
+	//slog.Info("Remote/Prelude", "host", r.Hostname, "username", r.Username, "args", args)
 	localPath := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
 	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), args.FfmpegArgs.InputFname)
 	if err := RsyncActivity(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, true); err != nil {
@@ -119,7 +126,9 @@ func (r *RemoteEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs
 }
 
 func (r *RemoteEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, error) {
-	slog.Info("Remote/Encode", "host", r.Hostname, "args", args)
+	slog.Info("Start", "A", "RemoteEncode/Encode", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
+	defer slog.Info("Stop ", "A", "RemoteEncode/Encode", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
+	//slog.Info("Remote/Encode", "host", r.Hostname, "args", args)
 
 	_, err := FfmpegRemoteEncode(ctx, FfmpegEncodeArgs{
 		Ffmpeg:          r.Ffmpeg,
@@ -137,8 +146,10 @@ func (r *RemoteEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp,
 }
 
 func (r *RemoteEncode) EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error) {
+	slog.Info("Start", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
+	defer slog.Info("Stop ", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
 
-	slog.Info("Remote/postlude", "host", r.Hostname, "args", args)
+	//slog.Info("Remote/postlude", "host", r.Hostname, "args", args)
 	localPath := filepath.Join(args.FfmpegArgs.OutputDir, args.FfmpegArgs.OutputFname)
 	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), args.FfmpegArgs.OutputFname)
 	if err := RsyncActivity(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, false); err != nil {
@@ -155,7 +166,9 @@ type LocalEncode struct {
 }
 
 func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error) {
-	slog.Info("local/prelude", "args", args)
+	slog.Info("Start", "A", "LocalEncode/Prelude", "inputFname", args.FfmpegArgs.InputFname)
+	defer slog.Info("Stop ", "A", "LocalEncode/Prelude", "inputFname", args.FfmpegArgs.InputFname)
+	//slog.Info("local/prelude", "args", args)
 	slog.Info("local/prelude: symlinking input file")
 	if err := os.Symlink(args.FfmpegArgs.InputDir+"/"+args.FfmpegArgs.InputFname, args.FfmpegArgs.OutputDir+"/"+args.FfmpegArgs.InputFname); err != nil {
 		return EncodePreludeResp{}, fmt.Errorf("Failed to symlink inpout file (%s): %s", args.FfmpegArgs.InputFname, err)
@@ -165,7 +178,9 @@ func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs)
 	}, nil
 }
 func (l *LocalEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, error) {
-	slog.Info("local/Encode", "args", args)
+	slog.Info("Start", "A", "LocalEncode/Encode", "inputFname", args.FfmpegArgs.InputFname)
+	defer slog.Info("Stop ", "A", "LocalEncode/Encode", "inputFname", args.FfmpegArgs.InputFname)
+	//slog.Info("local/Encode", "args", args)
 	_, err := FfmpegLocalEncode(ctx, FfmpegEncodeArgs{
 		Ffmpeg:          "/usr/bin/ffmpeg",
 		Args:            args.FfmpegArgs.Args,
@@ -177,8 +192,11 @@ func (l *LocalEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, 
 	}, err
 }
 func (l *LocalEncode) EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error) {
-	slog.Info("local/postlude", "args", args)
-	slog.Info("local/postlude: removing input symlink")
+	slog.Info("Start", "A", "LocalEncode/Postlude", "inputFname", args.FfmpegArgs.InputFname)
+	defer slog.Info("Stop ", "A", "LocalEncode/Postlude", "inputFname", args.FfmpegArgs.InputFname)
+
+	//slog.Info("local/postlude", "args", args)
+	//slog.Info("local/postlude: removing input symlink")
 	if err := os.Remove(args.FfmpegArgs.OutputDir + "/" + args.FfmpegArgs.InputFname); err != nil {
 		return EncodePostludeResp{}, fmt.Errorf("Failed to remove symlink to inpout file (%s): %s", args.FfmpegArgs.OutputDir+"/"+args.FfmpegArgs.InputFname, err)
 	}
