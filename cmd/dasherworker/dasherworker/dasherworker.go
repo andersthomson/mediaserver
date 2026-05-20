@@ -3,6 +3,8 @@ package dasherworker
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -204,10 +206,7 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 				return AllEncodingWorkflowResp{}, errors.WithStack(err)
 			}
 
-			drFname, err := DasherReadyFilename(streamno, M)
-			if err != nil {
-				return AllEncodingWorkflowResp{}, errors.WithStack(err)
-			}
+			drFname := DasherReadyFilename2(inputFName, strconv.Itoa(streamno))
 			inp, err := Input(streamno, M)
 			if err != nil {
 				return AllEncodingWorkflowResp{}, errors.WithStack(err)
@@ -228,9 +227,16 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 			}
 			fmt.Printf("Result %v\n", encodeStreamResp)
 		case "reference":
+
 			inputNumber := M.Dash.Streams[streamno].ReferenceFile
 			oldFile := args.Dir + "/" + M.Inputs[inputNumber].Filename
-			newFilename, _ := DasherReadyFilename(streamno, M)
+
+			inputFName, err := InputFName(streamno, M)
+			if err != nil {
+				return AllEncodingWorkflowResp{}, errors.WithStack(err)
+			}
+			newFilename := DasherReadyFilename2(inputFName, strconv.Itoa(streamno))
+
 			newFile := DashDir + "/" + newFilename
 			if _, err := LinkSrcMediaActivity(ctx, oldFile, newFile); err != nil {
 				return AllEncodingWorkflowResp{}, err
@@ -240,15 +246,17 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 		}
 
 	}
+	if err := os.WriteFile(filepath.Join(DashDir, "gopMs"), []byte(strconv.FormatFloat(preludeResp.Tprops.DashMs, 'f', 0, 64)), 0600); err != nil {
+		return AllEncodingWorkflowResp{}, err
+	}
 	ctx1 = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
 		TaskQueue:           "dasherQueue",
 		//HeartbeatTimeout:    1000 * time.Second,
 	})
-	slog.Info("XXXXXXXX starting Finalize activity")
 	err = workflow.ExecuteActivity(ctx1, Finalize, FinalizeArgs{
-		M:         M,
-		DashMs:    preludeResp.Tprops.DashMs,
+		M: M,
+		//DashMs:    preludeResp.Tprops.DashMs,
 		TargetDir: DashDir,
 		ProdDir:   ProdDir,
 		Fast:      args.Fast,

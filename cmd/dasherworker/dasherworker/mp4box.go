@@ -23,10 +23,12 @@ type MP4BoxDashReadyResp struct {
 }
 
 func MP4BoxDashReady(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
-	drFname, err := DasherReadyFilename(args.P.StreamNo, args.P.Msp)
+	fname, err := InputFName(args.P.StreamNo, args.P.Msp)
 	if err != nil {
-		return MP4BoxDashReadyResp{}, errors.WithStack(err)
+		return MP4BoxDashReadyResp{}, err
 	}
+
+	drFname := DasherReadyFilename2(fname, strconv.Itoa(args.P.StreamNo))
 	outputFName := drFname + "-fragmented.mp4"
 
 	boxArgs := []string{

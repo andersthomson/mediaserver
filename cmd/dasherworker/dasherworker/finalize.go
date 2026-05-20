@@ -15,21 +15,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-func dasherAction(m scrape.Msp, gopMs float64, targetDir string) error {
-	fmt.Printf("dasherAction\n")
-	var inputs []string
-	for streamno, _ := range m.Dash.Streams {
-		drFname, err := DasherReadyFilename(streamno, m)
-		if err != nil {
-			return errors.WithStack(err)
-		}
-		inputs = append(inputs, drFname+":id="+strconv.Itoa(streamno))
-	}
-	args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
-	args = append(args, inputs...)
-	slog.Info("dasherAction", "exec", "MP4Box", "args", args)
+func MP4Box(dir string, args []string) error {
 	cmd := exec.Command("/usr/bin/MP4Box", args...)
-	cmd.Dir = targetDir
+	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
@@ -38,6 +26,34 @@ func dasherAction(m scrape.Msp, gopMs float64, targetDir string) error {
 	}
 	return nil
 }
+
+func dasherAction2(targetDir string) error {
+	slog.Info("Start", "F", "dasherAction2", "targetDir", targetDir)
+	defer slog.Info("Stop ", "F", "dasherAction2", "targetDir", targetDir)
+
+	pattern := "*-encoded-?.mp4"
+	matches, err := filepath.Glob(targetDir + "/" + pattern)
+	if err != nil {
+		return err
+	}
+
+	var inputs []string
+	for idx, match := range matches {
+		inputs = append(inputs, filepath.Base(match)+":id="+strconv.Itoa(idx))
+	}
+
+	gopMsFilename := filepath.Join(targetDir, "gopMs")
+	gopMs, err := os.ReadFile(gopMsFilename)
+	if err != nil {
+		slog.Error("FAIL to read file", "F", "dasherAction2", "fname", gopMsFilename, "err", err)
+		return fmt.Errorf("Failed to read gopMs file for targetDir %s: %+v", targetDir, err)
+	}
+	//args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
+	args := []string{"-dash", string(gopMs), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
+	args = append(args, inputs...)
+	return MP4Box(targetDir, args)
+}
+
 func replaceWithSymlink(src, target string) error {
 	if err := os.Remove(src); err != nil {
 		return errors.WithStack(err)
@@ -50,7 +66,6 @@ func replaceWithSymlink(src, target string) error {
 
 type FinalizeArgs struct {
 	M         scrape.Msp
-	DashMs    float64
 	TargetDir string
 	ProdDir   string
 	Fast      bool
@@ -63,7 +78,8 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	slog.Info("Start", "A", "Finalize", "ProdDir", args.ProdDir)
 	defer slog.Info("Stop ", "A", "Finalize", "ProdDir", args.ProdDir)
 
-	dasherAction(args.M, args.DashMs, args.TargetDir)
+	//dasherAction(args.M, args.DashMs, args.TargetDir)
+	dasherAction2(args.TargetDir)
 
 	for streamno, _ := range args.M.Dash.Streams {
 		dashFName, err := DasherReadyFilename(streamno, args.M)

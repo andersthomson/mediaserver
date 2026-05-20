@@ -14,7 +14,6 @@ import (
 )
 
 type SrcProperties struct {
-	streamType  string // video, audio, subtitles
 	fps         float64
 	gopMilliSec float64
 	gopFrames   float64
@@ -92,7 +91,6 @@ func GetSourcePropertiesActivity(ctx context.Context, params ProbeParams) (SrcPr
 	diff := t2 - t1
 
 	return SrcProperties{
-		streamType:  "video",
 		fps:         calculatedFPS,
 		gopMilliSec: diff * 1000,
 		gopFrames:   diff * calculatedFPS,
