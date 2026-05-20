@@ -81,11 +81,13 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	//dasherAction(args.M, args.DashMs, args.TargetDir)
 	dasherAction2(args.TargetDir)
 
-	for streamno, _ := range args.M.Dash.Streams {
-		dashFName, err := DasherReadyFilename(streamno, args.M)
-		if err != nil {
-			return FinalizeResp{}, errors.WithStack(err)
-		}
+	pattern := "*-encoded-?.mp4"
+	matches, err := filepath.Glob(args.TargetDir + "/" + pattern)
+	if err != nil {
+		return FinalizeResp{}, err
+	}
+
+	for _, dashFName := range matches {
 		if err := replaceWithSymlink(args.TargetDir+"/"+strings.TrimSuffix(dashFName, ".mp4")+"_dashinit.mp4", dashFName); err != nil {
 			return FinalizeResp{}, errors.WithStack(err)
 		}

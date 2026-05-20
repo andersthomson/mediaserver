@@ -6,7 +6,7 @@ import (
 	"github.com/andersthomson/mediaserver/scrape"
 )
 
-func DasherReadyFilename(streamno int, m scrape.Msp) (string, error) {
+func XDasherReadyFilename(streamno int, m scrape.Msp) (string, error) {
 	fname, err := InputFName(streamno, m)
 	if err != nil {
 		return "", err
