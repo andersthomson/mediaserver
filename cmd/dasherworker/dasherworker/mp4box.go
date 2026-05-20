@@ -14,6 +14,7 @@ import (
 type MP4BoxDashReadyArgs struct {
 	WorkDir string
 	P       EncodeParams
+	DashMs  string
 }
 
 type MP4BoxDashReadyResp struct {
@@ -32,7 +33,7 @@ func MP4BoxDashReady(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashR
 	outputFName := drFname + "-fragmented.mp4"
 
 	boxArgs := []string{
-		"-dash", strconv.FormatFloat(args.P.Props.DashMs, 'f', 0, 64),
+		"-dash", args.DashMs,
 		"-rap",
 		"-profile",
 		"onDemand",

@@ -418,6 +418,7 @@ func EncodeStream(ctx workflow.Context, args EncodeStreamArgs) (EncodeStreamResp
 	var MP4BoxDashReadyResp MP4BoxDashReadyResp
 	err = workflow.ExecuteActivity(ctx3, MP4BoxDashReady, MP4BoxDashReadyArgs{
 		WorkDir: args.WorkDir,
+		DashMs:  strconv.FormatFloat(args.P.Props.DashMs, 'f', 0, 64),
 		P:       args.P,
 	}).Get(ctx3, &MP4BoxDashReadyResp)
 	if err != nil {
