@@ -35,7 +35,7 @@ func InputFName(streamno int, m scrape.Msp) (string, error) {
 	return m.Inputs[inputNumber].Filename, nil
 }
 
-type TargetProperties struct {
+type CommonProperties struct {
 	GopFrames float64
 	DashMs    float64
 }
@@ -45,7 +45,7 @@ type EncodeParams struct {
 	StreamNo    int
 	Msp         scrape.Msp
 	Dir         string
-	Props       TargetProperties
+	Props       CommonProperties
 	SrcAnalysis MediaInterlaceAnalysis
 }
 
@@ -152,6 +152,7 @@ type AllEncodingWorkflowResp struct {
 func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (AllEncodingWorkflowResp, error) {
 	slog.Info("Start", "W", "AllEncoding", "msp", args.MspFile)
 	defer slog.Info("Stop ", "W", "AllEncoding", "msp", args.MspFile)
+
 	ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
 		TaskQueue:           "dasherQueue",

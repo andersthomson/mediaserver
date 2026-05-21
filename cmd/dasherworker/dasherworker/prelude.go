@@ -18,7 +18,7 @@ type PreludeArgs struct {
 }
 
 type PreludeResp struct {
-	Tprops TargetProperties
+	Tprops CommonProperties
 }
 
 func dashMs(p SrcProperties) float64 {
@@ -31,7 +31,7 @@ func Prelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
 	defer slog.Info("Stop ", "A", "Prelude", "DashDir", args.DashDir)
 	//Sanity check:
 	var referenceFiles = map[int]bool{}
-	var tprops TargetProperties
+	var tprops CommonProperties
 	for streamno, stream := range args.M.Dash.Streams {
 		if stream.Codec == "reference" {
 			referenceFiles[stream.ReferenceFile] = true
