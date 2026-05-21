@@ -1,15 +1,16 @@
 package dasherworker
 
 import (
+	"bytes"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
+	"github.com/natefinch/atomic"
 	"github.com/pkg/errors"
 	"go.temporal.io/sdk/workflow"
 )
@@ -202,12 +203,7 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 				return AllEncodingWorkflowResp{}, errors.WithStack(err)
 			}
 
-			inputFName, err := InputFName(streamno, M)
-			if err != nil {
-				return AllEncodingWorkflowResp{}, errors.WithStack(err)
-			}
-
-			drFname := DasherReadyFilename2(inputFName, strconv.Itoa(streamno))
+			drFname := DasherReadyFilename2(inFName, strconv.Itoa(streamno))
 			inp, err := Input(streamno, M)
 			if err != nil {
 				return AllEncodingWorkflowResp{}, errors.WithStack(err)
@@ -247,9 +243,11 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 		}
 
 	}
-	if err := os.WriteFile(filepath.Join(DashDir, "gopMs"), []byte(strconv.FormatFloat(preludeResp.Tprops.DashMs, 'f', 0, 64)), 0600); err != nil {
+	if err := atomic.WriteFile(filepath.Join(DashDir, "gopMs"), bytes.NewReader([]byte(strconv.FormatFloat(preludeResp.Tprops.DashMs, 'f', 0, 64))), 0600); err != nil {
 		return AllEncodingWorkflowResp{}, err
 	}
+
+	//Finalize
 	ctx1 = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
 		TaskQueue:           "dasherQueue",
