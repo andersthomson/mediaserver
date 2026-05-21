@@ -83,6 +83,9 @@ func FfmpegLocalEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncode
 	// Capture outputs
 	resp.Stdout = stdout.String()
 	resp.Stderr = stderr.String()
+	if resp.Stderr != "" {
+		slog.Error("LocalFFmpeg error", "stderr", resp.Stderr)
+	}
 
 	// Get Exit Code
 	exitCode := 0

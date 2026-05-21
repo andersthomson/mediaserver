@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/andersthomson/mediaserver/scrape"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
@@ -65,7 +64,6 @@ func replaceWithSymlink(src, target string) error {
 }
 
 type FinalizeArgs struct {
-	M         scrape.Msp
 	TargetDir string
 	ProdDir   string
 	Fast      bool
@@ -78,7 +76,6 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	slog.Info("Start", "A", "Finalize", "ProdDir", args.ProdDir)
 	defer slog.Info("Stop ", "A", "Finalize", "ProdDir", args.ProdDir)
 
-	//dasherAction(args.M, args.DashMs, args.TargetDir)
 	dasherAction2(args.TargetDir)
 
 	pattern := "*-encoded-?.mp4"
@@ -88,7 +85,7 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	}
 
 	for _, dashFName := range matches {
-		if err := replaceWithSymlink(args.TargetDir+"/"+strings.TrimSuffix(dashFName, ".mp4")+"_dashinit.mp4", dashFName); err != nil {
+		if err := replaceWithSymlink(strings.TrimSuffix(dashFName, ".mp4")+"_dashinit.mp4", filepath.Base(dashFName)); err != nil {
 			return FinalizeResp{}, errors.WithStack(err)
 		}
 	}

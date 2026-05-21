@@ -255,8 +255,6 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 		//HeartbeatTimeout:    1000 * time.Second,
 	})
 	err = workflow.ExecuteActivity(ctx1, Finalize, FinalizeArgs{
-		M: M,
-		//DashMs:    preludeResp.Tprops.DashMs,
 		TargetDir: DashDir,
 		ProdDir:   ProdDir,
 		Fast:      args.Fast,

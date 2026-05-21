@@ -97,7 +97,7 @@ func main() {
 
 	//w.RegisterWorkflow(dasherworker.Encode)
 	w.RegisterWorkflow(dasherworker.AllEncodingWorkflow)
-
+	w.RegisterActivity(&dasherworker.LocalEncode{})
 	w.RegisterActivity(dasherworker.ReadMspFile)
 	w.RegisterActivity(dasherworker.Prelude)
 	w.RegisterActivity(dasherworker.LinkSrcMedia)
