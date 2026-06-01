@@ -96,6 +96,17 @@ func MediaURLPathOrZero(x any) string {
 	return ""
 }
 
+type HLSURLPather interface {
+	HLSURLPath() string
+}
+
+func HLSURLPathOrZero(x any) string {
+	if xT, ok := x.(HLSURLPather); ok {
+		return xT.HLSURLPath()
+	}
+	return ""
+}
+
 type DashURLPather interface {
 	DashURLPath() string
 }

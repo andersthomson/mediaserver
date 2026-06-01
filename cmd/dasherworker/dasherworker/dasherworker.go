@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/natefinch/atomic"
 	"github.com/pkg/errors"
 	"go.temporal.io/sdk/workflow"
@@ -203,7 +204,7 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 				return AllEncodingWorkflowResp{}, errors.WithStack(err)
 			}
 
-			drFname := DasherReadyFilename2(inFName, strconv.Itoa(streamno))
+			drFname := DasherReadyFilename2(inFname, strconv.Itoa(streamno))
 			inp, err := Input(streamno, M)
 			if err != nil {
 				return AllEncodingWorkflowResp{}, errors.WithStack(err)
@@ -212,7 +213,7 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 			var encodeStreamResp EncodeStreamResp
 
 			encodeStreamResp, err = EncodeStream(ctx, EncodeStreamArgs{
-				InputDirFile:  NewDirFile(args.Dir, inputFName),
+				InputDirFile:  NewDirFile(args.Dir, inFname),
 				OutputDirFile: NewDirFile(DashDir, drFname+"-fragmented.mp4"),
 				WorkDir:       DashDir,
 				P:             EncodeParams{preset(args.Fast), streamno, M, args.Dir, preludeResp.Tprops, MediaInterlaceAnalysis},
@@ -235,7 +236,7 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 			newFilename := DasherReadyFilename2(inputFName, strconv.Itoa(streamno))
 
 			newFile := DashDir + "/" + newFilename
-			if _, err := LinkSrcMediaActivity(ctx, oldFile, newFile); err != nil {
+			if _, err := CallLinkSrcMedia(ctx, oldFile, newFile); err != nil {
 				return AllEncodingWorkflowResp{}, err
 			}
 		default:
@@ -243,13 +244,13 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 		}
 
 	}
-	if err := atomic.WriteFile(filepath.Join(DashDir, "gopMs"), bytes.NewReader([]byte(strconv.FormatFloat(preludeResp.Tprops.DashMs, 'f', 0, 64))), 0600); err != nil {
+	if err := atomic.WriteFile(filepath.Join(DashDir, "gopMs"), bytes.NewReader([]byte(strconv.FormatFloat(preludeResp.Tprops.DashMs, 'f', 0, 64)))); err != nil {
 		return AllEncodingWorkflowResp{}, err
 	}
 
 	//Finalize
 	ctx1 = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 10 * time.Minute,
+		StartToCloseTimeout: 100 * time.Minute,
 		TaskQueue:           "dasherQueue",
 		//HeartbeatTimeout:    1000 * time.Second,
 	})
@@ -286,9 +287,10 @@ func EncodeStream(ctx workflow.Context, args EncodeStreamArgs) (EncodeStreamResp
 	case "x264":
 		isVideoEncode = true
 		ffmpegArgs = []any{
-			"-itsoffset", fmt.Sprintf("%.3f", args.P.SrcAnalysis.FirstPTS),
+			//"-itsoffset", fmt.Sprintf("%.3f", args.P.SrcAnalysis.FirstPTS),
 			//"-c:v", "h264_v4l2m2m",
 			"-i", args.InputDirFile,
+			"-t", "1200",
 			"-filter_complex", strings.Join([]string{interlaceIfNeeded("0:v:0", "postdeint", args.P.SrcAnalysis.FilterRecommendation),
 				scaleIfNeeded("postdeint", "out", scaleFilter)}, ";"),
 			"-map", "[out]",
@@ -300,8 +302,10 @@ func EncodeStream(ctx workflow.Context, args EncodeStreamArgs) (EncodeStreamResp
 			"-preset:v", args.P.Preset}
 		ffmpegArgs = append(ffmpegArgs, tune(args.P.Msp.Dash.Streams[args.P.StreamNo].Codec, args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs, []any{
-			"-x264-params:v", "keyint=" + strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64) + ":min-keyint=" + strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64) + ":scenecut=0:open-gop=0:vbv-maxrate=" + bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo]) + ":vbv-bufsize=" + bufSize(bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo])) + ":crf-max=" + crfMax(crf(args.P.Msp.Dash.Streams[args.P.StreamNo])),
-			"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+			"-x264-params:v", "keyint=" + strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64) + ":min-keyint=" + strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64) + ":scenecut=0:open-gop=0:vbv-maxrate=" + bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo]) + ":vbv-bufsize=" + bufSize(bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo])) + ":crf-max=" + crfMax(crf(args.P.Msp.Dash.Streams[args.P.StreamNo])) + ":no-deblock=0:cabac=1:8x8dct=1",
+			"-map_chapters", "-1",
+			"-map_metadata", "-1",
+			"-movflags", "+faststart+disable_chpl",
 			args.OutputDirFile,
 		}...)
 	case "x265":
@@ -330,7 +334,18 @@ func EncodeStream(ctx workflow.Context, args EncodeStreamArgs) (EncodeStreamResp
 		ffmpegArgs = []any{
 			"-i", args.InputDirFile,
 			"-map", args.P.Msp.Dash.Streams[args.P.StreamNo].Source,
+			"-vn",
 			"-c", "aac",
+			"-aac_coder", "twoloop",
+			"-frame_size", "960",
+			"-b:a", "448k",
+			"-ar", "48000",
+			//FIXME: Keep mono as mono. Dont upsample
+			"-ac", "2",
+			"-af", "aresample=async=1",
+			"-map_chapters", "-1",
+			"-map_metadata", "-1",
+			"-movflags", "+faststart+frag_every_frame+empty_moov",
 			args.OutputDirFile,
 		}
 	case "copy":
@@ -407,9 +422,9 @@ func EncodeStream(ctx workflow.Context, args EncodeStreamArgs) (EncodeStreamResp
 
 	//Step 3: make Dash Ready
 	ctx3 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: time.Minute * 5,
+		StartToCloseTimeout: time.Minute * 50,
 		TaskQueue:           "dasherQueue",
-		HeartbeatTimeout:    1000 * time.Second,
+		HeartbeatTimeout:    3600 * time.Second,
 	})
 
 	var MP4BoxDashReadyResp MP4BoxDashReadyResp
@@ -422,6 +437,6 @@ func EncodeStream(ctx workflow.Context, args EncodeStreamArgs) (EncodeStreamResp
 		slog.Error("MP4BoxDashReady activity failed", "err", err.Error())
 		return EncodeStreamResp{}, err
 	}
-
+	spew.Dump(MP4BoxDashReadyResp)
 	return EncodeStreamResp{}, nil
 }

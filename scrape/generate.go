@@ -1,15 +1,6 @@
 package scrape
 
-import (
-	"bufio"
-	"fmt"
-	"io"
-	"os"
-	"strings"
-
-	"github.com/andersthomson/mediaserver/datasource"
-)
-
+/*
 func readGenerateFromFile(path string) (map[string]string, error) {
 	fileHandle, err := os.Open(path)
 	if err != nil {
@@ -64,4 +55,4 @@ func DataSourceFromGenerate(caches []string, dir string, fname string) datasourc
 		}
 	}
 	return nil
-}
+}*/

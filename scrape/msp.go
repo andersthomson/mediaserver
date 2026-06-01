@@ -85,8 +85,8 @@ type StreamT struct {
 }
 
 type SubsT struct {
-	Language string
-	File     string
+	Language      string
+	ReferenceFile int
 }
 
 func (t *TmdbT) UnmarshalTOML(in interface{}) error {

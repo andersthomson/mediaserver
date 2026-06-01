@@ -10,13 +10,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 )
 
 type SrcProperties struct {
-	fps         float64
-	gopMilliSec float64
-	gopFrames   float64
+	Fps         float64
+	GopMilliSec float64
+	GopFrames   float64
 }
 type ProbeParams struct {
 	Filename string
@@ -24,7 +25,7 @@ type ProbeParams struct {
 }
 
 // GetSourcePropertiesActivity combines GOP and FPS detection into a single remote call.
-func GetSourcePropertiesActivity(ctx context.Context, params ProbeParams) (SrcProperties, error) {
+func GetSourceProperties(ctx context.Context, params ProbeParams) (SrcProperties, error) {
 	path := filepath.Join(params.Dir, params.Filename)
 
 	// We call ffprobe once, asking for both stream info (FPS) and frame info (GOP)
@@ -90,9 +91,10 @@ func GetSourcePropertiesActivity(ctx context.Context, params ProbeParams) (SrcPr
 
 	diff := t2 - t1
 
+	spew.Dump(calculatedFPS)
 	return SrcProperties{
-		fps:         calculatedFPS,
-		gopMilliSec: diff * 1000,
-		gopFrames:   diff * calculatedFPS,
+		Fps:         calculatedFPS,
+		GopMilliSec: diff * 1000,
+		GopFrames:   diff * calculatedFPS,
 	}, nil
 }

@@ -22,7 +22,7 @@ type PreludeResp struct {
 }
 
 func dashMs(p SrcProperties) float64 {
-	diff := p.gopMilliSec / 1000
+	diff := p.GopMilliSec / 1000
 	return math.Max(1.0, math.Round(4.0/diff)) * diff * 1000
 }
 
@@ -39,14 +39,14 @@ func Prelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
 			//Check that the input's gop is sane
 			switch {
 			case isDashReadyVideo(args.Dir + "/" + args.M.Inputs[stream.ReferenceFile].Filename):
-				props, err := GetSourcePropertiesActivity(context.Background(), ProbeParams{args.M.Inputs[stream.ReferenceFile].Filename, args.Dir})
+				props, err := GetSourceProperties(context.Background(), ProbeParams{args.M.Inputs[stream.ReferenceFile].Filename, args.Dir})
 				if err != nil {
 					return PreludeResp{}, errors.WithStack(err)
 				}
-				if props.gopMilliSec < 1500 || props.gopMilliSec > 5000 {
-					return PreludeResp{}, fmt.Errorf("Source %d, which you want to have referenced, has an unsupported gop %f\n", streamno, props.gopMilliSec)
+				if props.GopMilliSec < 1500 || props.GopMilliSec > 5000 {
+					return PreludeResp{}, fmt.Errorf("Source %d, which you want to have referenced, has an unsupported gop %f\n", streamno, props.GopMilliSec)
 				}
-				tprops.GopFrames = props.gopFrames
+				tprops.GopFrames = props.GopFrames
 				tprops.DashMs = dashMs(props)
 			case isDashReadyAudio(args.Dir + "/" + args.M.Inputs[stream.ReferenceFile].Filename):
 			default:

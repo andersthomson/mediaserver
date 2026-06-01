@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -14,19 +14,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func MP4Box(dir string, args []string) error {
-	cmd := exec.Command("/usr/bin/MP4Box", args...)
-	cmd.Dir = dir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err := cmd.Run()
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	return nil
-}
-
-func dasherAction2(targetDir string) error {
+func dasherAction2(ctx context.Context, targetDir string) error {
 	slog.Info("Start", "F", "dasherAction2", "targetDir", targetDir)
 	defer slog.Info("Stop ", "F", "dasherAction2", "targetDir", targetDir)
 
@@ -37,8 +25,17 @@ func dasherAction2(targetDir string) error {
 	}
 
 	var inputs []string
-	for idx, match := range matches {
-		inputs = append(inputs, filepath.Base(match)+":id="+strconv.Itoa(idx))
+	var codecs []string
+	for _, match := range matches {
+		codec, err := GetStreamZeroCodec(match)
+		if err != nil {
+			return fmt.Errorf("Failed to find codec for %s: %v", match, err)
+		}
+		if idx := slices.Index(codecs, codec); idx == -1 {
+			codecs = append(codecs, codec)
+		}
+		codecIdx := slices.Index(codecs, codec)
+		inputs = append(inputs, filepath.Base(match)+":asID="+strconv.Itoa(codecIdx+1))
 	}
 
 	gopMsFilename := filepath.Join(targetDir, "gopMs")
@@ -50,7 +47,7 @@ func dasherAction2(targetDir string) error {
 	//args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
 	args := []string{"-dash", string(gopMs), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
 	args = append(args, inputs...)
-	return MP4Box(targetDir, args)
+	return MP4Box(ctx, targetDir, args)
 }
 
 func replaceWithSymlink(src, target string) error {
@@ -76,20 +73,20 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	slog.Info("Start", "A", "Finalize", "ProdDir", args.ProdDir)
 	defer slog.Info("Stop ", "A", "Finalize", "ProdDir", args.ProdDir)
 
-	dasherAction2(args.TargetDir)
+	dasherAction2(ctx, args.TargetDir)
 
 	pattern := "*-encoded-?.mp4"
 	matches, err := filepath.Glob(args.TargetDir + "/" + pattern)
 	if err != nil {
 		return FinalizeResp{}, err
 	}
-
 	for _, dashFName := range matches {
 		if err := replaceWithSymlink(strings.TrimSuffix(dashFName, ".mp4")+"_dashinit.mp4", filepath.Base(dashFName)); err != nil {
 			return FinalizeResp{}, errors.WithStack(err)
 		}
 	}
-	fixAudioPresentationTimeOffset(args.TargetDir + "/" + "manifest.mpd")
+	//fixAudioPresentationTimeOffset(args.TargetDir + "/" + "manifest.mpd")
+	fixPresentationTimeOffsets2(args.TargetDir + "/" + "manifest.mpd")
 	if args.Fast {
 		if err := os.WriteFile(args.TargetDir+"/"+"dasher_fast=1", nil, 0644); err != nil {
 			return FinalizeResp{}, errors.WithStack(err)

@@ -100,7 +100,15 @@ func main() {
 	w.RegisterActivity(&dasherworker.LocalEncode{})
 	w.RegisterActivity(dasherworker.ReadMspFile)
 	w.RegisterActivity(dasherworker.Prelude)
+	w.RegisterActivity(dasherworker.GetSourcePropertiesActivity)
+	w.RegisterWorkflow(dasherworker.GetSourcePropertiesWF)
+
+	w.RegisterWorkflow(dasherworker.HLSRenderMasterWF)
+	w.RegisterActivity(dasherworker.HLSRenderMaster)
+
+	w.RegisterWorkflow(dasherworker.LinkHLSSourcesWF)
 	w.RegisterActivity(dasherworker.LinkSrcMedia)
+
 	w.RegisterActivity(dasherworker.MP4BoxDashReady)
 	w.RegisterActivity(dasherworker.Finalize)
 	w.RegisterActivity(dasherworker.AnalyzeMediaInterlace)

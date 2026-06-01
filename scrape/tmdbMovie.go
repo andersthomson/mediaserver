@@ -12,7 +12,8 @@ import (
 
 type TMDBMovie struct {
 	MediaServer
-	DashServer
+	//DashServer
+	HLSServer
 	SubsServer
 	PosterServer
 	BackdropServer
@@ -75,8 +76,10 @@ func (i TMDBMovie) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/"+i.MediaURLPath():
 		i.MediaServer.ServeHTTP(w, r)
-	case strings.HasPrefix(r.URL.String(), "/dash/"):
-		i.DashServer.ServeHTTP(w, r)
+		//	case strings.HasPrefix(r.URL.String(), "/dash/"):
+		//		i.DashServer.ServeHTTP(w, r)
+	case strings.HasPrefix(r.URL.String(), "/hls/"):
+		i.HLSServer.ServeHTTP(w, r)
 	case r.URL.Path == "/"+i.PosterURLPath():
 		i.PosterServer.ServeHTTP(w, r)
 	case r.URL.Path == "/"+i.BackdropURLPath():
@@ -214,7 +217,8 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 	}
 	res.id = m.Id
 	res.shortName = m.ShortName
-	res.MpdFile = caches[0] + "/" + res.PrettyID() + "/dash/" + "manifest.mpd"
+	//res.MpdFile = caches[0] + "/" + res.PrettyID() + "/dash/" + "manifest.mpd"
+	res.MpdFile = caches[0] + "/" + res.PrettyID() + "/hls/" + "master.m3u8"
 	res.SubsServer.AddSubsFromMP4Filename(caches[0]+"/"+res.ID()+"/mp4/", basename(m.ShortName+".mp4"))
 
 	res.language = m.Audio.Language
@@ -226,6 +230,7 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 
 }
 
+/*
 func TMDBMovieFromGenerate(caches []string, g map[string]string, dir string) (*TMDBMovie, bool) {
 	res := &TMDBMovie{
 		tags: make(map[string][]string, 4),
@@ -267,4 +272,4 @@ func TMDBMovieFromGenerate(caches []string, g map[string]string, dir string) (*T
 	//spew.Dump(res)
 	return res, true
 
-}
+}*/

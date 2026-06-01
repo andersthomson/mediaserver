@@ -68,12 +68,13 @@ func ScanDir(dir string) []datasource.DataSource {
 			}
 			continue
 		}
-		if strings.HasSuffix(d.Name(), ".generate") {
-			if itm := scrape.DataSourceFromGenerate(Config.Caches, dir, d.Name()); itm != nil {
-				res = append(res, itm)
+		/*	if strings.HasSuffix(d.Name(), ".generate") {
+				if itm := scrape.DataSourceFromGenerate(Config.Caches, dir, d.Name()); itm != nil {
+					res = append(res, itm)
+				}
+				continue
 			}
-			continue
-		}
+		*/
 		if strings.HasSuffix(d.Name(), ".msp") {
 			if itm := scrape.DataSourceFromMsp(Config.Caches, dir, d.Name()); itm != nil {
 				res = append(res, itm)
@@ -161,6 +162,14 @@ func mediaURL(ds datasource.DataSource) string {
 		return ""
 	} else {
 		return Config.WebRoot + "/item/" + url.PathEscape(ds.ID()) + "/part/" + url.PathEscape(p)
+	}
+}
+
+func hlsURL(ds datasource.DataSource) string {
+	if h := datasource.HLSURLPathOrZero(ds); h == "" {
+		return ""
+	} else {
+		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + h
 	}
 }
 
@@ -765,6 +774,7 @@ func serveItemHtml5(w http.ResponseWriter, r *http.Request) {
 func serveItemShaka(w http.ResponseWriter, r *http.Request) {
 	type dataT struct {
 		DashURL       string
+		HLSURL        string
 		MediaURL      string
 		SubsURLs      []datasource.Subs
 		Title         string
@@ -785,6 +795,7 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
 	data := dataT{}
 	data.MediaURL = mediaURL(ds)
 	data.DashURL = dashURL(ds)
+	data.HLSURL = hlsURL(ds)
 	data.SubsURLs = datasource.SubsSliceOrZero(ds)
 	data.SeasonEpisode = seasonEpisode(ds)
 	data.Overview = datasource.OverviewOrZero(ds)
@@ -816,7 +827,7 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
   </div>
 
 <script>
-  const manifestUri = '{{.DashURL}}';
+  const manifestUri = '{{.HLSURL}}';
   //const captionUri = 'https://googleapis.com/shaka-demo-assets/angel-one/subs_en.vtt';
 
   async function initPlayer() {
@@ -1077,6 +1088,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 		Html5URL      string
 		ShakaURL      string
 		DashURL       string
+		HLSURL        string
 		CastURL       string
 		MediaURL      string
 		PosterURL     string
@@ -1101,6 +1113,7 @@ func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss
 				Html5URL:      html5URL(ds),
 				ShakaURL:      shakaURL(ds),
 				DashURL:       dashURL(ds),
+				HLSURL:        hlsURL(ds),
 				CastURL:       castURL(ds),
 				MediaURL:      mediaURL(ds),
 				PosterURL:     posterURL(ds),
@@ -1329,7 +1342,7 @@ NADA
 							<a href="{{.MediaURL}}">&lt;Download&gt;</a>
 							<a href="{{ .Html5URL}}">&lt;Play in browser&gt;</a>
 						{{ end }}
-						{{ if .DashURL }}
+						{{ if .HLSURL }}
 							<a href="{{ .ShakaURL}}">&lt;Play in Shaka&gt;</a>
 						{{ end }}
 						<a href="{{ .CastURL}}">&lt;Play on ChromeCast&gt;</a><br> 
