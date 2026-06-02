@@ -69,7 +69,7 @@ func main() {
 			fmt.Printf("Starting remote worker for %s\n", rw.Hostname)
 			go func() {
 				if err := remoteEncodeWorker.Run(tworker.InterruptCh()); err != nil {
-					panic(fmt.Sprintf("remoteEncoding worker failed", err))
+					panic(fmt.Sprintf("remoteEncoding worker failed: %+v\n", err))
 				}
 			}()
 		}
@@ -84,7 +84,7 @@ func main() {
 		fmt.Printf("Starting local worker\n")
 		go func() {
 			if err := we.Run(tworker.InterruptCh()); err != nil {
-				panic(fmt.Sprintf("localEncoding worker failed", err))
+				panic(fmt.Sprintf("localEncoding worker failed: %+v\n", err))
 			}
 		}()
 	}

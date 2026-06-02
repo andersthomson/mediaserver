@@ -16,6 +16,9 @@ type DirFile struct {
 	Fname string
 }
 
+type InputDirFile DirFile
+type OutputDirFile DirFile
+
 func NewDirFile(dir, fname string) DirFile {
 	return DirFile{
 		Dir:   dir,
@@ -28,11 +31,12 @@ func (d DirFile) String() string {
 }
 
 type FFMpegArgs struct {
-	InputDir    string
-	InputFname  string
-	Args        []string
-	OutputDir   string
-	OutputFname string
+	InputDir       string
+	InputFname     string
+	Args           []string
+	OutputDir      string
+	OutputFname    string
+	OutputDirFiles []OutputDirFile
 }
 
 func NewFFMpegArgs(s []any) FFMpegArgs {
@@ -55,7 +59,11 @@ func NewFFMpegArgs(s []any) FFMpegArgs {
 				continue
 			}
 			panic(fmt.Sprintf("Found more than 2 DirFile:s in the ffmpeg args %+v", s))
+		case OutputDirFile:
+			res.Args[idx] = x.Fname
+			res.OutputDirFiles = append(res.OutputDirFiles, x)
 		default:
+			slog.Error("NewFFMpegArgs/Unsupported type", "type", fmt.Sprintf("%T", x))
 			panic(fmt.Sprintf("Unsupported type %T", x))
 		}
 	}
