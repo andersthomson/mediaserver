@@ -3,6 +3,7 @@ package scrape
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -12,7 +13,7 @@ import (
 
 type TMDBMovie struct {
 	MediaServer
-	//DashServer
+	DashServer
 	HLSServer
 	SubsServer
 	PosterServer
@@ -76,8 +77,8 @@ func (i TMDBMovie) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/"+i.MediaURLPath():
 		i.MediaServer.ServeHTTP(w, r)
-		//	case strings.HasPrefix(r.URL.String(), "/dash/"):
-		//		i.DashServer.ServeHTTP(w, r)
+	case strings.HasPrefix(r.URL.String(), "/dash/"):
+		i.DashServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), "/hls/"):
 		i.HLSServer.ServeHTTP(w, r)
 	case r.URL.Path == "/"+i.PosterURLPath():
@@ -217,8 +218,14 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 	}
 	res.id = m.Id
 	res.shortName = m.ShortName
-	//res.MpdFile = caches[0] + "/" + res.PrettyID() + "/dash/" + "manifest.mpd"
-	res.MpdFile = caches[0] + "/" + res.PrettyID() + "/hls/" + "master.m3u8"
+	u := caches[0] + "/" + res.PrettyID() + "/dash/" + "manifest.mpd"
+	if _, err := os.Stat(u); err == nil {
+		res.MpdFile = u
+	}
+	u = caches[0] + "/" + res.PrettyID() + "/hls/" + "master.m3u8"
+	if _, err := os.Stat(u); err == nil {
+		res.M3U8File = u
+	}
 	res.SubsServer.AddSubsFromMP4Filename(caches[0]+"/"+res.ID()+"/mp4/", basename(m.ShortName+".mp4"))
 
 	res.language = m.Audio.Language

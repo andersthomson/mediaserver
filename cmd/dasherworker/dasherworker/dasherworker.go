@@ -236,7 +236,7 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 				slog.Error("Pipeline processing failed", "err", err)
 				return AllEncodingWorkflowResp{}, err
 			}
-			return AllEncodingWorkflowResp{}, nil
+
 		case "reference":
 
 			inputNumber := M.Dash.Streams[streamno].ReferenceFile

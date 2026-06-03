@@ -773,8 +773,7 @@ func serveItemHtml5(w http.ResponseWriter, r *http.Request) {
 
 func serveItemShaka(w http.ResponseWriter, r *http.Request) {
 	type dataT struct {
-		DashURL       string
-		HLSURL        string
+		ManifestURL   string
 		MediaURL      string
 		SubsURLs      []datasource.Subs
 		Title         string
@@ -794,8 +793,11 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
 
 	data := dataT{}
 	data.MediaURL = mediaURL(ds)
-	data.DashURL = dashURL(ds)
-	data.HLSURL = hlsURL(ds)
+	//Prefer Dash over HLS
+	data.ManifestURL = dashURL(ds)
+	if u := hlsURL(ds); u != "" {
+		data.ManifestURL = u
+	}
 	data.SubsURLs = datasource.SubsSliceOrZero(ds)
 	data.SeasonEpisode = seasonEpisode(ds)
 	data.Overview = datasource.OverviewOrZero(ds)
@@ -827,7 +829,7 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
   </div>
 
 <script>
-  const manifestUri = '{{.HLSURL}}';
+  const manifestUri = '{{.ManifestURL}}';
   //const captionUri = 'https://googleapis.com/shaka-demo-assets/angel-one/subs_en.vtt';
 
   async function initPlayer() {
@@ -1341,6 +1343,9 @@ NADA
 						{{ if .MediaURL }}
 							<a href="{{.MediaURL}}">&lt;Download&gt;</a>
 							<a href="{{ .Html5URL}}">&lt;Play in browser&gt;</a>
+						{{ end }}
+						{{ if .DashURL }}
+							<a href="{{ .ShakaURL}}">&lt;Play in Shaka&gt;</a>
 						{{ end }}
 						{{ if .HLSURL }}
 							<a href="{{ .ShakaURL}}">&lt;Play in Shaka&gt;</a>
