@@ -226,6 +226,9 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 	if _, err := os.Stat(u); err == nil {
 		res.M3U8File = u
 	}
+	if res.MpdFile != "" && res.M3U8File != "" {
+		Logger.Info("Movie has two streaming formats", "shortname", res.shortName)
+	}
 	res.SubsServer.AddSubsFromMP4Filename(caches[0]+"/"+res.ID()+"/mp4/", basename(m.ShortName+".mp4"))
 
 	res.language = m.Audio.Language

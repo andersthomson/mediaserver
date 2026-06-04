@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	iso639_3 "github.com/barbashov/iso639-3"
 	"github.com/davecgh/go-spew/spew"
 )
 
@@ -225,7 +226,15 @@ func AutomaticInspectPlaylist(ctx context.Context, m3u8Path string, groupID stri
 				trackLang = val
 			}
 		}
-
+		if before, ok := strings.CutSuffix(m3u8Path, ".m3u8"); ok {
+			if data, err := os.ReadFile(before + ".language"); err == nil {
+				trackLang = strings.TrimSpace(string(data))
+			}
+		}
+		langName := fmt.Sprintf("%s (%s)", strings.ToUpper(trackLang), strings.ToUpper(stream.CodecName))
+		if langNamePtr := iso639_3.FromAnyCode(trackLang); langNamePtr != nil {
+			langName = langNamePtr.Name
+		}
 		codecString := "mp4a.40.2"
 		if stream.CodecName == "ac3" {
 			codecString = "ac-3"
@@ -235,7 +244,7 @@ func AutomaticInspectPlaylist(ctx context.Context, m3u8Path string, groupID stri
 
 		return AudioTrack{
 			GroupID:   groupID,
-			Name:      fmt.Sprintf("%s (%s)", strings.ToUpper(trackLang), strings.ToUpper(stream.CodecName)),
+			Name:      langName,
 			Language:  trackLang,
 			Codecs:    codecString,
 			URI:       playlistURIName,

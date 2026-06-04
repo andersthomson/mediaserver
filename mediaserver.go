@@ -24,6 +24,7 @@ import (
 	"github.com/andersthomson/mediaserver/scrape"
 	iso639_3 "github.com/barbashov/iso639-3"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/felixge/httpsnoop"
 	slogctx "github.com/veqryn/slog-context"
 )
 
@@ -62,12 +63,13 @@ func ScanDir(dir string) []datasource.DataSource {
 	}
 	res := make([]datasource.DataSource, 0, len(entries))
 	for _, d := range entries {
-		if strings.HasSuffix(d.Name(), ".mp4") {
+		/*if strings.HasSuffix(d.Name(), ".mp4") {
 			if itm := scrape.ScrapeFile(dir, d.Name()); itm != nil {
 				res = append(res, itm)
 			}
 			continue
 		}
+		*/
 		/*	if strings.HasSuffix(d.Name(), ".generate") {
 				if itm := scrape.DataSourceFromGenerate(Config.Caches, dir, d.Name()); itm != nil {
 					res = append(res, itm)
@@ -114,14 +116,14 @@ func (a allReposT) AllDataSources() []datasource.DataSource {
 	a.reposMu.Lock()
 	for _, r := range a.repos {
 		if r != nil {
-			logger.Warn("pulling", "xxx", r.AllDataSources())
+			//logger.Warn("pulling", "xxx", r.AllDataSources())
 			//spew.Dump(r.AllDataSources())
 			if srcs := r.AllDataSources(); len(srcs) > 0 {
 				res = append(res, srcs...)
 			}
 		}
 	}
-	logger.Info("all to be returned", "var", res)
+	//logger.Info("all to be returned", "var", res)
 	a.reposMu.Unlock()
 	return res
 }
@@ -292,6 +294,13 @@ func BruteLoggingMiddleware(next http.Handler) http.Handler {
 		logger.InfoContext(ctx, "Brute Completed", "URL", r.URL.Path, "time", time.Since(start))
 	})
 }
+func xSnoopingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		m := httpsnoop.CaptureMetrics(next, w, r)
+		logger.Info("Snoop", "Code", m.Code, "URL", r.URL)
+	})
+}
+
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -303,8 +312,8 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 			"clientAddr", r.Header.Get("X-Forwarded-For"),
 			"Agent", r.Header.Get("User-Agent"),
 			"URL", r.URL.String())
-		next.ServeHTTP(w, r.WithContext(ctx))
-		logger.InfoContext(ctx, "end req", "time", time.Since(start))
+		m := httpsnoop.CaptureMetrics(next, w, r.WithContext(ctx))
+		logger.InfoContext(ctx, "end req", "code", m.Code, "url", r.URL, "range", r.Header.Get("Range"), "time", time.Since(start))
 	})
 }
 

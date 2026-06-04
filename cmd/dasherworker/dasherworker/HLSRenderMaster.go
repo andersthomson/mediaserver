@@ -11,7 +11,6 @@ import (
 )
 
 func HLSRenderMaster(ctx context.Context, m scrape.Msp) (string, error) {
-	slog.Info("THERE")
 	prodDir := HLSProdDir(m)
 	m3u8Matches, err := filepath.Glob(filepath.Join(prodDir, "*.m3u8"))
 	if err != nil {

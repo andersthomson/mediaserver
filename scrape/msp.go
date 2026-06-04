@@ -65,6 +65,7 @@ type InputT struct {
 	Filename   string
 	Interlaced bool
 	Kind       string
+	Language   string
 }
 
 type DashT struct {
