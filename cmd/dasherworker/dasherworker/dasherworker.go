@@ -43,12 +43,12 @@ type CommonProperties struct {
 }
 
 type EncodeParams struct {
-	Preset      string
-	StreamNo    int
-	Msp         scrape.Msp
-	Dir         string
-	Props       CommonProperties
-	SrcAnalysis MediaInterlaceAnalysis
+	Preset   string
+	StreamNo int
+	Msp      scrape.Msp
+	Dir      string
+	DstProps CommonProperties
+	SrcProps MediaInterlaceAnalysis
 }
 
 func Input(streamno int, m scrape.Msp) (scrape.InputT, error) {
@@ -282,7 +282,7 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 
 func inputDirFileStrategy(args EncodeStreamArgs) []any {
 	return []any{
-		"-itsoffset", fmt.Sprintf("%.3f", args.P.SrcAnalysis.FirstPTS),
+		"-itsoffset", fmt.Sprintf("%.3f", args.P.SrcProps.FirstPTS),
 		"-i", args.InputDirFile,
 	}
 }
@@ -298,7 +298,7 @@ func filterStrategy(args EncodeStreamArgs) []any {
 	scaleFilter := scaleFilter(args.P.Msp.Dash.Streams[args.P.StreamNo])
 	return []any{"-filter_complex",
 		strings.Join([]string{
-			interlaceIfNeeded("0:v:0", "postdeint", args.P.SrcAnalysis.FilterRecommendation),
+			interlaceIfNeeded("0:v:0", "postdeint", args.P.SrcProps.FilterRecommendation),
 			scaleIfNeeded("postdeint", "out", scaleFilter)}, ";"),
 		"-map", "[out]"}
 }
@@ -306,34 +306,38 @@ func filterStrategy(args EncodeStreamArgs) []any {
 func nullStrategy(_ EncodeStreamArgs) []any {
 	return []any{}
 }
-func x264EncodingStrategy(args EncodeStreamArgs) []any {
-	ffmpegArgs := []any{
-		"-c:v", "libx264",
-		"-profile:v", "high",
-		"-level:v", "4.1",
-		"-pix_fmt", "yuv420p",
-		"-crf:v", crf(args.P.Msp.Dash.Streams[args.P.StreamNo]),
-		"-preset:v", args.P.Preset}
-	ffmpegArgs = append(ffmpegArgs, tune(args.P.Msp.Dash.Streams[args.P.StreamNo].Codec, args.Kind)...)
-	ffmpegArgs = append(ffmpegArgs,
-		"-x264-params:v", "keyint="+strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo])+":vbv-bufsize="+bufSize(bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo]))+":crf-max="+crfMax(crf(args.P.Msp.Dash.Streams[args.P.StreamNo]))+":no-deblock=0:cabac=1:8x8dct=1")
+func x264EncodingStrategy(crf string, bitrate string) func(args EncodeStreamArgs) []any {
+	return func(args EncodeStreamArgs) []any {
+		ffmpegArgs := []any{
+			"-c:v", "libx264",
+			"-profile:v", "high",
+			"-level:v", "4.1",
+			"-pix_fmt", "yuv420p",
+			"-crf:v", crf,
+			"-preset:v", args.P.Preset}
+		ffmpegArgs = append(ffmpegArgs, tune("x264", args.Kind)...)
+		ffmpegArgs = append(ffmpegArgs,
+			"-x264-params:v", "keyint="+strconv.FormatFloat(args.P.DstProps.GopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(args.P.DstProps.GopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1")
 
-	return ffmpegArgs
-}
-func x265EncodingStrategy(args EncodeStreamArgs) []any {
-	ffmpegArgs := []any{
-		"-c:v", "libx265",
-		"-profile:v", "main10",
-		"-level:v", "5.1",
-		"-pix_fmt", "yuv420p",
-		"-crf:v", crf(args.P.Msp.Dash.Streams[args.P.StreamNo]),
-		"-preset:v", args.P.Preset,
+		return ffmpegArgs
 	}
-	ffmpegArgs = append(ffmpegArgs, tune(args.P.Msp.Dash.Streams[args.P.StreamNo].Codec, args.Kind)...)
-	ffmpegArgs = append(ffmpegArgs,
-		"-tag:v", "hvc1",
-		"-x265-params:v", "keyint="+strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(args.P.Props.GopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo])+":vbv-bufsize="+bufSize(bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo])))
-	return ffmpegArgs
+}
+func x265EncodingStrategy(crf string, bitrate string) func(args EncodeStreamArgs) []any {
+	return func(args EncodeStreamArgs) []any {
+		ffmpegArgs := []any{
+			"-c:v", "libx265",
+			"-profile:v", "main10",
+			"-level:v", "5.1",
+			"-pix_fmt", "yuv420p",
+			"-crf:v", crf,
+			"-preset:v", args.P.Preset,
+		}
+		ffmpegArgs = append(ffmpegArgs, tune("x265", args.Kind)...)
+		ffmpegArgs = append(ffmpegArgs,
+			"-tag:v", "hvc1",
+			"-x265-params:v", "keyint="+strconv.FormatFloat(args.P.DstProps.GopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(args.P.DstProps.GopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate))
+		return ffmpegArgs
+	}
 }
 func aac2cEncodingStrategy(args EncodeStreamArgs) []any {
 	return []any{
@@ -440,7 +444,7 @@ func MP4BoxPackager(ctx workflow.Context, args EncodeStreamArgs) error {
 	var MP4BoxDashReadyResp MP4BoxDashReadyResp
 	err := workflow.ExecuteActivity(ctx3, MP4BoxDashReady, MP4BoxDashReadyArgs{
 		WorkDir: args.WorkDir,
-		DashMs:  strconv.FormatFloat(args.P.Props.DashMs, 'f', 0, 64),
+		DashMs:  strconv.FormatFloat(args.P.DstProps.DashMs, 'f', 0, 64),
 		P:       args.P,
 	}).Get(ctx3, &MP4BoxDashReadyResp)
 	if err != nil {
@@ -456,12 +460,12 @@ func PipelineFactory(args EncodeStreamArgs) ManagedPipeline {
 	case "x264":
 		res.inputStrategy = inputDirFileStrategy
 		res.filterStrategy = filterStrategy
-		res.encodingStrategy = x264EncodingStrategy
+		res.encodingStrategy = x264EncodingStrategy(crf(args.P.Msp.Dash.Streams[args.P.StreamNo]), bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo]))
 		res.manifestStrategy = dashManifestStrategy
 	case "x265":
 		res.inputStrategy = inputDirFileStrategy
 		res.filterStrategy = filterStrategy
-		res.encodingStrategy = x264EncodingStrategy
+		res.encodingStrategy = x265EncodingStrategy(crf(args.P.Msp.Dash.Streams[args.P.StreamNo]), bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo]))
 		res.manifestStrategy = dashManifestStrategy
 	case "aac":
 		res.inputStrategy = inputDirFileWithMapStrategy
