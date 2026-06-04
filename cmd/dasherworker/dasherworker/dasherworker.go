@@ -218,8 +218,13 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 				InputDirFile:  NewDirFile(args.Dir, inFname),
 				OutputDirFile: NewDirFile(DashDir, drFname+"-fragmented.mp4"),
 				WorkDir:       DashDir,
-				P:             EncodeParams{preset(args.Fast), streamno, M, args.Dir, preludeResp.Tprops, MediaInterlaceAnalysis},
 				Kind:          inp.Kind,
+				Preset:        preset(args.Fast),
+				StreamNo:      streamno,
+				Msp:           M,
+				Dir:           args.Dir,
+				DstProps:      preludeResp.Tprops,
+				SrcProps:      MediaInterlaceAnalysis,
 			}
 			if err := PipelineFactory(args).Process(ctx, args); err != nil {
 				slog.Error("Pipeline processing failed", "err", err)
@@ -271,7 +276,7 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 
 func inputDirFileStrategy(args EncodeStreamArgs) []any {
 	return []any{
-		"-itsoffset", fmt.Sprintf("%.3f", args.P.SrcProps.FirstPTS),
+		"-itsoffset", fmt.Sprintf("%.3f", args.SrcProps.FirstPTS),
 		"-i", args.InputDirFile,
 	}
 }
@@ -279,15 +284,15 @@ func inputDirFileStrategy(args EncodeStreamArgs) []any {
 func inputDirFileWithMapStrategy(args EncodeStreamArgs) []any {
 	return []any{
 		"-i", args.InputDirFile,
-		"-map", args.P.Msp.Dash.Streams[args.P.StreamNo].Source,
+		"-map", args.Msp.Dash.Streams[args.StreamNo].Source,
 	}
 }
 
 func filterStrategy(args EncodeStreamArgs) []any {
-	scaleFilter := scaleFilter(args.P.Msp.Dash.Streams[args.P.StreamNo].Profile)
+	scaleFilter := scaleFilter(args.Msp.Dash.Streams[args.StreamNo].Profile)
 	return []any{"-filter_complex",
 		strings.Join([]string{
-			interlaceIfNeeded("0:v:0", "postdeint", args.P.SrcProps.FilterRecommendation),
+			interlaceIfNeeded("0:v:0", "postdeint", args.SrcProps.FilterRecommendation),
 			scaleIfNeeded("postdeint", "out", scaleFilter)}, ";"),
 		"-map", "[out]"}
 }
@@ -303,10 +308,10 @@ func x264EncodingStrategy(crf string, bitrate string) func(args EncodeStreamArgs
 			"-level:v", "4.1",
 			"-pix_fmt", "yuv420p",
 			"-crf:v", crf,
-			"-preset:v", args.P.Preset}
+			"-preset:v", args.Preset}
 		ffmpegArgs = append(ffmpegArgs, tune("x264", args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs,
-			"-x264-params:v", "keyint="+strconv.FormatFloat(args.P.DstProps.GopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(args.P.DstProps.GopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1")
+			"-x264-params:v", "keyint="+strconv.FormatFloat(args.DstProps.GopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(args.DstProps.GopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1")
 
 		return ffmpegArgs
 	}
@@ -319,12 +324,12 @@ func x265EncodingStrategy(crf string, bitrate string) func(args EncodeStreamArgs
 			"-level:v", "5.1",
 			"-pix_fmt", "yuv420p",
 			"-crf:v", crf,
-			"-preset:v", args.P.Preset,
+			"-preset:v", args.Preset,
 		}
 		ffmpegArgs = append(ffmpegArgs, tune("x265", args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs,
 			"-tag:v", "hvc1",
-			"-x265-params:v", "keyint="+strconv.FormatFloat(args.P.DstProps.GopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(args.P.DstProps.GopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate))
+			"-x265-params:v", "keyint="+strconv.FormatFloat(args.DstProps.GopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(args.DstProps.GopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate))
 		return ffmpegArgs
 	}
 }
@@ -429,12 +434,20 @@ func MP4BoxPackager(ctx workflow.Context, args EncodeStreamArgs) error {
 		TaskQueue:           "dasherQueue",
 		HeartbeatTimeout:    3600 * time.Second,
 	})
+	fname, err := InputFName(args.StreamNo, args.Msp)
+	if err != nil {
+		return err
+	}
+
+	drFname := DasherReadyFilename2(fname, strconv.Itoa(args.StreamNo))
 
 	var MP4BoxDashReadyResp MP4BoxDashReadyResp
-	err := workflow.ExecuteActivity(ctx3, MP4BoxDashReady, MP4BoxDashReadyArgs{
-		WorkDir: args.WorkDir,
-		DashMs:  strconv.FormatFloat(args.P.DstProps.DashMs, 'f', 0, 64),
-		P:       args.P,
+	err = workflow.ExecuteActivity(ctx3, MP4BoxDashReady, MP4BoxDashReadyArgs{
+		WorkDir:    args.WorkDir,
+		DashMs:     strconv.FormatFloat(args.DstProps.DashMs, 'f', 0, 64),
+		P:          args.P,
+		InputFname: fname,
+		DrFname:    drFname,
 	}).Get(ctx3, &MP4BoxDashReadyResp)
 	if err != nil {
 		slog.Error("MP4BoxDashReady activity failed", "err", err.Error())
@@ -455,23 +468,29 @@ type EncodeParams struct {
 type EncodeStreamArgs struct {
 	InputDirFile  DirFile
 	OutputDirFile DirFile
+	Dir           string
 	WorkDir       string
 	Kind          string
 	P             EncodeParams
+	Preset        string
+	StreamNo      int
+	Msp           scrape.Msp
+	DstProps      CommonProperties
+	SrcProps      MediaInterlaceAnalysis
 }
 
 func PipelineFactory(args EncodeStreamArgs) ManagedPipeline {
 	res := ManagedPipeline{}
-	switch args.P.Msp.Dash.Streams[args.P.StreamNo].Codec {
+	switch args.Msp.Dash.Streams[args.StreamNo].Codec {
 	case "x264":
 		res.inputStrategy = inputDirFileStrategy
 		res.filterStrategy = filterStrategy
-		res.encodingStrategy = x264EncodingStrategy(crf(args.P.Msp.Dash.Streams[args.P.StreamNo]), bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo]))
+		res.encodingStrategy = x264EncodingStrategy(crf(args.Msp.Dash.Streams[args.StreamNo]), bitrate(args.Msp.Dash.Streams[args.StreamNo]))
 		res.manifestStrategy = dashManifestStrategy
 	case "x265":
 		res.inputStrategy = inputDirFileStrategy
 		res.filterStrategy = filterStrategy
-		res.encodingStrategy = x265EncodingStrategy(crf(args.P.Msp.Dash.Streams[args.P.StreamNo]), bitrate(args.P.Msp.Dash.Streams[args.P.StreamNo]))
+		res.encodingStrategy = x265EncodingStrategy(crf(args.Msp.Dash.Streams[args.StreamNo]), bitrate(args.Msp.Dash.Streams[args.StreamNo]))
 		res.manifestStrategy = dashManifestStrategy
 	case "aac":
 		res.inputStrategy = inputDirFileWithMapStrategy
@@ -484,7 +503,7 @@ func PipelineFactory(args EncodeStreamArgs) ManagedPipeline {
 		res.encodingStrategy = copyStreamStrategy
 		res.manifestStrategy = rawOutputStrategy
 	default:
-		slog.Error("UNSUPPORTED CODEC", "codec", args.P.Msp.Dash.Streams[args.P.StreamNo].Codec)
+		slog.Error("UNSUPPORTED CODEC", "codec", args.Msp.Dash.Streams[args.StreamNo].Codec)
 		return ManagedPipeline{}
 	}
 	res.durationDeriver = durationDeriverFfmpeg

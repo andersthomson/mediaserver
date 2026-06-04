@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"time"
 
 	"github.com/creack/pty"
@@ -115,9 +114,11 @@ func MP4Box(ctx context.Context, dir string, args []string) error {
 }
 
 type MP4BoxDashReadyArgs struct {
-	WorkDir string
-	P       EncodeParams
-	DashMs  string
+	WorkDir    string
+	P          EncodeParams
+	InputFname string
+	DrFname    string
+	DashMs     string
 }
 
 type MP4BoxDashReadyResp struct {
@@ -126,12 +127,8 @@ type MP4BoxDashReadyResp struct {
 }
 
 func MP4BoxDashReady(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
-	fname, err := InputFName(args.P.StreamNo, args.P.Msp)
-	if err != nil {
-		return MP4BoxDashReadyResp{}, err
-	}
+	drFname := args.DrFname
 
-	drFname := DasherReadyFilename2(fname, strconv.Itoa(args.P.StreamNo))
 	outputFName := drFname + "-fragmented.mp4"
 
 	boxArgs := []string{
@@ -144,7 +141,9 @@ func MP4BoxDashReady(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashR
 		outputFName}
 
 	fmt.Printf("MP4Box dashing a stream.  %s becomes %s \n", outputFName, drFname)
-	err = MP4Box(ctx, args.WorkDir, boxArgs)
+	if err := MP4Box(ctx, args.WorkDir, boxArgs); err != nil {
+		return MP4BoxDashReadyResp{}, err
+	}
 
 	//remove unneded files
 	if err := os.Remove(args.WorkDir + "/" + outputFName); err != nil {
