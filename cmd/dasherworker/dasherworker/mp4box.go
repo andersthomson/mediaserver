@@ -115,7 +115,6 @@ func MP4Box(ctx context.Context, dir string, args []string) error {
 
 type MP4BoxDashReadyArgs struct {
 	WorkDir    string
-	P          EncodeParams
 	InputFname string
 	DrFname    string
 	DashMs     string

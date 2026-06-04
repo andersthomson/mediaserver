@@ -445,7 +445,6 @@ func MP4BoxPackager(ctx workflow.Context, args EncodeStreamArgs) error {
 	err = workflow.ExecuteActivity(ctx3, MP4BoxDashReady, MP4BoxDashReadyArgs{
 		WorkDir:    args.WorkDir,
 		DashMs:     strconv.FormatFloat(args.DstProps.DashMs, 'f', 0, 64),
-		P:          args.P,
 		InputFname: fname,
 		DrFname:    drFname,
 	}).Get(ctx3, &MP4BoxDashReadyResp)
@@ -456,7 +455,7 @@ func MP4BoxPackager(ctx workflow.Context, args EncodeStreamArgs) error {
 	return nil
 }
 
-type EncodeParams struct {
+type XEncodeParams struct {
 	Preset   string
 	StreamNo int
 	Msp      scrape.Msp
@@ -471,7 +470,6 @@ type EncodeStreamArgs struct {
 	Dir           string
 	WorkDir       string
 	Kind          string
-	P             EncodeParams
 	Preset        string
 	StreamNo      int
 	Msp           scrape.Msp
