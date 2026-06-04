@@ -42,15 +42,6 @@ type CommonProperties struct {
 	DashMs    float64
 }
 
-type EncodeParams struct {
-	Preset   string
-	StreamNo int
-	Msp      scrape.Msp
-	Dir      string
-	DstProps CommonProperties
-	SrcProps MediaInterlaceAnalysis
-}
-
 func Input(streamno int, m scrape.Msp) (scrape.InputT, error) {
 	splits := strings.Split(m.Dash.Streams[streamno].Source, ":")
 	inputNumber, err := strconv.Atoi(splits[0])
@@ -89,16 +80,14 @@ func scaleIfNeeded(in, out string, filter string) string {
 	return fmt.Sprintf("[%s]%s[%s]", in, filter, out)
 }
 
-func scaleFilter(stream scrape.StreamT) string {
-	switch stream.Codec {
-	case "x264", "x265":
-		switch stream.Profile {
-		case "high":
-			return "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1080,ih))'"
-		case "low":
-			return "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))'"
-		}
+func scaleFilter(profile string) string {
+	switch profile {
+	case "high":
+		return "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1080,ih))'"
+	case "low":
+		return "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))'"
 	}
+	slog.Error("scaleFileter/unsupported profile", "profile", profile)
 	return ""
 }
 func tune(codec string, kind string) []any {
@@ -295,7 +284,7 @@ func inputDirFileWithMapStrategy(args EncodeStreamArgs) []any {
 }
 
 func filterStrategy(args EncodeStreamArgs) []any {
-	scaleFilter := scaleFilter(args.P.Msp.Dash.Streams[args.P.StreamNo])
+	scaleFilter := scaleFilter(args.P.Msp.Dash.Streams[args.P.StreamNo].Profile)
 	return []any{"-filter_complex",
 		strings.Join([]string{
 			interlaceIfNeeded("0:v:0", "postdeint", args.P.SrcProps.FilterRecommendation),
@@ -454,6 +443,23 @@ func MP4BoxPackager(ctx workflow.Context, args EncodeStreamArgs) error {
 	return nil
 }
 
+type EncodeParams struct {
+	Preset   string
+	StreamNo int
+	Msp      scrape.Msp
+	Dir      string
+	DstProps CommonProperties
+	SrcProps MediaInterlaceAnalysis
+}
+
+type EncodeStreamArgs struct {
+	InputDirFile  DirFile
+	OutputDirFile DirFile
+	WorkDir       string
+	Kind          string
+	P             EncodeParams
+}
+
 func PipelineFactory(args EncodeStreamArgs) ManagedPipeline {
 	res := ManagedPipeline{}
 	switch args.P.Msp.Dash.Streams[args.P.StreamNo].Codec {
@@ -554,15 +560,4 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 		return err
 	}
 	return nil
-}
-
-type EncodeStreamArgs struct {
-	InputDirFile  DirFile
-	OutputDirFile DirFile
-	WorkDir       string
-	Kind          string
-	P             EncodeParams
-}
-
-type EncodeStreamResp struct {
 }
