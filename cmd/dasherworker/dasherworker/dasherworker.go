@@ -16,6 +16,14 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+func Input(streamno int, m scrape.Msp) (scrape.InputT, error) {
+	splits := strings.Split(m.Dash.Streams[streamno].Source, ":")
+	inputNumber, err := strconv.Atoi(splits[0])
+	if err != nil {
+		return scrape.InputT{}, errors.WithStack(err)
+	}
+	return m.Inputs[inputNumber], nil
+}
 func InputFName(streamno int, m scrape.Msp) (string, error) {
 	var inputNumber int
 	var err error
@@ -35,100 +43,6 @@ func InputFName(streamno int, m scrape.Msp) (string, error) {
 		return "", errors.WithStack(fmt.Errorf("inputnumber out of bounds %v", m))
 	}
 	return m.Inputs[inputNumber].Filename, nil
-}
-
-type CommonProperties struct {
-	GopFrames float64
-	DashMs    float64
-}
-
-func Input(streamno int, m scrape.Msp) (scrape.InputT, error) {
-	splits := strings.Split(m.Dash.Streams[streamno].Source, ":")
-	inputNumber, err := strconv.Atoi(splits[0])
-	if err != nil {
-		return scrape.InputT{}, errors.WithStack(err)
-	}
-	return m.Inputs[inputNumber], nil
-}
-func crf(stream scrape.StreamT) string {
-	type crfTbl map[string]map[string]string
-	crfT := crfTbl{
-		"x264": {
-			"high": "18",
-			"low":  "18",
-		},
-		"x265": {
-			"high": "21",
-			"low":  "24",
-		},
-	}
-	return crfT[stream.Codec][stream.Profile]
-}
-
-func crfMax(crf string) string {
-	c, _ := strconv.Atoi(crf)
-	return strconv.Itoa(c + 5)
-}
-func bufSize(bitrate string) string {
-	c, _ := strconv.Atoi(bitrate)
-	return strconv.Itoa(2 * c)
-}
-func interlaceIfNeeded(in, out string, filter string) string {
-	return fmt.Sprintf("[%s]%s[%s]", in, filter, out)
-}
-func scaleIfNeeded(in, out string, filter string) string {
-	return fmt.Sprintf("[%s]%s[%s]", in, filter, out)
-}
-
-func scaleFilter(profile string) string {
-	switch profile {
-	case "high":
-		return "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1080,ih))'"
-	case "low":
-		return "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))'"
-	}
-	slog.Error("scaleFileter/unsupported profile", "profile", profile)
-	return ""
-}
-func tune(codec string, kind string) []any {
-	switch codec {
-	case "x264":
-		switch kind {
-		case "animation":
-			return []any{"-tune:v", "animation"}
-		default:
-			return []any{"-tune:v", "film"}
-		}
-	case "x265":
-		switch kind {
-		case "animation":
-			return []any{"-tune:v", "animation"}
-		}
-	}
-	return nil
-}
-
-func bitrate(stream scrape.StreamT) string {
-	type Tbl map[string]map[string]string
-	T := Tbl{
-		"x264": {
-			"high": "6000",
-			"low":  "800",
-		},
-		"x265": {
-			"high": "2000",
-			"low":  "800",
-		},
-	}
-	return T[stream.Codec][stream.Profile]
-}
-
-func preset(fast bool) string {
-	if fast {
-		return "ultrafast"
-	} else {
-		return "slow"
-	}
 }
 
 type AllEncodingWorkflowArgs struct {
@@ -198,30 +112,16 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 			if err != nil {
 				return AllEncodingWorkflowResp{}, errors.WithStack(err)
 			}
-			/*
-				var encodeStreamResp EncodeStreamResp
-
-				encodeStreamResp, err = EncodeStream(ctx, EncodeStreamArgs{
-					InputDirFile:  NewDirFile(args.Dir, inFname),
-					OutputDirFile: NewDirFile(DashDir, drFname+"-fragmented.mp4"),
-					WorkDir:       DashDir,
-					P:             EncodeParams{preset(args.Fast), streamno, M, args.Dir, preludeResp.Tprops, MediaInterlaceAnalysis},
-					Kind:          inp.Kind,
-				})
-				if err != nil {
-					slog.Info("Couldn't EncodeStream", "err", err)
-					return AllEncodingWorkflowResp{}, fmt.Errorf("Couldn't EncodeStream: %+v", err)
-				}
-				fmt.Printf("Result %v\n", encodeStreamResp)
-			*/
 			args := EncodeStreamArgs{
 				InputDirFile:  NewDirFile(args.Dir, inFname),
+				Source:        M.Dash.Streams[streamno].Source,
 				OutputDirFile: NewDirFile(DashDir, drFname+"-fragmented.mp4"),
 				WorkDir:       DashDir,
 				Kind:          inp.Kind,
 				Preset:        preset(args.Fast),
+				Profile:       M.Dash.Streams[streamno].Profile,
+				Codec:         M.Dash.Streams[streamno].Codec,
 				StreamNo:      streamno,
-				Msp:           M,
 				Dir:           args.Dir,
 				DstProps:      preludeResp.Tprops,
 				SrcProps:      MediaInterlaceAnalysis,
@@ -274,6 +174,92 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 
 }
 
+type CommonProperties struct {
+	GopFrames float64
+	DashMs    float64
+}
+
+func crf(codec string, profile string) string {
+	type crfTbl map[string]map[string]string
+	crfT := crfTbl{
+		"x264": {
+			"high": "18",
+			"low":  "18",
+		},
+		"x265": {
+			"high": "21",
+			"low":  "24",
+		},
+	}
+	return crfT[codec][profile]
+}
+
+func crfMax(crf string) string {
+	c, _ := strconv.Atoi(crf)
+	return strconv.Itoa(c + 5)
+}
+func bufSize(bitrate string) string {
+	c, _ := strconv.Atoi(bitrate)
+	return strconv.Itoa(2 * c)
+}
+func interlaceIfNeeded(in, out string, filter string) string {
+	return fmt.Sprintf("[%s]%s[%s]", in, filter, out)
+}
+func scaleIfNeeded(in, out string, filter string) string {
+	return fmt.Sprintf("[%s]%s[%s]", in, filter, out)
+}
+
+func scaleFilter(profile string) string {
+	switch profile {
+	case "high":
+		return "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1080,ih))'"
+	case "low":
+		return "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))'"
+	}
+	slog.Error("scaleFileter/unsupported profile", "profile", profile)
+	return ""
+}
+func tune(codec string, kind string) []any {
+	switch codec {
+	case "x264":
+		switch kind {
+		case "animation":
+			return []any{"-tune:v", "animation"}
+		default:
+			return []any{"-tune:v", "film"}
+		}
+	case "x265":
+		switch kind {
+		case "animation":
+			return []any{"-tune:v", "animation"}
+		}
+	}
+	return nil
+}
+
+func bitrate(codec string, profile string) string {
+	type Tbl map[string]map[string]string
+	T := Tbl{
+		"x264": {
+			"high": "6000",
+			"low":  "800",
+		},
+		"x265": {
+			"high": "2000",
+			"low":  "800",
+		},
+	}
+	return T[codec][profile]
+}
+
+func preset(fast bool) string {
+	if fast {
+		return "ultrafast"
+	} else {
+		return "slow"
+	}
+}
+
 func inputDirFileStrategy(args EncodeStreamArgs) []any {
 	return []any{
 		"-itsoffset", fmt.Sprintf("%.3f", args.SrcProps.FirstPTS),
@@ -284,12 +270,12 @@ func inputDirFileStrategy(args EncodeStreamArgs) []any {
 func inputDirFileWithMapStrategy(args EncodeStreamArgs) []any {
 	return []any{
 		"-i", args.InputDirFile,
-		"-map", args.Msp.Dash.Streams[args.StreamNo].Source,
+		"-map", args.Source,
 	}
 }
 
 func filterStrategy(args EncodeStreamArgs) []any {
-	scaleFilter := scaleFilter(args.Msp.Dash.Streams[args.StreamNo].Profile)
+	scaleFilter := scaleFilter(args.Profile)
 	return []any{"-filter_complex",
 		strings.Join([]string{
 			interlaceIfNeeded("0:v:0", "postdeint", args.SrcProps.FilterRecommendation),
@@ -434,18 +420,13 @@ func MP4BoxPackager(ctx workflow.Context, args EncodeStreamArgs) error {
 		TaskQueue:           "dasherQueue",
 		HeartbeatTimeout:    3600 * time.Second,
 	})
-	fname, err := InputFName(args.StreamNo, args.Msp)
-	if err != nil {
-		return err
-	}
-
-	drFname := DasherReadyFilename2(fname, strconv.Itoa(args.StreamNo))
+	drFname := DasherReadyFilename2(args.InputDirFile.Fname, strconv.Itoa(args.StreamNo))
 
 	var MP4BoxDashReadyResp MP4BoxDashReadyResp
-	err = workflow.ExecuteActivity(ctx3, MP4BoxDashReady, MP4BoxDashReadyArgs{
+	err := workflow.ExecuteActivity(ctx3, MP4BoxDashReady, MP4BoxDashReadyArgs{
 		WorkDir:    args.WorkDir,
 		DashMs:     strconv.FormatFloat(args.DstProps.DashMs, 'f', 0, 64),
-		InputFname: fname,
+		InputFname: args.InputDirFile.Fname,
 		DrFname:    drFname,
 	}).Get(ctx3, &MP4BoxDashReadyResp)
 	if err != nil {
@@ -455,40 +436,35 @@ func MP4BoxPackager(ctx workflow.Context, args EncodeStreamArgs) error {
 	return nil
 }
 
-type XEncodeParams struct {
-	Preset   string
-	StreamNo int
-	Msp      scrape.Msp
-	Dir      string
-	DstProps CommonProperties
-	SrcProps MediaInterlaceAnalysis
-}
-
 type EncodeStreamArgs struct {
 	InputDirFile  DirFile
+	Source        string //ffmpeg -map x:y:z string
 	OutputDirFile DirFile
 	Dir           string
 	WorkDir       string
 	Kind          string
-	Preset        string
-	StreamNo      int
-	Msp           scrape.Msp
-	DstProps      CommonProperties
-	SrcProps      MediaInterlaceAnalysis
+
+	Preset  string
+	Profile string
+	Codec   string
+
+	StreamNo int
+	DstProps CommonProperties
+	SrcProps MediaInterlaceAnalysis
 }
 
 func PipelineFactory(args EncodeStreamArgs) ManagedPipeline {
 	res := ManagedPipeline{}
-	switch args.Msp.Dash.Streams[args.StreamNo].Codec {
+	switch args.Codec {
 	case "x264":
 		res.inputStrategy = inputDirFileStrategy
 		res.filterStrategy = filterStrategy
-		res.encodingStrategy = x264EncodingStrategy(crf(args.Msp.Dash.Streams[args.StreamNo]), bitrate(args.Msp.Dash.Streams[args.StreamNo]))
+		res.encodingStrategy = x264EncodingStrategy(crf(args.Codec, args.Profile), bitrate(args.Codec, args.Profile))
 		res.manifestStrategy = dashManifestStrategy
 	case "x265":
 		res.inputStrategy = inputDirFileStrategy
 		res.filterStrategy = filterStrategy
-		res.encodingStrategy = x265EncodingStrategy(crf(args.Msp.Dash.Streams[args.StreamNo]), bitrate(args.Msp.Dash.Streams[args.StreamNo]))
+		res.encodingStrategy = x265EncodingStrategy(crf(args.Codec, args.Profile), bitrate(args.Codec, args.Profile))
 		res.manifestStrategy = dashManifestStrategy
 	case "aac":
 		res.inputStrategy = inputDirFileWithMapStrategy
@@ -501,7 +477,7 @@ func PipelineFactory(args EncodeStreamArgs) ManagedPipeline {
 		res.encodingStrategy = copyStreamStrategy
 		res.manifestStrategy = rawOutputStrategy
 	default:
-		slog.Error("UNSUPPORTED CODEC", "codec", args.Msp.Dash.Streams[args.StreamNo].Codec)
+		slog.Error("UNSUPPORTED CODEC", "codec", args.Codec)
 		return ManagedPipeline{}
 	}
 	res.durationDeriver = durationDeriverFfmpeg
