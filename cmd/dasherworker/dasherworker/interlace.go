@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -33,8 +32,11 @@ func getVideoDuration(ctx context.Context, fullPath string) (float64, error) {
 }
 
 type AnalyzeMediaInterlaceArgs struct {
-	Dir   string
-	Fname string
+	InputID string
+	InputNo int
+	Stream  string
+	//Dir     string
+	//Fname   string
 }
 
 type MediaInterlaceAnalysis struct {
@@ -47,9 +49,10 @@ type MediaInterlaceAnalysis struct {
 }
 
 func AnalyzeMediaInterlace(ctx context.Context, args AnalyzeMediaInterlaceArgs) (MediaInterlaceAnalysis, error) {
-	slog.Info("Start", "A", "AnalyzeMediaInterlace", "Fname", args.Fname)
-	defer slog.Info("Stop ", "A", "AnalyzeMediaInterlace", "Fname", args.Fname)
-	fullPath := filepath.Join(args.Dir, args.Fname)
+	slog.Info("Start", "A", "AnalyzeMediaInterlace", "args", args)
+	defer slog.Info("Stop ", "A", "AnalyzeMediaInterlace", "args", args)
+	//fullPath := filepath.Join(args.Dir, args.Fname)
+	fullPath := storage.ResolveInputNumber(args.InputID, args.InputNo)
 	analysis := MediaInterlaceAnalysis{FilterRecommendation: "null"}
 
 	// 1. SYNC PROBE: Capture the First PTS (The 0.08s sync mystery)
@@ -169,7 +172,7 @@ func AnalyzeMediaInterlace(ctx context.Context, args AnalyzeMediaInterlaceArgs) 
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Analysis Complete: %s | PTS: %v | Filter: %s\n", args.Fname, analysis.FirstPTS, analysis.FilterRecommendation)
+	slog.Info("Analysis Complete", "fullPath", fullPath, "PTS", analysis.FirstPTS, "filterRecommendation", analysis.FilterRecommendation)
 	return analysis, nil
 }
 

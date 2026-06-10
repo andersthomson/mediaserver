@@ -3,9 +3,12 @@ package dasherworker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os/exec"
 	"strconv"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 type ProbeOutput struct {
@@ -14,29 +17,65 @@ type ProbeOutput struct {
 	} `json:"format"`
 }
 
-func GetVideoDurationUsec(ctx context.Context, videoPath string) (int64, error) {
+// FFProbeOutput matches the top-level JSON wrapper returned by ffprobe
+type FFProbeOutput struct {
+	Streams []StreamInfo `json:"streams"`
+}
+
+// StreamInfo extracts the specific stream-level duration
+type StreamInfo struct {
+	DurationStr string `json:"duration"` //seconds
+}
+
+func (s StreamInfo) GetDuration() (float64, error) {
+	if s.DurationStr == "" {
+		return 0, fmt.Errorf("duration metadata not found in stream")
+	}
+	return strconv.ParseFloat(s.DurationStr, 64)
+}
+
+func GetVideoDurationUsec(ctx context.Context, inputID string, inputNo int, stream string) (int64, error) {
+	videoPath := storage.ResolveInputNumber(inputID, inputNo)
 	// -print_format json: wraps the output in a JSON object
-	cmd := exec.CommandContext(ctx, "ffprobe",
-		"-v", "quiet",
+	args := []string{"-v", "quiet",
+		"-select_streams", stream,
 		"-print_format", "json",
-		"-show_format",
+		"-show_entries", "format=duration",
 		videoPath,
-	)
-	slog.Info("GetVideoDurationUsec", "args", videoPath)
+	}
+	spew.Dump(args)
+	cmd := exec.CommandContext(ctx, "ffprobe", args...)
+	slog.Info("GetVideoDurationUsec", "videoPath", videoPath, "stream", stream)
 	out, err := cmd.Output()
 	if err != nil {
+		slog.Error("Exec failed", "GetVideoDurationUsec", err)
 		return 0, err
 	}
 
 	var data ProbeOutput
 	if err := json.Unmarshal(out, &data); err != nil {
+		slog.Error("unmarshal failed", "GetVideoDurationUsec", err)
 		return 0, err
 	}
-
-	seconds, err := strconv.ParseFloat(data.Format.Duration, 64)
-	if err != nil {
-		return 0, err
+	if len(data.Format.Duration) > 0 {
+		duration, err := strconv.ParseFloat(data.Format.Duration, 64)
+		if err != nil {
+			return 0, fmt.Errorf("Failed to convert %s to int: %s", data.Format.Duration, err)
+		}
+		return int64(duration * 1000000), nil
 	}
+	return 0, fmt.Errorf("Failed to find Duration for %s, stream %s. Got: %v", videoPath, stream, string(out))
+	/*
+		// Check if a stream was successfully captured
+		if len(data.Streams) > 0 {
+			duration, err := data.Streams[0].GetDuration()
+			if err != nil {
+				slog.Error("Invalid duration format", "err", err)
+				return 0, err
+			}
+			return int64(duration * 1000000), nil
+		} else {
+			return 0, errors.New("No matching stream found.")
+		}*/
 
-	return int64(seconds * 1000000), nil
 }

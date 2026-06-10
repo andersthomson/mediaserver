@@ -58,18 +58,17 @@ func NewFFMpegArgs(s []any) FFMpegArgs {
 				res.OutputDir = x.Dir
 				continue
 			}
-			panic(fmt.Sprintf("Found more than 2 DirFile:s in the ffmpeg args %+v", s))
+			slog.Error("Found more than 2 DirFile:s in the ffmpeg args", "args", s)
 		case OutputDirFile:
 			res.Args[idx] = x.Fname
 			res.OutputDirFiles = append(res.OutputDirFiles, x)
 		default:
 			slog.Error("NewFFMpegArgs/Unsupported type", "type", fmt.Sprintf("%T", x))
-			panic(fmt.Sprintf("Unsupported type %T", x))
 		}
 	}
-	//Secure that we have input and output (by checkinng that output is set)
+	//Secure that we have input and output (by checking that output is set)
 	if res.OutputFname == "" {
-		panic(fmt.Sprintf("input and output not identified: %+v", s))
+		slog.Error("input and output not identified", "args", s)
 	}
 	return res
 }
@@ -179,6 +178,7 @@ func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs)
 	//slog.Info("local/prelude", "args", args)
 	slog.Info("local/prelude: symlinking input file")
 	if err := os.Symlink(args.FfmpegArgs.InputDir+"/"+args.FfmpegArgs.InputFname, args.FfmpegArgs.OutputDir+"/"+args.FfmpegArgs.InputFname); err != nil {
+		slog.Error("Failed to symlink input file", "oldname", args.FfmpegArgs.InputDir+"/"+args.FfmpegArgs.InputFname, "newname", args.FfmpegArgs.OutputDir+"/"+args.FfmpegArgs.InputFname, "err", err)
 		return EncodePreludeResp{}, fmt.Errorf("Failed to symlink inpout file (%s): %s", args.FfmpegArgs.InputFname, err)
 	}
 	return EncodePreludeResp{

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"os"
 
 	"github.com/andersthomson/mediaserver/scrape"
 	"github.com/pkg/errors"
@@ -27,8 +26,8 @@ func dashMs(p SrcProperties) float64 {
 }
 
 func Prelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
-	slog.Info("Start", "A", "Prelude", "DashDir", args.DashDir)
-	defer slog.Info("Stop ", "A", "Prelude", "DashDir", args.DashDir)
+	slog.Info("Start", "A", "Prelude")
+	defer slog.Info("Stop ", "A", "Prelude")
 	//Sanity check:
 	var referenceFiles = map[int]bool{}
 	var tprops CommonProperties
@@ -57,9 +56,6 @@ func Prelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
 	if tprops.GopFrames == 0 {
 		tprops.GopFrames = 100
 		tprops.DashMs = 4000
-	}
-	if err := os.MkdirAll(args.DashDir, os.ModePerm); err != nil {
-		return PreludeResp{}, errors.WithStack(fmt.Errorf("XYZ %+v: %s", err, args.DashDir))
 	}
 	return PreludeResp{
 		Tprops: tprops,

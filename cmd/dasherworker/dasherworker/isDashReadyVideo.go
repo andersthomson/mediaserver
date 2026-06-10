@@ -57,7 +57,7 @@ func detectMP4ContentsJSON(filePath string) (detectedFileTypes, error) {
 func isDashReadyVideo(filePath string) bool {
 	contents, err := detectMP4ContentsJSON(filePath)
 	if err != nil {
-		panic(fmt.Sprintf("Error: %v\n", err))
+		//panic(fmt.Sprintf("Error: %v\n", err))
 		return false
 	}
 
@@ -66,7 +66,7 @@ func isDashReadyVideo(filePath string) bool {
 func isDashReadyAudio(filePath string) bool {
 	contents, err := detectMP4ContentsJSON(filePath)
 	if err != nil {
-		panic(fmt.Sprintf("Error: %v\n", err))
+		//panic(fmt.Sprintf("Error: %v\n", err))
 		return false
 	}
 

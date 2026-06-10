@@ -21,7 +21,7 @@ func CallLinkSrcMedia(ctx workflow.Context, oldname, newname string) (string, er
 func LinkSrcMedia(ctx context.Context, oldname string, newname string) (string, error) {
 	slog.Info("LinkSrcMedia/Creating symlink", "oldname", oldname, "newname", newname)
 	if err := os.Symlink(oldname, newname); err != nil {
-		return "", fmt.Errorf("Failed to symlink oldname:%s newname:%s err:%v", err)
+		return "", fmt.Errorf("Failed to symlink oldname:%s newname:%s err:%v", oldname, newname, err)
 	}
 	return "", nil
 }

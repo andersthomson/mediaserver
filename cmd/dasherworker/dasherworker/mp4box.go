@@ -10,9 +10,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/pkg/errors"
 	"go.temporal.io/sdk/activity"
 	"golang.org/x/time/rate"
 )
@@ -37,7 +39,7 @@ func (w *mp4BoxProgressWriter) Write(p []byte) (n int, err error) {
 
 		statusStr := fmt.Sprintf("MP4Box processing %s: %s%% completed", w.fname, match)
 
-		w.logger.Info("MP4Box Heartbeat", "file", w.fname, "value", statusStr)
+		w.logger.Info("MP4Box Heartbeat", "value", statusStr)
 		activity.RecordHeartbeat(w.ctx, statusStr)
 	}
 	/*
@@ -68,7 +70,7 @@ func MP4Box(ctx context.Context, dir string, args []string) error {
 		// Matches digits followed by optional spaces and a percent sign (e.g., "45%")
 		//re:    regexp.MustCompile(`\d+\s*%`),
 		re:    regexp.MustCompile(`MPD\s+[\d\.]+\s*s\s+(\d+)\s*%`),
-		fname: filepath.Base("SOME-FILENAME"),
+		fname: filepath.Base(args[len(args)-1]),
 		// Adjust rate limiting to match your application's ThrottledLogger definition
 		logger: NewThrottledLogger(rate.Every(3*time.Second), 1),
 	}
@@ -114,9 +116,8 @@ func MP4Box(ctx context.Context, dir string, args []string) error {
 }
 
 type MP4BoxDashReadyArgs struct {
+	EncodeArgs EncodeStreamArgs
 	WorkDir    string
-	InputFname string
-	DrFname    string
 	DashMs     string
 }
 
@@ -126,33 +127,44 @@ type MP4BoxDashReadyResp struct {
 }
 
 func MP4BoxDashReady(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
-	drFname := args.DrFname
+	drFilePath := storage.DasherReadyRepresentationFilePath(args.EncodeArgs)
+	drFname := filepath.Base(drFilePath)
+	drDir := filepath.Dir(drFilePath)
 
-	outputFName := drFname + "-fragmented.mp4"
+	transcodedFilePath := storage.TranscodedRepresentationFilePath(args.EncodeArgs)
+	transcodedFname := filepath.Base(transcodedFilePath)
+
+	manifestFilePath := storage.DasherReadyRepresentationManifestFilePath(args.EncodeArgs)
+	manifestFname := filepath.Base(manifestFilePath)
 
 	boxArgs := []string{
 		"-dash", args.DashMs,
 		"-rap",
 		"-profile",
 		"onDemand",
-		"-segment-name", outputFName + "-postDash.mp4",
-		"-out", "manifest.mpd",
-		outputFName}
+		"-segment-name", drFname,
+		"-out", manifestFname,
+		transcodedFname}
 
-	fmt.Printf("MP4Box dashing a stream.  %s becomes %s \n", outputFName, drFname)
+	slog.Info("MP4Box dashing stream", "filePath", transcodedFilePath)
 	if err := MP4Box(ctx, args.WorkDir, boxArgs); err != nil {
 		return MP4BoxDashReadyResp{}, err
 	}
 
 	//remove unneded files
-	if err := os.Remove(args.WorkDir + "/" + outputFName); err != nil {
-		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to remove %s: %v", args.WorkDir+"/"+outputFName, err)
+	if err := os.Remove(transcodedFilePath); err != nil {
+		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to remove %s: %v", transcodedFilePath, err)
 	}
-	if err := os.Remove(args.WorkDir + "/manifest.mpd"); err != nil {
-		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to remove %s: %v", args.WorkDir+"/manifest.mpd", err)
+	if err := os.Remove(manifestFilePath); err != nil {
+		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to remove %s: %v", manifestFilePath, err)
 	}
-	if err := os.Rename(args.WorkDir+"/"+outputFName+"-postDash.mp4init.mp4", args.WorkDir+"/"+drFname); err != nil {
-		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to rename %s %s:%v", args.WorkDir+"/"+outputFName+"-postDash.mp4init.mp4", args.WorkDir+"/"+drFname, err)
+
+	basename, ok := strings.CutSuffix(drFname, ".mp4")
+	if !ok {
+		return MP4BoxDashReadyResp{}, errors.New("drFname MUST end in .mp4")
+	}
+	if err := os.Rename(filepath.Join(drDir, basename+".mp4init.mp4"), drFilePath); err != nil {
+		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to rename %s %s:%v", filepath.Join(drDir, basename+".mp4init.mp4"), drFilePath, err)
 	}
 	return MP4BoxDashReadyResp{}, nil
 }

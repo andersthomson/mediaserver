@@ -63,6 +63,7 @@ type AudioT struct {
 
 type InputT struct {
 	Filename   string
+	Stream     string //  "v:1" (ffprobe notation)
 	Interlaced bool
 	Kind       string
 	Language   string

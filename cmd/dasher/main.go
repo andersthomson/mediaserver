@@ -223,12 +223,13 @@ func fast() bool {
 	return ok
 }
 
-func EncodeStreamActivity(ctx context.Context, tc client.Client, p dasherworker.EncodeParams) (string, error) {
-	// ExecuteWorkflow(ctx, options, workflowFunc, args...)
+/*
+	func EncodeStreamActivity(ctx context.Context, tc client.Client, p dasherworker.EncodeParams) (string, error) {
+		// ExecuteWorkflow(ctx, options, workflowFunc, args...)
 
-	return "", nil
-}
-
+		return "", nil
+	}
+*/
 func makeDashWorkFlow(tc client.Client, dir string, mspFile string) error {
 	////////////////////////////////////////////// call here
 	slog.Info("Starting wf")
