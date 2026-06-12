@@ -1,10 +1,5 @@
 package dasherworker
 
-type Target struct {
-	AdaptationSets []any
-	Postprocessing any
-}
-
 type VideoAdaptationSet struct {
 	Representations []VideoRepresentation
 }

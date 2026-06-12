@@ -111,6 +111,7 @@ func main() {
 
 	w.RegisterActivity(dasherworker.GenerateHLSLanguageFileActivity)
 	w.RegisterActivity(dasherworker.MP4BoxDashReady)
+	w.RegisterActivity(dasherworker.FileExists)
 	w.RegisterActivity(dasherworker.Finalize)
 	w.RegisterActivity(dasherworker.AnalyzeMediaInterlace)
 	w.RegisterActivity(dasherworker.GetVideoDurationUsec)

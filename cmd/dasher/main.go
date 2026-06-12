@@ -29,27 +29,37 @@ func main() {
 	if len(os.Args) > 0 {
 		switch os.Args[1] {
 		case "properties":
-			var srcProperties dasherworker.SrcProperties
-
-			run, err := c.ExecuteWorkflow(context.Background(),
-				client.StartWorkflowOptions{
-					ID:        uuid.New().String(), // Unique ID for business logic
-					TaskQueue: "dasherQueue",       // Which worker group should handle this
-				},
-				"GetSourcePropertiesWF",
-				dasherworker.ProbeParams{
-					Dir:      filepath.Dir(os.Args[2]),
-					Filename: filepath.Base(os.Args[2]),
-				})
+			p, err := dasherworker.GetSourceProperties(context.Background(), dasherworker.ProbeParams{
+				Dir:      filepath.Dir(os.Args[2]),
+				Filename: filepath.Base(os.Args[2]),
+			})
 			if err != nil {
-				slog.Info("Couldn't start workflow", "err", err)
-				return
+				fmt.Println(err)
 			}
-			if err := run.Get(context.Background(), &srcProperties); err != nil {
-				slog.Info("Could not fetch result", "err", err)
-				return
-			}
-			spew.Dump(srcProperties)
+			spew.Dump(p)
+			/*
+
+				var srcProperties dasherworker.SrcProperties
+					run, err := c.ExecuteWorkflow(context.Background(),
+						client.StartWorkflowOptions{
+							ID:        uuid.New().String(), // Unique ID for business logic
+							TaskQueue: "dasherQueue",       // Which worker group should handle this
+						},
+						"GetSourcePropertiesWF",
+						dasherworker.ProbeParams{
+							Dir:      filepath.Dir(os.Args[2]),
+							Filename: filepath.Base(os.Args[2]),
+						})
+					if err != nil {
+						slog.Info("Couldn't start workflow", "err", err)
+						return
+					}
+					if err := run.Get(context.Background(), &srcProperties); err != nil {
+						slog.Info("Could not fetch result", "err", err)
+						return
+					}
+					spew.Dump(srcProperties)
+			*/
 			return
 		case "splitmp4":
 			_, err := dasherworker.TrySplitMp4ToTs(context.Background(), os.Args[2], os.Args[3])
