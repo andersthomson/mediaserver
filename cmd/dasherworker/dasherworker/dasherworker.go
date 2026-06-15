@@ -149,6 +149,8 @@ type Target struct {
 var targets = []Target{
 	{"x264", "high"},
 	{"x264", "low"},
+	{"x265", "high"},
+	{"x265", "low"},
 }
 
 type VideoEncodingWorkflowArgs struct {
@@ -178,9 +180,9 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 
 	storage.Add(args.Dir, M)
 
-	idx := getFirstInputStreamWithPrefix(M.Inputs, "a")
+	idx := getFirstInputStreamWithPrefix(M.Inputs, "v")
 	if idx == -1 {
-		return AudioEncodingWorkflowResp{}, Error("Found no audio stream source specified", "input", M)
+		return VideoEncodingWorkflowResp{}, Error("Found no video stream source specified", "input", M)
 	}
 	//Find the encoding needs
 	for _, target := range targets {
@@ -362,7 +364,8 @@ func x264EncodingStrategy(gopFrames float64, crf string, bitrate string) func(ar
 		return ffmpegArgs
 	}
 }
-func x265EncodingStrategy(crf string, bitrate string) func(args EncodeStreamArgs) []any {
+func x265EncodingStrategy(gopFrames float64, crf string, bitrate string) func(args EncodeStreamArgs) []any {
+	gopFramesStr := strconv.FormatFloat(gopFrames, 'f', 0, 64)
 	return func(args EncodeStreamArgs) []any {
 		ffmpegArgs := []any{
 			"-c:v", "libx265",
@@ -375,7 +378,7 @@ func x265EncodingStrategy(crf string, bitrate string) func(args EncodeStreamArgs
 		ffmpegArgs = append(ffmpegArgs, tune("x265", args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs,
 			"-tag:v", "hvc1",
-			"-x265-params:v", "keyint="+strconv.FormatFloat(args.DstProps.GopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(args.DstProps.GopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate))
+			"-x265-params:v", "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate))
 		return ffmpegArgs
 	}
 }
@@ -569,7 +572,7 @@ func PipelineFactory(ctx workflow.Context, args EncodeStreamArgs) ManagedPipelin
 		res.manifestStrategy = dashManifestStrategy
 	case "x265":
 		res.inputStrategy = inputDirFileStrategy
-		res.encodingStrategy = x265EncodingStrategy(crf(args.Codec, args.Profile), bitrate(args.Codec, args.Profile))
+		res.encodingStrategy = x265EncodingStrategy(gopFrames(ctx, args.InputID), crf(args.Codec, args.Profile), bitrate(args.Codec, args.Profile))
 		res.manifestStrategy = dashManifestStrategy
 	case "aac":
 		res.inputStrategy = inputDirFileWithMapStrategy

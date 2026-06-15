@@ -92,6 +92,24 @@ func main() {
 			}
 			run.Get(context.Background(), nil)
 			return
+		case "video":
+			run, err := c.ExecuteWorkflow(context.Background(),
+				client.StartWorkflowOptions{
+					ID:        uuid.New().String(), // Unique ID for business logic
+					TaskQueue: "dasherQueue",       // Which worker group should handle this
+				},
+				"VideoEncodingWorkflow",
+				dasherworker.VideoEncodingWorkflowArgs{
+					Dir:     filepath.Dir(os.Args[2]),
+					MspFile: filepath.Base(os.Args[2]),
+					Fast:    fast(),
+				})
+			if err != nil {
+				slog.Info("Couldn't start workflow", "err", err)
+				return
+			}
+			run.Get(context.Background(), nil)
+			return
 		case "audio":
 			run, err := c.ExecuteWorkflow(context.Background(),
 				client.StartWorkflowOptions{
