@@ -5,43 +5,14 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
-	"github.com/pkg/errors"
 	"go.temporal.io/sdk/workflow"
 )
-
-func Input(streamno int, m scrape.Msp) (scrape.InputT, error) {
-	splits := strings.Split(m.Dash.Streams[streamno].Source, ":")
-	inputNumber, err := strconv.Atoi(splits[0])
-	if err != nil {
-		return scrape.InputT{}, errors.WithStack(err)
-	}
-	return m.Inputs[inputNumber], nil
-}
-func InputFName(streamno int, m scrape.Msp) (string, error) {
-	var inputNumber int
-	var err error
-	if m.Dash.Streams[streamno].Source != "" {
-		splits := strings.Split(m.Dash.Streams[streamno].Source, ":")
-		inputNumber, err = strconv.Atoi(splits[0])
-		if err != nil {
-			return "", errors.WithStack(err)
-		}
-		if inputNumber+1 > len(m.Inputs) {
-			return "", errors.WithStack(fmt.Errorf("inputnumber out of bounds %v", m))
-		}
-		return m.Inputs[inputNumber].Filename, nil
-	}
-	inputNumber = m.Dash.Streams[streamno].ReferenceFile
-	if inputNumber+1 > len(m.Inputs) {
-		return "", errors.WithStack(fmt.Errorf("inputnumber out of bounds %v", m))
-	}
-	return m.Inputs[inputNumber].Filename, nil
-}
 
 type Storage struct {
 	items map[string]struct {
@@ -73,6 +44,18 @@ func (s *Storage) Add(dir string, m scrape.Msp) {
 		m:   m,
 		dir: dir,
 	}
+}
+
+func StorageAddWF(ctx workflow.Context, mspPath string) (string, error) {
+	M, err := CallActivityIO[string, scrape.Msp](ctx, ReadMspFile, filepath.Dir(mspPath), filepath.Base(mspPath))
+	if err != nil {
+		return "", err
+	}
+	if storage == nil {
+		storage = NewStorage()
+	}
+	storage.Add(filepath.Dir(mspPath), M)
+	return "", nil
 }
 
 // id is the uuid
@@ -109,6 +92,55 @@ func (s *Storage) DasherReadyRepresentationFilePath(args EncodeStreamArgs) strin
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+".mp4")
 }
 
+type AudioEncodingWorkflowArgs struct {
+	Dir     string
+	MspFile string
+}
+
+type AudioEncodingWorkflowResp struct {
+}
+
+func AudioEncodingWorkflow(ctx workflow.Context, args AudioEncodingWorkflowArgs) (AudioEncodingWorkflowResp, error) {
+	slog.Info("Start", "W", "AudioEncoding", "msp", args.MspFile)
+	defer slog.Info("Stop ", "W", "AudioEncoding", "msp", args.MspFile)
+
+	M, err := CallActivityIO[string, scrape.Msp](ctx, ReadMspFile, args.Dir, args.MspFile)
+	storage = NewStorage()
+
+	storage.Add(args.Dir, M)
+	idx := getFirstInputStreamWithPrefix(M.Inputs, "a")
+	if idx == -1 {
+		return AudioEncodingWorkflowResp{}, Error("Found no audio stream source specified", "input", M)
+	}
+	Eargs := NewEncodeStreamArgs(&EncodeStreamArgs{
+		InputID: M.Id,
+		InputNo: idx,
+		Stream:  M.Inputs[idx].Stream,
+		Codec:   "aac",
+	})
+	fname := storage.DasherReadyRepresentationFilePath(*Eargs)
+	exists, err := CallActivityFast[string, bool](ctx, FileExists, fname)
+	if err != nil {
+		return AudioEncodingWorkflowResp{}, Error("failed to check for file existence", "err", err)
+	}
+	if exists {
+		slog.Info("Skipping, representation exists", "shortName", M.ShortName, "representation", filepath.Base(fname))
+		return AudioEncodingWorkflowResp{}, nil
+	}
+	slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
+	if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs); err != nil {
+		slog.Error("Pipeline processing failed", "err", err)
+		return AudioEncodingWorkflowResp{}, err
+	}
+	return AudioEncodingWorkflowResp{}, nil
+}
+
+func getFirstInputStreamWithPrefix(inputs []scrape.InputT, prefix string) int {
+	return slices.IndexFunc(inputs, func(i scrape.InputT) bool {
+		return strings.HasPrefix(i.Stream, prefix)
+	})
+}
+
 type Target struct {
 	codec   string
 	profile string
@@ -119,18 +151,18 @@ var targets = []Target{
 	{"x264", "low"},
 }
 
-type AllEncodingWorkflowArgs struct {
+type VideoEncodingWorkflowArgs struct {
 	Dir     string
 	MspFile string
 	Fast    bool
 }
 
-type AllEncodingWorkflowResp struct {
+type VideoEncodingWorkflowResp struct {
 }
 
-func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (AllEncodingWorkflowResp, error) {
-	slog.Info("Start", "W", "AllEncoding", "msp", args.MspFile)
-	defer slog.Info("Stop ", "W", "AllEncoding", "msp", args.MspFile)
+func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs) (VideoEncodingWorkflowResp, error) {
+	slog.Info("Start", "W", "VideoEncoding", "msp", args.MspFile)
+	defer slog.Info("Stop ", "W", "VideoEncoding", "msp", args.MspFile)
 
 	ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
@@ -145,8 +177,11 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 	storage = NewStorage()
 
 	storage.Add(args.Dir, M)
-	//dirTimestamp := workflow.Now(ctx).UTC().Format("2006-01-02T15-04-05Z")
 
+	idx := getFirstInputStreamWithPrefix(M.Inputs, "a")
+	if idx == -1 {
+		return AudioEncodingWorkflowResp{}, Error("Found no audio stream source specified", "input", M)
+	}
 	//Find the encoding needs
 	for _, target := range targets {
 		maxRes := WithMaxResolution(Max1080p)
@@ -155,9 +190,9 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 		}
 		Eargs := NewEncodeStreamArgs(&EncodeStreamArgs{
 			InputID: M.Id,
-			InputNo: 0,
-			Stream:  M.Inputs[0].Stream,
-			Kind:    M.Inputs[0].Kind,
+			InputNo: idx,
+			Stream:  M.Inputs[idx].Stream,
+			Kind:    M.Inputs[idx].Kind,
 			Preset:  preset(args.Fast),
 			Profile: target.profile,
 			Codec:   target.codec,
@@ -171,95 +206,17 @@ func AllEncodingWorkflow(ctx workflow.Context, args AllEncodingWorkflowArgs) (Al
 			slog.Info("Skipping, representation exists", "shortName", M.ShortName, "representation", filepath.Base(fname))
 			continue
 		}
-		slog.Info("Creating epresentation", "shortName", M.ShortName, "representation", filepath.Base(fname))
-		if err := PipelineFactory(*Eargs).Process(ctx, *Eargs); err != nil {
+		slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
+		if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs); err != nil {
 			slog.Error("Pipeline processing failed", "err", err)
-			return AllEncodingWorkflowResp{}, err
+			return VideoEncodingWorkflowResp{}, err
 		}
 	}
-	/*
-		for streamno, stream := range M.Dash.Streams {
-			switch stream.Codec {
-			case "x264", "x265", "copy", "aac":
-				inFname, err := InputFName(streamno, M)
-				if err != nil {
-					return AllEncodingWorkflowResp{}, errors.WithStack(err)
-				}
-				//Activity
+	return VideoEncodingWorkflowResp{}, nil
 
-				//drFname := DasherReadyFilename2(inFname, strconv.Itoa(streamno))
-				inp, err := Input(streamno, M)
-				if err != nil {
-					return AllEncodingWorkflowResp{}, errors.WithStack(err)
-				}
-
-				maxRes := WithMaxResolution(Max1080p)
-				if streamno.Profile == "low" {
-					maxRes = WithMaxResolution(Max720p)
-				}
-				args := NewEncodeStreamArgs(&EncodeStreamArgs{
-					InputID:      M.Id,
-					InputDirFile: NewDirFile(args.Dir, inFname),
-					Source:       streamno.Source,
-					Stream:       Stream,
-					//OutputDirFile: NewDirFile(DashDir, drFname+"-fragmented.mp4"),
-					//WorkDir:       DashDir,
-					Kind:     inp.Kind,
-					Preset:   preset(args.Fast),
-					Profile:  "high",
-					Codec:    "x264",
-					Dir:      args.Dir,
-					//DstProps: preludeResp.Tprops,
-				}, maxRes)
-				if err := PipelineFactory(*args).Process(ctx, *args); err != nil {
-					slog.Error("Pipeline processing failed", "err", err)
-					return AllEncodingWorkflowResp{}, err
-				}
-	*/
-	/*
-		case "reference":
-
-			inputNumber := M.Dash.Streams[streamno].ReferenceFile
-			oldFile := args.Dir + "/" + M.Inputs[inputNumber].Filename
-
-			inputFName, err := InputFName(streamno, M)
-			if err != nil {
-				return AllEncodingWorkflowResp{}, errors.WithStack(err)
-			}
-			newFilename := DasherReadyFilename2(inputFName, strconv.Itoa(streamno))
-
-			newFile := DashDir + "/" + newFilename
-			if _, err := CallLinkSrcMedia(ctx, oldFile, newFile); err != nil {
-				return AllEncodingWorkflowResp{}, err
-			}
-	*/
-
-	//		default:
-	//			return AllEncodingWorkflowResp{}, fmt.Errorf("Msp malformed: Unsupported Codec %s in stream %d\n", stream.Codec, streamno)
-	//		}
-
-	//	}
-	/*	if err := atomic.WriteFile(filepath.Join(DashDir, "gopMs"), bytes.NewReader([]byte(strconv.FormatFloat(preludeResp.Tprops.DashMs, 'f', 0, 64)))); err != nil {
-			return AllEncodingWorkflowResp{}, err
-		}
-	*/
-
-	//Finalize
-	ctx1 = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 100 * time.Minute,
-		TaskQueue:           "dasherQueue",
-		//HeartbeatTimeout:    1000 * time.Second,
-	})
-	err = workflow.ExecuteActivity(ctx1, Finalize, FinalizeArgs{
-		InputID: M.Id,
-		Fast:    args.Fast,
-	}).Get(ctx1, nil)
-	if err != nil {
-		return AllEncodingWorkflowResp{}, errors.WithStack(err)
-	}
-
-	return AllEncodingWorkflowResp{}, nil
-
+}
+func FinalizeWF(ctx workflow.Context, args FinalizeArgs) (FinalizeResp, error) {
+	return CallActivityIO[FinalizeArgs, FinalizeResp](ctx, Finalize, args)
 }
 
 type CommonProperties struct {
@@ -302,20 +259,6 @@ func scaleFilter(args EncodeStreamArgs) string {
 		return "scale='if(gt(iw,ih),min(" + strconv.Itoa(args.VideoFilters.MaxResolution.Width) + ",iw),-2)':'if(gt(iw,ih),-2,min(" + strconv.Itoa(args.VideoFilters.MaxResolution.Height) + ",ih))'"
 	}
 	return ""
-	/*
-	   switch profile {
-	   case "high":
-
-	   	return "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1080,ih))'"
-
-	   case "low":
-
-	   		return "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(720,ih))'"
-	   	}
-
-	   slog.Error("scaleFileter/unsupported profile", "profile", profile)
-	   return ""
-	*/
 }
 func tune(codec string, kind string) []any {
 	switch codec {
@@ -387,17 +330,23 @@ func videoFilterStrategy(args EncodeStreamArgs, deinterlaceFilter string) []any 
 		"-map", "[out]"}
 }
 
+var DefaultGopFrames float64 = 100.0
+
+func gopFrames(ctx workflow.Context, inputId string) float64 {
+	props, _ := CallActivityIO[string, GetOneTargetsPropertiesResp](ctx, "GetOneTargetsProperties", storage.ProdDir(inputId))
+	if !props.Found {
+		slog.Info("Using GopFrames", "default", DefaultGopFrames)
+		return DefaultGopFrames
+	}
+	slog.Info("Using GopFrames", "fromTarget", DefaultGopFrames)
+	return props.Props.GopFrames
+}
+
 func nullStrategy(_ EncodeStreamArgs) []any {
 	return []any{}
 }
-func x264EncodingStrategy(crf string, bitrate string) func(args EncodeStreamArgs) []any {
-	//This shall be derived from:
-	//1) any files/data in the target dir
-	//2) or use these defaults:
-	// gopMs 4000
-	// gopFrames 100
-	//gopMs := 4000.0
-	gopFrames := 100.0
+func x264EncodingStrategy(gopFrames float64, crf string, bitrate string) func(args EncodeStreamArgs) []any {
+	gopFramesStr := strconv.FormatFloat(gopFrames, 'f', 0, 64)
 	return func(args EncodeStreamArgs) []any {
 		ffmpegArgs := []any{
 			"-c:v", "libx264",
@@ -408,7 +357,7 @@ func x264EncodingStrategy(crf string, bitrate string) func(args EncodeStreamArgs
 			"-preset:v", args.Preset}
 		ffmpegArgs = append(ffmpegArgs, tune("x264", args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs,
-			"-x264-params:v", "keyint="+strconv.FormatFloat(gopFrames, 'f', 0, 64)+":min-keyint="+strconv.FormatFloat(gopFrames, 'f', 0, 64)+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1")
+			"-x264-params:v", "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1")
 
 		return ffmpegArgs
 	}
@@ -500,7 +449,13 @@ func BuildFfmpegArgs(args EncodeStreamArgs,
 }
 
 func isVideoCodec(codec string) bool {
-	return codec == "x264" || codec == "x265"
+	switch codec {
+	case "x264", "h264":
+		return true
+	case "x265", "h265":
+		return true
+	}
+	return false
 }
 func durationDeriverFfmpeg(ctx workflow.Context, inputID string, inputNo int, stream string) (int64, error) {
 	ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
@@ -568,7 +523,11 @@ type VideoFilterSettings struct {
 
 // Return an string uniquely representing this representation
 func representation(args EncodeStreamArgs) string {
-	return fmt.Sprintf("%s-%s-%s", args.Codec, args.VideoFilters.MaxResolution, args.Profile)
+	if isVideoCodec(args.Codec) {
+		return fmt.Sprintf("%s-%s-%s", args.Codec, args.VideoFilters.MaxResolution, args.Profile)
+	} else {
+		return fmt.Sprintf("%s", args.Codec)
+	}
 }
 
 type EncodeStreamArgs struct {
@@ -601,12 +560,12 @@ func WithMaxResolution(maxx Resolution) TranscodeOption {
 	}
 }
 
-func PipelineFactory(args EncodeStreamArgs) ManagedPipeline {
+func PipelineFactory(ctx workflow.Context, args EncodeStreamArgs) ManagedPipeline {
 	res := ManagedPipeline{}
 	switch args.Codec {
 	case "x264":
 		res.inputStrategy = inputDirFileStrategy
-		res.encodingStrategy = x264EncodingStrategy(crf(args.Codec, args.Profile), bitrate(args.Codec, args.Profile))
+		res.encodingStrategy = x264EncodingStrategy(gopFrames(ctx, args.InputID), crf(args.Codec, args.Profile), bitrate(args.Codec, args.Profile))
 		res.manifestStrategy = dashManifestStrategy
 	case "x265":
 		res.inputStrategy = inputDirFileStrategy
@@ -640,42 +599,6 @@ type ManagedPipeline struct {
 }
 
 func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) error {
-	/*
-		ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-			StartToCloseTimeout: 10 * time.Minute,
-			TaskQueue:           "dasherQueue",
-			//HeartbeatTimeout:    1000 * time.Second,
-		})
-	*/
-	var preludeResp PreludeResp
-	/*
-		err := workflow.ExecuteActivity(ctx1, Prelude, PreludeArgs{
-			DashDir: storage.ProdDir(args.InputID),
-			Dir:     args.Dir,
-		}).Get(ctx1, &preludeResp)
-		if err != nil {
-			return err
-		}
-	*/
-	if preludeResp.Tprops.GopFrames == 0 {
-		preludeResp.Tprops.GopFrames = 100
-		preludeResp.Tprops.DashMs = 4000
-	}
-	ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 10 * time.Minute,
-		TaskQueue:           "dasherQueue",
-		//HeartbeatTimeout:    1000 * time.Second,
-	})
-	var MediaInterlaceAnalysis MediaInterlaceAnalysis
-	err := workflow.ExecuteActivity(ctx1, AnalyzeMediaInterlace, AnalyzeMediaInterlaceArgs{
-		//Dir:   args.Dir,
-		InputID: args.InputID,
-		InputNo: args.InputNo,
-		Stream:  args.Stream,
-	}).Get(ctx1, &MediaInterlaceAnalysis)
-	if err != nil {
-		return err
-	}
 
 	if err := os.MkdirAll(storage.ProdDir(args.InputID), os.ModePerm); err != nil {
 		return err
@@ -683,6 +606,21 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 	var ffmpegArgs []any
 	ffmpegArgs = append(ffmpegArgs, m.inputStrategy(args)...)
 	if isVideoCodec(args.Codec) {
+		ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			StartToCloseTimeout: 10 * time.Minute,
+			TaskQueue:           "dasherQueue",
+			//HeartbeatTimeout:    1000 * time.Second,
+		})
+		var MediaInterlaceAnalysis MediaInterlaceAnalysis
+		err := workflow.ExecuteActivity(ctx1, AnalyzeMediaInterlace, AnalyzeMediaInterlaceArgs{
+			//Dir:   args.Dir,
+			InputID: args.InputID,
+			InputNo: args.InputNo,
+			Stream:  args.Stream,
+		}).Get(ctx1, &MediaInterlaceAnalysis)
+		if err != nil {
+			return err
+		}
 		ffmpegArgs = append(ffmpegArgs, videoFilterStrategy(args, MediaInterlaceAnalysis.FilterRecommendation)...)
 	}
 	ffmpegArgs = append(ffmpegArgs, m.encodingStrategy(args)...)

@@ -8,9 +8,73 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 )
+
+// Check *.mp4 video files and return first file's properties (or an error)
+type GetOneTargetsPropertiesResp struct {
+	Found bool
+	Props SrcProperties
+}
+
+func GetOneTargetsProperties(ctx context.Context, targetDir string) (GetOneTargetsPropertiesResp, error) {
+	pattern := "*.mp4"
+	matches, err := filepath.Glob(targetDir + "/" + pattern)
+	if err != nil {
+		return GetOneTargetsPropertiesResp{}, Error("Failed to glob", "pattern", targetDir+"/"+pattern, "err", err)
+	}
+	slog.Info("MATCHES", "found", matches)
+	for _, match := range matches {
+		codec, err := GetStreamZeroCodec(match)
+		if err != nil {
+			return GetOneTargetsPropertiesResp{}, Error("Failed to find codec", "filePath", match, "err", err)
+		}
+		if isVideoCodec(codec) {
+			props, err := GetSourceProperties(ctx, ProbeParams{
+				Dir:      filepath.Dir(match),
+				Filename: filepath.Base(match),
+			})
+			if err != nil {
+				return GetOneTargetsPropertiesResp{}, Error("Failed to get properties", "filePath", match, "err", err)
+			}
+			return GetOneTargetsPropertiesResp{
+				Found: true,
+				Props: props,
+			}, nil
+		} else {
+			slog.Info("NOt viDEO", "file", match)
+		}
+	}
+	return GetOneTargetsPropertiesResp{
+		Found: false,
+		Props: SrcProperties{},
+	}, nil
+}
+func fileSizesAreEqualAndNonZero(filePath1, filePath2 string) (bool, error) {
+	f1, err := os.Stat(filePath1)
+	if err != nil {
+		return false, Error("Stat failed", "err", err)
+	}
+	f2, err := os.Stat(filePath2)
+	if err != nil {
+		return false, Error("Stat failed", "err", err)
+	}
+	if f1.Size() == 0 || f2.Size() == 0 {
+		return false, Error("At lease one file is zero size", "file1", filePath1, "file2", filePath2)
+	}
+	return f1.Size() == f2.Size(), nil
+}
+
+func dashName(fname string) (string, error) {
+	base, ok := strings.CutSuffix(fname, ".mp4")
+	if !ok {
+		return "", Error("InputFilename does not end in .mp4", "fname", fname)
+	}
+	return base + "_dashinit.mp4", nil
+}
 
 func dasherAction2(ctx context.Context, targetDir string) error {
 	slog.Info("Start", "F", "dasherAction2", "targetDir", targetDir)
@@ -22,40 +86,64 @@ func dasherAction2(ctx context.Context, targetDir string) error {
 		return err
 	}
 
-	var inputs []string
+	var mp4BoxInputs []string
+	var inputFiles []string
 	var codecs []string
 	var gopMs float64
 
 	for _, match := range matches {
-		props, err := GetSourceProperties(ctx, ProbeParams{
-			Dir:      filepath.Dir(match),
-			Filename: filepath.Base(match),
-		})
-		if err != nil {
-			slog.Error("Failed to get properties", "file", match, "err", err)
-			return err
-		}
-		if gopMs != 0 && gopMs != props.GopMilliSec {
-			slog.Error("Got different gopMs", "previous", gopMs, "new", props.GopMilliSec)
-			return errors.New("Different gops")
-		}
-		gopMs = props.GopMilliSec
-
 		codec, err := GetStreamZeroCodec(match)
 		if err != nil {
 			return fmt.Errorf("Failed to find codec for %s: %v", match, err)
+		}
+		switch {
+		case isVideoCodec(codec):
+			props, err := GetSourceProperties(ctx, ProbeParams{
+				Dir:      filepath.Dir(match),
+				Filename: filepath.Base(match),
+			})
+			if err != nil {
+				slog.Error("Failed to get properties", "file", match, "err", err)
+				return err
+			}
+			if gopMs != 0 && gopMs != props.GopMilliSec {
+				slog.Error("Got different gopMs", "previous", gopMs, "new", props.GopMilliSec)
+				return errors.New("Different gops")
+			}
+			gopMs = props.GopMilliSec
 		}
 		if idx := slices.Index(codecs, codec); idx == -1 {
 			codecs = append(codecs, codec)
 		}
 		codecIdx := slices.Index(codecs, codec)
-		inputs = append(inputs, filepath.Base(match)+":asID="+strconv.Itoa(codecIdx+1))
+		mp4BoxInputs = append(mp4BoxInputs, filepath.Base(match)+":asID="+strconv.Itoa(codecIdx+1))
+		inputFiles = append(inputFiles, filepath.Base(match))
 	}
 
 	//args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
 	args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
-	args = append(args, inputs...)
-	return MP4Box(ctx, targetDir, args)
+	args = append(args, mp4BoxInputs...)
+	if err := MP4Box(ctx, targetDir, args); err != nil {
+		return err
+	}
+	fixManifestBaseURLs(filepath.Join(targetDir, "manifest.mpd"))
+	for _, in := range inputFiles {
+		dName, err := dashName(in)
+		if err != nil {
+			return err
+		}
+		equal, err := fileSizesAreEqualAndNonZero(filepath.Join(targetDir, in), filepath.Join(targetDir, dName))
+		if err != nil {
+			return err
+		}
+		if !equal {
+			return Error("Generated dash file not equal", "orig", in, "dash", dName)
+		}
+		if err := os.Remove(filepath.Join(targetDir, dName)); err != nil {
+			return Error("os.Remove failed", "filename", filepath.Join(targetDir, dName), "err", err)
+		}
+	}
+	return nil
 }
 
 func replaceWithSymlink(src, target string) error {
@@ -70,7 +158,6 @@ func replaceWithSymlink(src, target string) error {
 
 type FinalizeArgs struct {
 	InputID string
-	Fast    bool
 }
 
 type FinalizeResp struct {
@@ -81,36 +168,6 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	defer slog.Info("Stop ", "A", "Finalize", "InputID)", args.InputID)
 
 	dir := storage.ProdDir(args.InputID)
-	dasherAction2(ctx, dir)
-
-	/*
-		pattern := "*.mp4"
-		matches, err := filepath.Glob(filepath.Join(dir, pattern))
-		if err != nil {
-			return FinalizeResp{}, err
-		}
-			for _, dashFName := range matches {
-				if err := replaceWithSymlink(strings.TrimSuffix(dashFName, ".mp4")+"_dashinit.mp4", filepath.Base(dashFName)); err != nil {
-					return FinalizeResp{}, errors.WithStack(err)
-				}
-			}*/
-	//fixAudioPresentationTimeOffset(args.TargetDir + "/" + "manifest.mpd")
-	/*
-		fixPresentationTimeOffsets2(args.TargetDir + "/" + "manifest.mpd")
-		if args.Fast {
-			if err := os.WriteFile(args.TargetDir+"/"+"dasher_fast=1", nil, 0644); err != nil {
-				return FinalizeResp{}, errors.WithStack(err)
-			}
-		}
-	*/
-	/*
-		tmpSuffix := uuid.NewString()
-		if err := os.Symlink(filepath.Base(args.TargetDir), args.ProdDir+tmpSuffix); err != nil {
-			return FinalizeResp{}, fmt.Errorf("Symlinking for production failed: %v", errors.WithStack(err))
-		}
-		if err := os.Rename(args.ProdDir+tmpSuffix, args.ProdDir); err != nil {
-			return FinalizeResp{}, fmt.Errorf("Renaming to production failed: %v", errors.WithStack(err))
-		}
-	*/
-	return FinalizeResp{}, nil
+	spew.Dump(args)
+	return FinalizeResp{}, dasherAction2(ctx, dir)
 }

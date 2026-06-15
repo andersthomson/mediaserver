@@ -1,14 +1,8 @@
 package dasherworker
 
 import (
-	"context"
-	"errors"
-	"log/slog"
 	"os"
-	"strconv"
 	"time"
-
-	"github.com/andersthomson/mediaserver/scrape"
 )
 
 func FileModTime(fname DirFile) (time.Time, error) {
@@ -19,6 +13,7 @@ func FileModTime(fname DirFile) (time.Time, error) {
 	}
 }
 
+/*
 func representationNeedsRecreation(ctx context.Context, streamno int, m scrape.Msp, mFile DirFile, dir, DashDir string) (bool, error) {
 	//This is executed in activity context
 	inFname, err := InputFName(streamno, m)
@@ -66,4 +61,4 @@ func representationNeedsRecreation(ctx context.Context, streamno int, m scrape.M
 
 	//Default
 	return false, nil
-}
+}*/

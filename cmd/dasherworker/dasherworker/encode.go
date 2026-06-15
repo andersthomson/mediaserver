@@ -188,7 +188,7 @@ func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs)
 func (l *LocalEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, error) {
 	slog.Info("Start", "A", "LocalEncode/Encode", "inputFname", args.FfmpegArgs.InputFname)
 	defer slog.Info("Stop ", "A", "LocalEncode/Encode", "inputFname", args.FfmpegArgs.InputFname)
-	//slog.Info("local/Encode", "args", args)
+	slog.Info("local/Encode", "args", args)
 	_, err := FfmpegLocalEncode(ctx, FfmpegEncodeArgs{
 		Ffmpeg:          "/usr/bin/ffmpeg",
 		Args:            args.FfmpegArgs.Args,

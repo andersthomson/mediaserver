@@ -92,6 +92,59 @@ func main() {
 			}
 			run.Get(context.Background(), nil)
 			return
+		case "audio":
+			run, err := c.ExecuteWorkflow(context.Background(),
+				client.StartWorkflowOptions{
+					ID:        uuid.New().String(), // Unique ID for business logic
+					TaskQueue: "dasherQueue",       // Which worker group should handle this
+				},
+				"AudioEncodingWorkflow",
+				dasherworker.AudioEncodingWorkflowArgs{
+					Dir:     filepath.Dir(os.Args[2]),
+					MspFile: filepath.Base(os.Args[2]),
+				})
+			if err != nil {
+				slog.Info("Couldn't start workflow", "err", err)
+				return
+			}
+			run.Get(context.Background(), nil)
+			return
+		case "storageadd":
+			run, err := c.ExecuteWorkflow(context.Background(),
+				client.StartWorkflowOptions{
+					ID:        uuid.New().String(), // Unique ID for business logic
+					TaskQueue: "dasherQueue",       // Which worker group should handle this
+				},
+				"StorageAddWF",
+				os.Args[2])
+			if err != nil {
+				slog.Info("Couldn't start workflow", "err", err)
+				return
+			}
+			run.Get(context.Background(), nil)
+			return
+		case "finalize":
+			msp, err := scrape.ReadMspFromFile(os.Args[2])
+			if err != nil {
+				fmt.Printf("Fail: %v\n", err)
+				return
+			}
+
+			run, err := c.ExecuteWorkflow(context.Background(),
+				client.StartWorkflowOptions{
+					ID:        uuid.New().String(), // Unique ID for business logic
+					TaskQueue: "dasherQueue",       // Which worker group should handle this
+				},
+				"FinalizeWF",
+				dasherworker.FinalizeArgs{
+					InputID: msp.Id,
+				})
+			if err != nil {
+				slog.Info("Couldn't start workflow", "err", err)
+				return
+			}
+			run.Get(context.Background(), nil)
+			return
 		case "keyframes":
 			// Local dry-run demonstration
 			m3u8Input := os.Args[2]
@@ -249,8 +302,8 @@ func makeDashWorkFlow(tc client.Client, dir string, mspFile string) error {
 			//ID:        "EncodeMsp-" + filepath.Base(mspFile), // Unique ID for business logic
 			TaskQueue: "dasherQueue", // Which worker group should handle this
 		},
-		"AllEncodingWorkflow",
-		dasherworker.AllEncodingWorkflowArgs{
+		"VideoEncodingWorkflow",
+		dasherworker.VideoEncodingWorkflowArgs{
 			Dir:     dir,
 			MspFile: mspFile,
 			Fast:    fast(),

@@ -26,6 +26,7 @@ func GetStreamZeroCodec(filename string) (string, error) {
 	args := []string{
 		"-v", "error",
 		"-select_streams", "0",
+		"-show_streams",
 		"-show_entries", "stream=codec_name,codec_type",
 		"-of", "json",
 		filename,
