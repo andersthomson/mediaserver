@@ -199,7 +199,7 @@ var targets = []Target{
 	//	{"x264", "high"},
 	{"x264", "low"},
 	//	{"x265", "high"},
-	//{"x265", "low"},
+	{"x265", "low"},
 }
 
 type VideoEncodingWorkflowArgs struct {
@@ -446,6 +446,7 @@ func x265EncodingStrategy(gopFrames float64, crf string, bitrate string) func(ar
 		ffmpegArgs = append(ffmpegArgs,
 			"-tag:v", "hvc1",
 			"-x265-params:v", "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate))
+		ffmpegArgs = append(ffmpegArgs, []any{"-fps_mode", "cfr"}...)
 		return ffmpegArgs
 	}
 }
