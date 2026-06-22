@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"os/exec"
 	"strconv"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
 type ProbeOutput struct {
@@ -34,18 +32,17 @@ func (s StreamInfo) GetDuration() (float64, error) {
 	return strconv.ParseFloat(s.DurationStr, 64)
 }
 
-func GetVideoDurationUsec(ctx context.Context, inputID string, inputNo int, stream string) (int64, error) {
-	videoPath := storage.ResolveInputNumber(inputID, inputNo)
-	// -print_format json: wraps the output in a JSON object
+func GetMediaDurationUsec(ctx context.Context, inputID string, inputNo int, stream string) (int64, error) {
+	mediaPath := storage.ResolveInputNumber(inputID, inputNo)
+	slog.Info("GetMediaDurationUsec", "mediaPath", mediaPath, "stream", stream)
+
 	args := []string{"-v", "quiet",
 		"-select_streams", stream,
 		"-print_format", "json",
 		"-show_entries", "format=duration",
-		videoPath,
+		mediaPath,
 	}
-	spew.Dump(args)
 	cmd := exec.CommandContext(ctx, "ffprobe", args...)
-	slog.Info("GetVideoDurationUsec", "videoPath", videoPath, "stream", stream)
 	out, err := cmd.Output()
 	if err != nil {
 		slog.Error("Exec failed", "GetVideoDurationUsec", err)
@@ -64,7 +61,7 @@ func GetVideoDurationUsec(ctx context.Context, inputID string, inputNo int, stre
 		}
 		return int64(duration * 1000000), nil
 	}
-	return 0, fmt.Errorf("Failed to find Duration for %s, stream %s. Got: %v", videoPath, stream, string(out))
+	return 0, fmt.Errorf("Failed to find Duration for %s, stream %s. Got: %v", mediaPath, stream, string(out))
 	/*
 		// Check if a stream was successfully captured
 		if len(data.Streams) > 0 {

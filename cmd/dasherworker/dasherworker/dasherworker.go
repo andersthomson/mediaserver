@@ -3,6 +3,7 @@ package dasherworker
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -92,6 +93,53 @@ func (s *Storage) DasherReadyRepresentationFilePath(args EncodeStreamArgs) strin
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+".mp4")
 }
 
+func (s *Storage) DasherReadyRepresentationTranscodingLogFilePath(args EncodeStreamArgs) string {
+	return filepath.Join(s.ProdDir(args.InputID), representation(args)+".mp4.transcodinglog")
+}
+
+type EnsureDashWFArgs struct {
+	MspPath string
+	Fast    bool
+}
+
+func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
+	M, err := CallActivityIO[string, scrape.Msp](ctx, ReadMspFile, filepath.Dir(args.MspPath), filepath.Base(args.MspPath))
+	if err != nil {
+		return "", err
+	}
+	storage = NewStorage()
+
+	storage.Add(filepath.Dir(args.MspPath), M)
+
+	childOptions := workflow.ChildWorkflowOptions{
+		WorkflowID: "EnsureDash-child-for-" + M.ShortName + M.Id, // Unique ID
+	}
+	ctx = workflow.WithChildOptions(ctx, childOptions)
+	run := workflow.ExecuteChildWorkflow(ctx, VideoEncodingWorkflow, VideoEncodingWorkflowArgs{
+		Dir:     filepath.Dir(args.MspPath),
+		MspFile: filepath.Base(args.MspPath),
+		Fast:    args.Fast,
+	})
+	if err := run.Get(ctx, nil); err != nil {
+		return "", Error("Child WF execution failed", "err", err)
+	}
+	run = workflow.ExecuteChildWorkflow(ctx, AudioEncodingWorkflow, AudioEncodingWorkflowArgs{
+		Dir:     filepath.Dir(args.MspPath),
+		MspFile: filepath.Base(args.MspPath),
+	})
+	if err := run.Get(ctx, nil); err != nil {
+		return "", Error("Child WF execution failed", "err", err)
+	}
+	run.Get(ctx, nil)
+	run = workflow.ExecuteChildWorkflow(ctx, FinalizeWF, FinalizeArgs{
+		InputID: M.Id,
+	})
+	if err := run.Get(ctx, nil); err != nil {
+		return "", Error("Child WF execution failed", "err", err)
+	}
+	return "", nil
+}
+
 type AudioEncodingWorkflowArgs struct {
 	Dir     string
 	MspFile string
@@ -113,10 +161,11 @@ func AudioEncodingWorkflow(ctx workflow.Context, args AudioEncodingWorkflowArgs)
 		return AudioEncodingWorkflowResp{}, Error("Found no audio stream source specified", "input", M)
 	}
 	Eargs := NewEncodeStreamArgs(&EncodeStreamArgs{
-		InputID: M.Id,
-		InputNo: idx,
-		Stream:  M.Inputs[idx].Stream,
-		Codec:   "aac",
+		InputID:  M.Id,
+		InputNo:  idx,
+		Stream:   M.Inputs[idx].Stream,
+		Language: M.Inputs[idx].Language,
+		Codec:    "aac",
 	})
 	fname := storage.DasherReadyRepresentationFilePath(*Eargs)
 	exists, err := CallActivityFast[string, bool](ctx, FileExists, fname)
@@ -147,10 +196,10 @@ type Target struct {
 }
 
 var targets = []Target{
-	{"x264", "high"},
+	//	{"x264", "high"},
 	{"x264", "low"},
-	{"x265", "high"},
-	{"x265", "low"},
+	//	{"x265", "high"},
+	//{"x265", "low"},
 }
 
 type VideoEncodingWorkflowArgs struct {
@@ -315,6 +364,7 @@ func inputDirFileStrategy(args EncodeStreamArgs) []any {
 
 func inputDirFileWithMapStrategy(args EncodeStreamArgs) []any {
 	return []any{
+		//"-copyts",
 		"-i", DirFile{
 			Dir:   filepath.Dir(storage.ResolveInputNumber(args.InputID, args.InputNo)),
 			Fname: filepath.Base(storage.ResolveInputNumber(args.InputID, args.InputNo)),
@@ -332,7 +382,12 @@ func videoFilterStrategy(args EncodeStreamArgs, deinterlaceFilter string) []any 
 		"-map", "[out]"}
 }
 
-var DefaultGopFrames float64 = 100.0
+func dashMs(g GopMs) float64 {
+	gopSec := float64(g / 1000)
+	return math.Max(1.0, math.Round(4.0/gopSec)) * gopSec * 1000
+}
+
+var DefaultGopFrames float64 = 96.0
 
 func gopFrames(ctx workflow.Context, inputId string) float64 {
 	props, _ := CallActivityIO[string, GetOneTargetsPropertiesResp](ctx, "GetOneTargetsProperties", storage.ProdDir(inputId))
@@ -344,6 +399,17 @@ func gopFrames(ctx workflow.Context, inputId string) float64 {
 	return props.Props.GopFrames
 }
 
+func languageFromArgs(args EncodeStreamArgs) []any {
+	if args.Language != "" {
+		slog.Info("setting lang", "to", args.Language)
+		return []any{
+			"-metadata:s:0",
+			"language=" + args.Language,
+		}
+	}
+	slog.Info("NO language")
+	return []any{}
+}
 func nullStrategy(_ EncodeStreamArgs) []any {
 	return []any{}
 }
@@ -361,6 +427,7 @@ func x264EncodingStrategy(gopFrames float64, crf string, bitrate string) func(ar
 		ffmpegArgs = append(ffmpegArgs,
 			"-x264-params:v", "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1")
 
+		ffmpegArgs = append(ffmpegArgs, []any{"-fps_mode", "cfr"}...)
 		return ffmpegArgs
 	}
 }
@@ -387,12 +454,13 @@ func aac2cEncodingStrategy(args EncodeStreamArgs) []any {
 		"-vn",
 		"-c", "aac",
 		"-aac_coder", "twoloop",
-		"-frame_size", "960",
+		//"-frame_size", "960",
 		"-b:a", "448k",
 		"-ar", "48000",
 		//FIXME: Keep mono as mono. Dont upsample
 		"-ac", "2",
-		"-af", "aresample=async=1",
+		//"-af", "aresample=async=1",
+		"-af", "aresample=async=1:comp_duration=1:max_soft_comp=0.05",
 	}
 }
 
@@ -421,7 +489,6 @@ func dashManifestStrategy(args EncodeStreamArgs) []any {
 		"-map_metadata", "-1",
 		//These are supposedly needed if ffmpeg does the dash packaging (not using e.g. mp4box)
 		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
-		//"-movflags", "+faststart+disable_chpl",
 		DirFile{
 			Dir:   filepath.Dir(storage.TranscodedRepresentationFilePath(args)),
 			Fname: filepath.Base(storage.TranscodedRepresentationFilePath(args)),
@@ -438,24 +505,17 @@ func rawOutputStrategy(args EncodeStreamArgs) []any {
 type InputStrategy func(args EncodeStreamArgs) []any
 type FilterStrategy func(args EncodeStreamArgs, deinterlaceFilter string) []any
 type EncodingStrategy func(args EncodeStreamArgs) []any
+type LanguageStrategy func(args EncodeStreamArgs) []any
 type ManifestStrategy func(args EncodeStreamArgs) []any
 type DurationDeriverUsec func(ctx workflow.Context, inputID string, inputNo int, stream string) (int64, error)
 type QueueSelector func(args EncodeStreamArgs) string
-type PackagingStrategy func(ctx workflow.Context, args EncodeStreamArgs, dashMs string) error
-
-func BuildFfmpegArgs(args EncodeStreamArgs,
-	applyInput InputStrategy,
-	applyEncoding EncodingStrategy,
-	applyManifest ManifestStrategy) []any {
-	ffmpegArgs := []any{}
-	return ffmpegArgs
-}
+type PackagingStrategy func(ctx workflow.Context, args EncodeStreamArgs) error
 
 func isVideoCodec(codec string) bool {
 	switch codec {
 	case "x264", "h264":
 		return true
-	case "x265", "h265":
+	case "x265", "h265", "hevc":
 		return true
 	}
 	return false
@@ -465,7 +525,7 @@ func durationDeriverFfmpeg(ctx workflow.Context, inputID string, inputNo int, st
 		StartToCloseTimeout: 30 * time.Second,
 	})
 	var duration int64
-	err := workflow.ExecuteActivity(ctx1, GetVideoDurationUsec, inputID, inputNo, stream).Get(ctx1, &duration)
+	err := workflow.ExecuteActivity(ctx1, GetMediaDurationUsec, inputID, inputNo, stream).Get(ctx1, &duration)
 	if err != nil {
 		return 0, err
 	}
@@ -484,24 +544,26 @@ func QueueSelectorLocal(args EncodeStreamArgs) string {
 	return "dasherQueue"
 }
 
-func MP4BoxPackager(ctx workflow.Context, args EncodeStreamArgs, dashMs string) error {
-	ctx3 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: time.Minute * 50,
-		TaskQueue:           "dasherQueue",
-		HeartbeatTimeout:    3600 * time.Second,
-	})
+func MP4BoxPackager(dashMs string) func(ctx workflow.Context, args EncodeStreamArgs) error {
+	return func(ctx workflow.Context, args EncodeStreamArgs) error {
+		ctx3 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			StartToCloseTimeout: time.Minute * 50,
+			TaskQueue:           "dasherQueue",
+			HeartbeatTimeout:    3600 * time.Second,
+		})
 
-	var MP4BoxDashReadyResp MP4BoxDashReadyResp
-	err := workflow.ExecuteActivity(ctx3, MP4BoxDashReady, MP4BoxDashReadyArgs{
-		EncodeArgs: args,
-		WorkDir:    storage.ProdDir(args.InputID),
-		DashMs:     dashMs,
-	}).Get(ctx3, &MP4BoxDashReadyResp)
-	if err != nil {
-		slog.Error("MP4BoxDashReady activity failed", "err", err.Error())
-		return err
+		var MP4BoxDashReadyResp MP4BoxDashReadyResp
+		err := workflow.ExecuteActivity(ctx3, MP4BoxDashReady, MP4BoxDashReadyArgs{
+			EncodeArgs: args,
+			WorkDir:    storage.ProdDir(args.InputID),
+			DashMs:     dashMs,
+		}).Get(ctx3, &MP4BoxDashReadyResp)
+		if err != nil {
+			slog.Error("MP4BoxDashReady activity failed", "err", err.Error())
+			return err
+		}
+		return nil
 	}
-	return nil
 }
 
 type Resolution struct {
@@ -534,10 +596,11 @@ func representation(args EncodeStreamArgs) string {
 }
 
 type EncodeStreamArgs struct {
-	InputID string
-	InputNo int
-	Stream  string //ffprobe y:z string
-	Kind    string
+	InputID  string
+	InputNo  int
+	Stream   string //ffprobe y:z string
+	Kind     string
+	Language string
 
 	Preset       string
 	Profile      string
@@ -569,14 +632,17 @@ func PipelineFactory(ctx workflow.Context, args EncodeStreamArgs) ManagedPipelin
 	case "x264":
 		res.inputStrategy = inputDirFileStrategy
 		res.encodingStrategy = x264EncodingStrategy(gopFrames(ctx, args.InputID), crf(args.Codec, args.Profile), bitrate(args.Codec, args.Profile))
+		res.languageStrategy = languageFromArgs
 		res.manifestStrategy = dashManifestStrategy
 	case "x265":
 		res.inputStrategy = inputDirFileStrategy
 		res.encodingStrategy = x265EncodingStrategy(gopFrames(ctx, args.InputID), crf(args.Codec, args.Profile), bitrate(args.Codec, args.Profile))
+		res.languageStrategy = languageFromArgs
 		res.manifestStrategy = dashManifestStrategy
 	case "aac":
 		res.inputStrategy = inputDirFileWithMapStrategy
 		res.encodingStrategy = aac2cEncodingStrategy
+		res.languageStrategy = languageFromArgs
 		res.manifestStrategy = dashManifestStrategy
 	case "copy":
 		res.inputStrategy = inputDirFileWithMapStrategy
@@ -588,13 +654,14 @@ func PipelineFactory(ctx workflow.Context, args EncodeStreamArgs) ManagedPipelin
 	}
 	res.durationDeriver = durationDeriverFfmpeg
 	res.encoderQueue = QueueSelectorLocal
-	res.packager = MP4BoxPackager
+	res.packager = MP4BoxPackager(strconv.FormatFloat(dashMs(GopMs(gopFrames(ctx, args.InputID)/25*1000)), 'f', 0, 64))
 	return res
 }
 
 type ManagedPipeline struct {
 	inputStrategy    InputStrategy
 	encodingStrategy EncodingStrategy
+	languageStrategy LanguageStrategy
 	manifestStrategy ManifestStrategy
 	durationDeriver  DurationDeriverUsec
 	encoderQueue     QueueSelector
@@ -616,7 +683,6 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 		})
 		var MediaInterlaceAnalysis MediaInterlaceAnalysis
 		err := workflow.ExecuteActivity(ctx1, AnalyzeMediaInterlace, AnalyzeMediaInterlaceArgs{
-			//Dir:   args.Dir,
 			InputID: args.InputID,
 			InputNo: args.InputNo,
 			Stream:  args.Stream,
@@ -627,6 +693,7 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 		ffmpegArgs = append(ffmpegArgs, videoFilterStrategy(args, MediaInterlaceAnalysis.FilterRecommendation)...)
 	}
 	ffmpegArgs = append(ffmpegArgs, m.encodingStrategy(args)...)
+	ffmpegArgs = append(ffmpegArgs, m.languageStrategy(args)...)
 	ffmpegArgs = append(ffmpegArgs, m.manifestStrategy(args)...)
 
 	duration, err := m.durationDeriver(ctx, args.InputID, args.InputNo, args.Stream)
@@ -637,10 +704,9 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 	aoBase := workflow.ActivityOptions{
 		TaskQueue: queue, // Necessary so CreateSession knows where to go
 	}
-	ctx = workflow.WithActivityOptions(ctx, aoBase)
 
 	slog.Info("Creating session")
-	sessionCtx, err := workflow.CreateSession(ctx, &workflow.SessionOptions{
+	sessionCtx, err := workflow.CreateSession(workflow.WithActivityOptions(ctx, aoBase), &workflow.SessionOptions{
 		CreationTimeout:  24 * time.Hour,
 		ExecutionTimeout: 24 * time.Hour,
 	})
@@ -648,6 +714,7 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 		return err
 	}
 	slog.Info("Created session")
+	sessionID := workflow.GetSessionInfo(sessionCtx).SessionID
 	defer workflow.CompleteSession(sessionCtx)
 
 	ctx2 := workflow.WithActivityOptions(sessionCtx, workflow.ActivityOptions{
@@ -659,6 +726,7 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 	var a *LocalEncode
 	//spew.Dump(ffmpegArgs)
 	err = workflow.ExecuteActivity(ctx2, a.EncodePrelude, EncodePreludeArgs{
+		SessionID:  sessionID,
 		FfmpegArgs: NewFFMpegArgs(ffmpegArgs),
 	}).Get(ctx2, &encodePreludeResp)
 	if err != nil {
@@ -668,6 +736,7 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 
 	var ffmpegEncodeResp EncodeResp
 	err = workflow.ExecuteActivity(ctx2, a.Encode, EncodeArgs{
+		SessionID:       sessionID,
 		FfmpegArgs:      encodePreludeResp.FfmpegArgs,
 		TotalDurationUs: duration,
 	}).Get(ctx2, &ffmpegEncodeResp)
@@ -677,11 +746,18 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 	}
 
 	err = workflow.ExecuteActivity(ctx2, a.EncodePostlude, EncodePostludeArgs{
+		SessionID:  sessionID,
 		FfmpegArgs: ffmpegEncodeResp.FfmpegArgs,
 	}).Get(ctx2, nil)
 
-	if err := MP4BoxPackager(ctx, args, strconv.FormatFloat(4000, 'f', 0, 64)); err != nil {
-		slog.Error("MP4BoxPackager failed", "err", err)
+	if err := m.packager(ctx, args); err != nil {
+		return Error("Packager failed", "err", err)
+	}
+	_, err = CallActivityFast[RecordTranscodingOptionsArgs, string](ctx, "RecordTranscodingOptions", RecordTranscodingOptionsArgs{
+		Args:       args,
+		Ffmpegargs: NewFFMpegArgs(ffmpegArgs),
+	})
+	if err != nil {
 		return err
 	}
 	return nil

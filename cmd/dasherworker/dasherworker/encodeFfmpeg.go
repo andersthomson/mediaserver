@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/kballard/go-shellquote"
 	"go.temporal.io/sdk/activity"
 	"golang.org/x/time/rate"
@@ -43,6 +44,7 @@ func FfmpegLocalEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncode
 	} else {
 		newArgs = args.Args
 	}
+	spew.Dump(newArgs)
 	cmd := exec.CommandContext(ctx, args.Ffmpeg, newArgs...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

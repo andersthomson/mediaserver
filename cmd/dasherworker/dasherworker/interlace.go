@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -89,8 +88,7 @@ func AnalyzeMediaInterlace(ctx context.Context, args AnalyzeMediaInterlaceArgs) 
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "FFmpeg Probe Error: %s\n", stderr.String())
-		return analysis, fmt.Errorf("ffmpeg analysis failed: %w", err)
+		return analysis, Error("ffmpeg analysis failed", "err", err)
 	}
 
 	output := stderr.String()
@@ -161,15 +159,8 @@ func AnalyzeMediaInterlace(ctx context.Context, args AnalyzeMediaInterlaceArgs) 
 	// If drops are > 40% of total frames, it's a doubled cadence (Fake High FPS)
 	if totalCount > 0 && (float64(dropCount)/float64(totalCount)) > 0.40 {
 		analysis.IsFakeHighFPS = true
-		if analysis.FilterRecommendation == "null" {
-			//analysis.FilterRecommendation = "mpdecimate,fps=25" + fmt.Sprintf(",setpts=PTS-%f/TB", analysis.FirstPTS)
-			analysis.FilterRecommendation = "mpdecimate,fps=25" + fmt.Sprintf(",setpts=PTS-STARTPTS")
-			//analysis.FilterRecommendation = "fps=25,mpdecimate" + fmt.Sprintf(",setpts=PTS-STARTPTS")
-		} else {
-			//slog.Info("PREEXISTINGREC", "rec", analysis.FilterRecommendation)
-			analysis.FilterRecommendation += ",mpdecimate,fps=25" + fmt.Sprintf(",setpts=PTS-STARTPTS")
-			//analysis.FilterRecommendation += ",fps=25,mpdecimate" + fmt.Sprintf(",setpts=PTS-STARTPTS")
-		}
+		//analysis.FilterRecommendation += ",mpdecimate,fps=25"
+		//analysis.FilterRecommendation += ",fps=25,mpdecimate" + fmt.Sprintf(",setpts=PTS-STARTPTS")
 	}
 
 	slog.Info("Analysis Complete", "fullPath", fullPath, "PTS", analysis.FirstPTS, "filterRecommendation", analysis.FilterRecommendation)

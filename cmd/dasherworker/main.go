@@ -96,11 +96,14 @@ func main() {
 	})
 
 	//w.RegisterWorkflow(dasherworker.Encode)
+	w.RegisterWorkflow(dasherworker.EnsureDashWF)
 	w.RegisterWorkflow(dasherworker.AudioEncodingWorkflow)
 	w.RegisterWorkflow(dasherworker.VideoEncodingWorkflow)
 	w.RegisterActivity(&dasherworker.LocalEncode{})
 	w.RegisterActivity(dasherworker.ReadMspFile)
-	w.RegisterActivity(dasherworker.Prelude)
+	//w.RegisterActivity(dasherworker.Prelude)
+	w.RegisterActivity(dasherworker.RecordTranscodingOptions)
+
 	w.RegisterActivity(dasherworker.GetSourcePropertiesActivity)
 	w.RegisterWorkflow(dasherworker.GetSourcePropertiesWF)
 
@@ -118,7 +121,7 @@ func main() {
 	w.RegisterWorkflow(dasherworker.FinalizeWF)
 	w.RegisterActivity(dasherworker.Finalize)
 	w.RegisterActivity(dasherworker.AnalyzeMediaInterlace)
-	w.RegisterActivity(dasherworker.GetVideoDurationUsec)
+	w.RegisterActivity(dasherworker.GetMediaDurationUsec)
 
 	// Run the worker (blocks until interrupted)
 	err = w.Run(tworker.InterruptCh())

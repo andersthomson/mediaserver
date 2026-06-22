@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math"
 
 	"github.com/andersthomson/mediaserver/scrape"
 	"github.com/pkg/errors"
@@ -20,12 +19,7 @@ type PreludeResp struct {
 	Tprops CommonProperties
 }
 
-func dashMs(p SrcProperties) float64 {
-	diff := p.GopMilliSec / 1000
-	return math.Max(1.0, math.Round(4.0/diff)) * diff * 1000
-}
-
-func Prelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
+func XPrelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
 	slog.Info("Start", "A", "Prelude")
 	defer slog.Info("Stop ", "A", "Prelude")
 	//Sanity check:
@@ -46,7 +40,7 @@ func Prelude(ctx context.Context, args PreludeArgs) (PreludeResp, error) {
 					return PreludeResp{}, fmt.Errorf("Source %d, which you want to have referenced, has an unsupported gop %f\n", streamno, props.GopMilliSec)
 				}
 				tprops.GopFrames = props.GopFrames
-				tprops.DashMs = dashMs(props)
+				tprops.DashMs = dashMs(props.GopMilliSec)
 			case isDashReadyAudio(args.Dir + "/" + args.M.Inputs[stream.ReferenceFile].Filename):
 			default:
 				return PreludeResp{}, fmt.Errorf("Source %d, which you want to have referenced, is not dash ready\n", stream.ReferenceFile)
