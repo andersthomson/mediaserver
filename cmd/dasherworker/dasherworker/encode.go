@@ -177,7 +177,11 @@ type LocalEncode struct {
 
 // Gives the workdir for a local ffmpeg encode.
 func (_ LocalEncode) workDir(sessionID string, FfmpegArgs FFMpegArgs) string {
-	wd := FfmpegArgs.OutputDir + "/" + ".sessionID-" + sessionID
+	return filepath.Join(FfmpegArgs.OutputDir, ".sessionID-"+sessionID)
+}
+
+func (l LocalEncode) makeWorkDir(sessionID string, FfmpegArgs FFMpegArgs) string {
+	wd := l.workDir(sessionID, FfmpegArgs)
 	if err := os.Mkdir(wd, 0755); err != nil {
 		slog.Error("Failed to create ffmpeg working dir", "err", err)
 	} else {
@@ -195,6 +199,7 @@ func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs)
 	defer slog.Info("Stop ", "A", "LocalEncode/Prelude", "inputFname", args.FfmpegArgs.InputFname)
 	//slog.Info("local/prelude", "args", args)
 	slog.Info("local/prelude: symlinking input file")
+	_ = l.makeWorkDir(args.SessionID, args.FfmpegArgs)
 	newName := l.inputSymlink(args.SessionID, args.FfmpegArgs)
 	oldName := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
 
