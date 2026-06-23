@@ -127,7 +127,15 @@ func AnalyzeMediaInterlace(ctx context.Context, args AnalyzeMediaInterlaceArgs) 
 
 				// If metadata says 'tt' (top field) or 'bb', but pixels are progressive -> PsF!
 				if fieldOrder != "progressive" && fieldOrder != "unknown" && fieldOrder != "" {
-					analysis.FilterRecommendation = "fieldmatch,format=yuv420p"
+					var parity string
+					if strings.Contains(fieldOrder, "tb") || strings.Contains(fieldOrder, "top") {
+						parity = "tff"
+					} else if strings.Contains(fieldOrder, "bt") || strings.Contains(fieldOrder, "bottom") {
+						parity = "bff"
+					} else {
+						parity = "auto"
+					}
+					analysis.FilterRecommendation = "fieldmatch=order=" + parity + ":combmatch=full,yadif=mode=send_frame:deint=interlaced,format=yuv420p"
 					analysis.DetectedParity = "PsF (" + fieldOrder + ")"
 				} else {
 					analysis.FilterRecommendation = "null"

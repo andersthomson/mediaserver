@@ -534,15 +534,13 @@ func durationDeriverFfmpeg(ctx workflow.Context, inputID string, inputNo int, st
 }
 
 func QueueSelectorLocal(args EncodeStreamArgs) string {
-	/*
-	   var queue string
-	   	if isVideoEncode {
-	   		queue = "encodingQueue"
-	   	} else {
-	   		queue = "dasherQueue"
-	   	}
-	*/
-	return "dasherQueue"
+	var queue string
+	if isVideoCodec(args.Codec) {
+		queue = "encodingQueue"
+	} else {
+		queue = "dasherQueue"
+	}
+	return queue
 }
 
 func MP4BoxPackager(dashMs string) func(ctx workflow.Context, args EncodeStreamArgs) error {
