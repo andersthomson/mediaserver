@@ -305,9 +305,20 @@ func scaleIfNeeded(in, out string, filter string) string {
 	return fmt.Sprintf("[%s]%s[%s]", in, filter, out)
 }
 
-func scaleFilter(args EncodeStreamArgs) string {
+func scaleFilter(ctx workflow.Context, args EncodeStreamArgs) string {
 	if args.VideoFilters.MaxResolution.Width > 0 {
-		return "scale='if(gt(iw,ih),min(" + strconv.Itoa(args.VideoFilters.MaxResolution.Width) + ",iw),-2)':'if(gt(iw,ih),-2,min(" + strconv.Itoa(args.VideoFilters.MaxResolution.Height) + ",ih))'"
+		//return "scale='if(gt(iw,ih),min(" + strconv.Itoa(args.VideoFilters.MaxResolution.Width) + ",iw),-2)':'if(gt(iw,ih),-2,min(" + strconv.Itoa(args.VideoFilters.MaxResolution.Height) + ",ih))'"
+		sDim, err := CallActivityIO[GetStreamDimensionsArgs, StreamDimensions](ctx, GetStreamDimensions, GetStreamDimensionsArgs{
+			InputID: args.InputID,
+			InputNo: args.InputNo,
+			Stream:  args.Stream,
+		})
+		if err != nil {
+			slog.Error("Failed to get Stream dimensions", "err", err)
+			return ""
+		}
+		return scalingFilter(Resolution{Width: sDim.Width, Height: sDim.Height}, sDim.SAR, args.VideoFilters.MaxResolution)
+
 	}
 	return ""
 }
@@ -352,17 +363,66 @@ func preset(fast bool) string {
 	}
 }
 
-func inputDirFileStrategy(args EncodeStreamArgs) []any {
+type inputFileArgumentsStrategy interface {
+	CanHandle(ctx workflow.Context, args EncodeStreamArgs) bool
+	Process(ctx workflow.Context, args EncodeStreamArgs) []any
+}
+
+var inputFileArgumentsStrategies = []inputFileArgumentsStrategy{
+	mpeg2videoWithBrokenPTS{},
+}
+
+type DefaultInputFileArgumentsStategy struct {
+}
+
+func (_ DefaultInputFileArgumentsStategy) CanHandle(ctx workflow.Context, args EncodeStreamArgs) bool {
+	return true
+}
+
+func (_ DefaultInputFileArgumentsStategy) Process(ctx workflow.Context, args EncodeStreamArgs) []any {
+	return []any{}
+}
+
+type mpeg2videoWithBrokenPTS struct {
+}
+
+func (m mpeg2videoWithBrokenPTS) CanHandle(ctx workflow.Context, args EncodeStreamArgs) bool {
+	isBroken, err := CallIsMpeg2VideoWithBrokenDTS(ctx, args.InputID, args.InputNo, args.Stream)
+	if err != nil {
+		slog.Error("Failed to parse file", "err", err)
+		return false
+	}
+	return isBroken
+}
+func (m mpeg2videoWithBrokenPTS) Process(ctx workflow.Context, args EncodeStreamArgs) []any {
 	return []any{
-		//	"-itsoffset", fmt.Sprintf("%.3f", args.SrcProps.FirstPTS),
-		"-i", DirFile{
-			Dir:   filepath.Dir(storage.ResolveInputNumber(args.InputID, args.InputNo)),
-			Fname: filepath.Base(storage.ResolveInputNumber(args.InputID, args.InputNo)),
-		},
+		"-fflags",
+		"+genpts+igndts",
+		"-copyts",
+		"-start_at_zero",
 	}
 }
 
-func inputDirFileWithMapStrategy(args EncodeStreamArgs) []any {
+func selectInputFileArgumentsStrategy(ctx workflow.Context, args EncodeStreamArgs) inputFileArgumentsStrategy {
+	for _, strategy := range inputFileArgumentsStrategies {
+		if strategy.CanHandle(ctx, args) {
+			return strategy
+		}
+	}
+	return DefaultInputFileArgumentsStategy{}
+}
+
+func inputDirFileStrategy(ctx workflow.Context, args EncodeStreamArgs) []any {
+	inputArgsStrategy := selectInputFileArgumentsStrategy(ctx, args)
+	return append(
+		inputArgsStrategy.Process(ctx, args),
+		"-i", DirFile{
+			Dir:   filepath.Dir(storage.ResolveInputNumber(args.InputID, args.InputNo)),
+			Fname: filepath.Base(storage.ResolveInputNumber(args.InputID, args.InputNo)),
+		})
+}
+
+func inputDirFileWithMapStrategy(ctx workflow.Context, args EncodeStreamArgs) []any {
 	return []any{
 		//"-copyts",
 		"-i", DirFile{
@@ -373,8 +433,8 @@ func inputDirFileWithMapStrategy(args EncodeStreamArgs) []any {
 	}
 }
 
-func videoFilterStrategy(args EncodeStreamArgs, deinterlaceFilter string) []any {
-	scaleFilter := scaleFilter(args)
+func videoFilterStrategy(ctx workflow.Context, args EncodeStreamArgs, deinterlaceFilter string) []any {
+	scaleFilter := scaleFilter(ctx, args)
 	return []any{"-filter_complex",
 		strings.Join([]string{
 			interlaceIfNeeded("0:v:0", "postdeint", deinterlaceFilter),
@@ -490,6 +550,7 @@ func dashManifestStrategy(args EncodeStreamArgs) []any {
 		"-map_metadata", "-1",
 		//These are supposedly needed if ffmpeg does the dash packaging (not using e.g. mp4box)
 		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+		"-y",
 		DirFile{
 			Dir:   filepath.Dir(storage.TranscodedRepresentationFilePath(args)),
 			Fname: filepath.Base(storage.TranscodedRepresentationFilePath(args)),
@@ -503,7 +564,7 @@ func rawOutputStrategy(args EncodeStreamArgs) []any {
 	}
 }
 
-type InputStrategy func(args EncodeStreamArgs) []any
+type InputStrategy func(ctx workflow.Context, args EncodeStreamArgs) []any
 type FilterStrategy func(args EncodeStreamArgs, deinterlaceFilter string) []any
 type EncodingStrategy func(args EncodeStreamArgs) []any
 type LanguageStrategy func(args EncodeStreamArgs) []any
@@ -673,7 +734,7 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 		return err
 	}
 	var ffmpegArgs []any
-	ffmpegArgs = append(ffmpegArgs, m.inputStrategy(args)...)
+	ffmpegArgs = append(ffmpegArgs, m.inputStrategy(ctx, args)...)
 	if isVideoCodec(args.Codec) {
 		ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 			StartToCloseTimeout: 10 * time.Minute,
@@ -689,7 +750,7 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 		if err != nil {
 			return err
 		}
-		ffmpegArgs = append(ffmpegArgs, videoFilterStrategy(args, MediaInterlaceAnalysis.FilterRecommendation)...)
+		ffmpegArgs = append(ffmpegArgs, videoFilterStrategy(ctx, args, MediaInterlaceAnalysis.FilterRecommendation)...)
 	}
 	ffmpegArgs = append(ffmpegArgs, m.encodingStrategy(args)...)
 	ffmpegArgs = append(ffmpegArgs, m.languageStrategy(args)...)

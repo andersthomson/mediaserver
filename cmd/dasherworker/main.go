@@ -110,9 +110,11 @@ func main() {
 	w.RegisterWorkflow(dasherworker.HLSRenderMasterWF)
 	w.RegisterActivity(dasherworker.HLSRenderMaster)
 
+	w.RegisterActivity(dasherworker.GetStreamDimensions)
 	w.RegisterWorkflow(dasherworker.LinkHLSSourcesWF)
 	w.RegisterActivity(dasherworker.LinkSrcMedia)
 
+	w.RegisterActivity(dasherworker.IsMpeg2VideoWithBrokenDTS)
 	w.RegisterActivity(dasherworker.GenerateHLSLanguageFileActivity)
 	w.RegisterActivity(dasherworker.MP4BoxDashReady)
 	w.RegisterActivity(dasherworker.FileExists)

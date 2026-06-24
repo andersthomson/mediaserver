@@ -30,15 +30,16 @@ func GetSourceProperties(ctx context.Context, params ProbeParams) (SrcProperties
 
 	// We call ffprobe once, asking for both stream info (FPS) and frame info (GOP)
 	// Using CommandContext allows Temporal to kill the process if the activity times out.
-	cmd := exec.CommandContext(ctx, "/usr/bin/ffprobe",
-		"-v", "error",
+	args := []string{"-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries", "stream=r_frame_rate:frame=pts_time",
 		"-skip_frame", "nokey",
 		"-of", "json",
 		"-read_intervals", "%+20", // Limit probe to first 20 seconds
 		path,
-	)
+	}
+	fmt.Printf("%v\n", args)
+	cmd := exec.CommandContext(ctx, "/usr/bin/ffprobe", args...)
 
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
