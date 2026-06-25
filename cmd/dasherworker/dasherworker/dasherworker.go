@@ -24,13 +24,16 @@ type Storage struct {
 
 var storage *Storage
 
-func NewStorage() *Storage {
+func newStorage() *Storage {
 	s := &Storage{}
 	s.items = make(map[string]struct {
 		m   scrape.Msp
 		dir string
 	})
 	return s
+}
+func init() {
+	storage = newStorage()
 }
 
 func (s *Storage) Add(dir string, m scrape.Msp) {
@@ -51,9 +54,6 @@ func StorageAddWF(ctx workflow.Context, mspPath string) (string, error) {
 	M, err := CallActivityIO[string, scrape.Msp](ctx, ReadMspFile, filepath.Dir(mspPath), filepath.Base(mspPath))
 	if err != nil {
 		return "", err
-	}
-	if storage == nil {
-		storage = NewStorage()
 	}
 	storage.Add(filepath.Dir(mspPath), M)
 	return "", nil
@@ -107,7 +107,6 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	storage = NewStorage()
 
 	storage.Add(filepath.Dir(args.MspPath), M)
 
@@ -131,12 +130,8 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 		return "", Error("Child WF execution failed", "err", err)
 	}
 	run.Get(ctx, nil)
-	run = workflow.ExecuteChildWorkflow(ctx, FinalizeWF, FinalizeArgs{
-		InputID: M.Id,
-	})
-	if err := run.Get(ctx, nil); err != nil {
-		return "", Error("Child WF execution failed", "err", err)
-	}
+
+	CallFinalize(ctx, M.Id)
 	return "", nil
 }
 
@@ -153,7 +148,6 @@ func AudioEncodingWorkflow(ctx workflow.Context, args AudioEncodingWorkflowArgs)
 	defer slog.Info("Stop ", "W", "AudioEncoding", "msp", args.MspFile)
 
 	M, err := CallActivityIO[string, scrape.Msp](ctx, ReadMspFile, args.Dir, args.MspFile)
-	storage = NewStorage()
 
 	storage.Add(args.Dir, M)
 	idx := getFirstInputStreamWithPrefix(M.Inputs, "a")
@@ -225,7 +219,6 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 	if err != nil {
 		slog.Error("MSP read failed", "err", err)
 	}
-	storage = NewStorage()
 
 	storage.Add(args.Dir, M)
 
@@ -308,16 +301,13 @@ func scaleIfNeeded(in, out string, filter string) string {
 func scaleFilter(ctx workflow.Context, args EncodeStreamArgs) string {
 	if args.VideoFilters.MaxResolution.Width > 0 {
 		//return "scale='if(gt(iw,ih),min(" + strconv.Itoa(args.VideoFilters.MaxResolution.Width) + ",iw),-2)':'if(gt(iw,ih),-2,min(" + strconv.Itoa(args.VideoFilters.MaxResolution.Height) + ",ih))'"
-		sDim, err := CallActivityIO[GetStreamDimensionsArgs, StreamDimensions](ctx, GetStreamDimensions, GetStreamDimensionsArgs{
-			InputID: args.InputID,
-			InputNo: args.InputNo,
-			Stream:  args.Stream,
-		})
+		width, height, SAR, err := CallGetStreamDimensions(ctx, args.InputID, args.InputNo, args.Stream)
+
 		if err != nil {
 			slog.Error("Failed to get Stream dimensions", "err", err)
 			return ""
 		}
-		return scalingFilter(Resolution{Width: sDim.Width, Height: sDim.Height}, sDim.SAR, args.VideoFilters.MaxResolution)
+		return scalingFilter(Resolution{Width: width, Height: height}, SAR, args.VideoFilters.MaxResolution)
 
 	}
 	return ""

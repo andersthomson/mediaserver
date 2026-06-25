@@ -6,9 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strconv"
-
-	"go.temporal.io/sdk/activity"
 )
 
 type DirFile struct {
@@ -89,7 +86,8 @@ type EncodeArgs struct {
 }
 
 type EncodeResp struct {
-	FfmpegArgs FFMpegArgs
+	FfmpegArgs   FFMpegArgs
+	FfmpegStderr string
 }
 
 type EncodePostludeArgs struct {
@@ -105,69 +103,6 @@ type Encoder interface {
 	EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error)
 	Encode(ctx context.Context, args EncodeArgs) (EncodeResp, error)
 	EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error)
-}
-
-var _ Encoder = &RemoteEncode{}
-
-type RemoteEncode struct {
-	Hostname string
-	Port     int
-	Dir      string
-	Username string
-	Ffmpeg   string
-}
-
-func (r RemoteEncode) remoteDir(ctx context.Context, fname string) string {
-	return r.Dir + "/" + fname + "-" + activity.GetInfo(ctx).WorkflowExecution.ID
-}
-
-func (r *RemoteEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error) {
-	slog.Info("Start", "A", "RemoteEncode/Prelude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "RemoteEncode/Prelude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
-	//slog.Info("Remote/Prelude", "host", r.Hostname, "username", r.Username, "args", args)
-	localPath := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
-	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), args.FfmpegArgs.InputFname)
-	if err := RsyncActivity(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, true); err != nil {
-		return EncodePreludeResp{}, err
-	}
-	return EncodePreludeResp{
-		FfmpegArgs: args.FfmpegArgs,
-	}, nil
-}
-
-func (r *RemoteEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, error) {
-	slog.Info("Start", "A", "RemoteEncode/Encode", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "RemoteEncode/Encode", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
-	//slog.Info("Remote/Encode", "host", r.Hostname, "args", args)
-
-	_, err := FfmpegRemoteEncode(ctx, FfmpegEncodeArgs{
-		Ffmpeg:          r.Ffmpeg,
-		Args:            args.FfmpegArgs.Args,
-		Workdir:         r.remoteDir(ctx, args.FfmpegArgs.InputFname),
-		TotalDurationUs: args.TotalDurationUs,
-	}, r.Username, r.Hostname, r.Port)
-	if err != nil {
-		return EncodeResp{}, fmt.Errorf("Remote ffmpeg failed: %+v", err)
-	}
-
-	return EncodeResp{
-		FfmpegArgs: args.FfmpegArgs,
-	}, err
-}
-
-func (r *RemoteEncode) EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error) {
-	slog.Info("Start", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
-
-	//slog.Info("Remote/postlude", "host", r.Hostname, "args", args)
-	localPath := filepath.Join(args.FfmpegArgs.OutputDir, args.FfmpegArgs.OutputFname)
-	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), args.FfmpegArgs.OutputFname)
-	if err := RsyncActivity(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, false); err != nil {
-		return EncodePostludeResp{}, fmt.Errorf("Rsync to remote failed: %+v", err)
-	}
-	return EncodePostludeResp{
-		FfmpegArgs: args.FfmpegArgs,
-	}, nil
 }
 
 var _ Encoder = &LocalEncode{}

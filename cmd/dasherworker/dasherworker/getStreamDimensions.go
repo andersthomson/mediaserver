@@ -9,7 +9,13 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	"go.temporal.io/sdk/workflow"
 )
+
+func CallGetStreamDimensions(ctx workflow.Context, inputID string, inputNo int, stream string) (int, int, float64, error) {
+	sDim, err := CallActivityIO[any, StreamDimensions](ctx, GetStreamDimensions, GetStreamDimensionsArgs{InputID: inputID, InputNo: inputNo, Stream: stream})
+	return sDim.Width, sDim.Height, sDim.SAR, err
+}
 
 // MediaDimensions contains clean, pre-parsed float numeric values ready for calculation
 type StreamDimensions struct {

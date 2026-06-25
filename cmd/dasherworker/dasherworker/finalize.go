@@ -12,6 +12,7 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
+	"go.temporal.io/sdk/workflow"
 )
 
 // Check *.mp4 video files and return first file's properties (or an error)
@@ -87,6 +88,14 @@ func getVideoAndAudioStartTimes(ctx context.Context, inputID string) (float64, f
 	aStart, _ := GetStremStartTime(filepath.Join(dir, aInput.Filename), aInput.Stream)
 
 	return vStart, aStart
+}
+
+func CallFinalize(ctx workflow.Context, inputID string) error {
+	_, err := CallActivityIO[FinalizeArgs, FinalizeResp](ctx, Finalize, FinalizeArgs{InputID: inputID})
+	if err != nil {
+		return Error("CallFinalizefailed", "err", err)
+	}
+	return nil
 }
 
 type FinalizeArgs struct {
