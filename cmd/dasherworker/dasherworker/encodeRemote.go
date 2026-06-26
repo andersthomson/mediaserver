@@ -49,55 +49,35 @@ func (r *RemoteEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp,
 	slog.Info("Start", "A", "RemoteEncode/Encode", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
 	defer slog.Info("Stop ", "A", "RemoteEncode/Encode", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
 	//slog.Info("Remote/Encode", "host", r.Hostname, "args", args)
-
-	_, err := FfmpegRemoteEncode(ctx, FfmpegEncodeArgs{
-		Ffmpeg:          r.Ffmpeg,
-		Args:            args.FfmpegArgs.Args,
-		Workdir:         r.remoteDir(ctx, args.FfmpegArgs.InputFname),
-		TotalDurationUs: args.TotalDurationUs,
-	}, r.Username, r.Hostname, r.Port)
-	if err != nil {
-		return EncodeResp{}, fmt.Errorf("Remote ffmpeg failed: %+v", err)
-	}
-
-	return EncodeResp{
-		FfmpegArgs: args.FfmpegArgs,
-	}, err
-}
-
-func (r *RemoteEncode) EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error) {
-	slog.Info("Start", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
-
-	//slog.Info("Remote/postlude", "host", r.Hostname, "args", args)
-	localPath := filepath.Join(args.FfmpegArgs.OutputDir, args.FfmpegArgs.OutputFname)
-	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), args.FfmpegArgs.OutputFname)
-	if err := RsyncActivity(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, false); err != nil {
-		return EncodePostludeResp{}, fmt.Errorf("Rsync to remote failed: %+v", err)
-	}
-	return EncodePostludeResp{
-		FfmpegArgs: args.FfmpegArgs,
-	}, nil
-}
-
-func FfmpegRemoteEncode(ctx context.Context, args FfmpegEncodeArgs, user, host string, port int) (FfmpegEncodeResp, error) {
-	var resp FfmpegEncodeResp
+	/*
+	   	_, err := FfmpegRemoteEncode(ctx, FfmpegEncodeArgs{
+	   		Ffmpeg:          r.Ffmpeg,
+	   		Args:            args.FfmpegArgs.Args,
+	   		Workdir:         r.remoteDir(ctx, args.FfmpegArgs.InputFname),
+	   		TotalDurationUs: args.TotalDurationUs,
+	   	}, r.Username, r.Hostname, r.Port)
+	   	if err != nil {
+	   		return EncodeResp{}, fmt.Errorf("Remote ffmpeg failed: %+v", err)
+	   	}
+	   func FfmpegRemoteEncode(ctx context.Context, args FfmpegEncodeArgs, user, host string, port int) (FfmpegEncodeResp, error) {
+	*/
+	var resp EncodeResp
 
 	// 1. Construct the remote command
 	// We force '-progress -' to send progress data to stdout
 	// We use '-nostats' to keep stdout clean of the usual messy progress bar
 	remoteCmd := fmt.Sprintf("cd '%s' && %s %s -progress - -nostats",
-		args.Workdir,
-		args.Ffmpeg,
-		shellquote.Join(args.Args...),
+		r.remoteDir(ctx, args.FfmpegArgs.InputFname),
+		r.Ffmpeg,
+		shellquote.Join(args.FfmpegArgs.Args...),
 	)
 	slog.Info("FfmpegRemoteEncode", "remoteCmd", remoteCmd)
 	// 2. Prepare SSH command
 	var cmd *exec.Cmd
-	if user != "" {
-		cmd = exec.CommandContext(ctx, "ssh", "-p", strconv.Itoa(port), fmt.Sprintf("%s@%s", user, host), remoteCmd)
+	if r.Username != "" {
+		cmd = exec.CommandContext(ctx, "ssh", "-p", strconv.Itoa(r.Port), fmt.Sprintf("%s@%s", r.Username, r.Hostname), remoteCmd)
 	} else {
-		cmd = exec.CommandContext(ctx, "ssh", "-p", strconv.Itoa(port), fmt.Sprintf("%s", host), remoteCmd)
+		cmd = exec.CommandContext(ctx, "ssh", "-p", strconv.Itoa(r.Port), fmt.Sprintf("%s", r.Hostname), remoteCmd)
 	}
 
 	// Separate buffers for Stderr (logs)
@@ -129,7 +109,7 @@ func FfmpegRemoteEncode(ctx context.Context, args FfmpegEncodeArgs, user, host s
 					percent := (float64(currentUs) / float64(args.TotalDurationUs)) * 100
 					str := fmt.Sprintf("%4.1f%% completed", percent)
 					activity.RecordHeartbeat(ctx, str)
-					tlogger.Info("Progress", "F", "FfmpegRemoteEncode", "id", fmt.Sprintf("%s@%s#%d", user, host, port), "workdir", args.Workdir, "percent", percent)
+					tlogger.Info("Progress", "F", "FfmpegRemoteEncode", "id", fmt.Sprintf("%s@%s#%d", r.Username, r.Hostname, r.Port), "workdir", r.remoteDir(ctx, args.FfmpegArgs.InputFname), "percent", percent)
 				}
 			}
 		}
@@ -150,5 +130,20 @@ func FfmpegRemoteEncode(ctx context.Context, args FfmpegEncodeArgs, user, host s
 		slog.Error("RemoteFFmpeg error", "stderr", resp.Stderr)
 	}
 
-	return resp, err
+	return EncodeResp{}, err
+}
+
+func (r *RemoteEncode) EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error) {
+	slog.Info("Start", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
+	defer slog.Info("Stop ", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
+
+	//slog.Info("Remote/postlude", "host", r.Hostname, "args", args)
+	localPath := filepath.Join(args.FfmpegArgs.OutputDir, args.FfmpegArgs.OutputFname)
+	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), args.FfmpegArgs.OutputFname)
+	if err := RsyncActivity(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, false); err != nil {
+		return EncodePostludeResp{}, fmt.Errorf("Rsync to remote failed: %+v", err)
+	}
+	return EncodePostludeResp{
+		FfmpegArgs: args.FfmpegArgs,
+	}, nil
 }

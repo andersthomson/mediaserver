@@ -774,10 +774,11 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 
 	var encodePreludeResp EncodePreludeResp
 	var a *LocalEncode
+	ffmpegArgsString := NewFFMpegArgs(ffmpegArgs)
 	//spew.Dump(ffmpegArgs)
 	err = workflow.ExecuteActivity(ctx2, a.EncodePrelude, EncodePreludeArgs{
 		SessionID:  sessionID,
-		FfmpegArgs: NewFFMpegArgs(ffmpegArgs),
+		FfmpegArgs: ffmpegArgsString,
 	}).Get(ctx2, &encodePreludeResp)
 	if err != nil {
 		slog.Error(" FfmpegEncodePreludefailed", "err", err.Error())
@@ -787,7 +788,7 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 	var ffmpegEncodeResp EncodeResp
 	err = workflow.ExecuteActivity(ctx2, a.Encode, EncodeArgs{
 		SessionID:       sessionID,
-		FfmpegArgs:      encodePreludeResp.FfmpegArgs,
+		FfmpegArgs:      ffmpegArgsString,
 		TotalDurationUs: duration,
 	}).Get(ctx2, &ffmpegEncodeResp)
 	if err != nil {
@@ -797,7 +798,7 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 
 	err = workflow.ExecuteActivity(ctx2, a.EncodePostlude, EncodePostludeArgs{
 		SessionID:  sessionID,
-		FfmpegArgs: ffmpegEncodeResp.FfmpegArgs,
+		FfmpegArgs: ffmpegArgsString,
 	}).Get(ctx2, nil)
 
 	if err := m.packager(ctx, args); err != nil {

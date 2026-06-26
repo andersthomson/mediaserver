@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 )
 
@@ -86,8 +85,8 @@ type EncodeArgs struct {
 }
 
 type EncodeResp struct {
-	FfmpegArgs   FFMpegArgs
-	FfmpegStderr string
+	Stderr   string
+	Exitcode int
 }
 
 type EncodePostludeArgs struct {
@@ -103,83 +102,4 @@ type Encoder interface {
 	EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error)
 	Encode(ctx context.Context, args EncodeArgs) (EncodeResp, error)
 	EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error)
-}
-
-var _ Encoder = &LocalEncode{}
-
-type LocalEncode struct {
-}
-
-// Gives the workdir for a local ffmpeg encode.
-func (_ LocalEncode) workDir(sessionID string, FfmpegArgs FFMpegArgs) string {
-	return filepath.Join(FfmpegArgs.OutputDir, ".sessionID-"+sessionID)
-}
-
-func (l LocalEncode) makeWorkDir(sessionID string, FfmpegArgs FFMpegArgs) string {
-	wd := l.workDir(sessionID, FfmpegArgs)
-	if err := os.Mkdir(wd, 0755); err != nil {
-		slog.Error("Failed to create ffmpeg working dir", "err", err)
-	} else {
-		slog.Info("Created ffmpeg workdir", "dir", wd)
-	}
-	return wd
-}
-
-func (l LocalEncode) inputSymlink(sessionID string, ffmpegargs FFMpegArgs) string {
-	return filepath.Join(l.workDir(sessionID, ffmpegargs), ffmpegargs.InputFname)
-}
-
-func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error) {
-	slog.Info("Start", "A", "LocalEncode/Prelude", "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "LocalEncode/Prelude", "inputFname", args.FfmpegArgs.InputFname)
-	//slog.Info("local/prelude", "args", args)
-	slog.Info("local/prelude: symlinking input file")
-	_ = l.makeWorkDir(args.SessionID, args.FfmpegArgs)
-	newName := l.inputSymlink(args.SessionID, args.FfmpegArgs)
-	oldName := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
-
-	if err := os.Symlink(oldName, newName); err != nil {
-		slog.Error("Failed to symlink input file", "oldname", oldName, "newname", newName, "err", err)
-		return EncodePreludeResp{}, fmt.Errorf("Failed to symlink input file (%s): %s", args.FfmpegArgs.InputFname, err)
-	}
-	return EncodePreludeResp{
-		FfmpegArgs: args.FfmpegArgs,
-	}, nil
-}
-func (l *LocalEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, error) {
-	slog.Info("Start", "A", "LocalEncode/Encode", "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "LocalEncode/Encode", "inputFname", args.FfmpegArgs.InputFname)
-	slog.Info("local/Encode", "args", args)
-	_, err := FfmpegLocalEncode(ctx, FfmpegEncodeArgs{
-		Ffmpeg:          "/usr/bin/ffmpeg",
-		Args:            args.FfmpegArgs.Args,
-		Workdir:         l.workDir(args.SessionID, args.FfmpegArgs),
-		TotalDurationUs: args.TotalDurationUs,
-	})
-	return EncodeResp{
-		FfmpegArgs: args.FfmpegArgs,
-	}, err
-}
-func (l *LocalEncode) EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error) {
-	slog.Info("Start", "A", "LocalEncode/Postlude", "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "LocalEncode/Postlude", "inputFname", args.FfmpegArgs.InputFname)
-
-	//slog.Info("local/postlude", "args", args)
-	//slog.Info("local/postlude: removing input symlink")
-	inputSymlink := l.inputSymlink(args.SessionID, args.FfmpegArgs)
-	workDir := l.workDir(args.SessionID, args.FfmpegArgs)
-	outputPath := filepath.Join(workDir, args.FfmpegArgs.OutputFname)
-	targetOutputPath := filepath.Join(args.FfmpegArgs.OutputDir, args.FfmpegArgs.OutputFname)
-	if err := os.Remove(inputSymlink); err != nil {
-		return EncodePostludeResp{}, Error("Failed to remove symlink to input file", "file", inputSymlink, "err", err)
-	}
-	if err := os.Rename(outputPath, targetOutputPath); err != nil {
-		return EncodePostludeResp{}, Error("Failed to rename ffmpeg result file into place", "outputPath", outputPath, "targetOutputPath", targetOutputPath, "err", err)
-	}
-	if err := os.Remove(workDir); err != nil {
-		return EncodePostludeResp{}, Error("Failed to remove ffmpeg workdir", "workdir", workDir, "err", err)
-	}
-	return EncodePostludeResp{
-		FfmpegArgs: args.FfmpegArgs,
-	}, nil
 }

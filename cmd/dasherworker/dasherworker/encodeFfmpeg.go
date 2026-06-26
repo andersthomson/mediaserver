@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,21 +18,59 @@ import (
 	"golang.org/x/time/rate"
 )
 
-type FfmpegEncodeArgs struct {
-	Ffmpeg          string
-	Args            []string
-	Workdir         string
-	TotalDurationUs int64
+var _ Encoder = &LocalEncode{}
+
+type LocalEncode struct {
 }
 
-type FfmpegEncodeResp struct {
-	Exitcode int
-	Stdout   string
-	Stderr   string
+// Gives the workdir for a local ffmpeg encode.
+func (_ LocalEncode) workDir(sessionID string, FfmpegArgs FFMpegArgs) string {
+	return filepath.Join(FfmpegArgs.OutputDir, ".sessionID-"+sessionID)
 }
 
-func FfmpegLocalEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncodeResp, error) {
-	var resp FfmpegEncodeResp
+func (l LocalEncode) makeWorkDir(sessionID string, FfmpegArgs FFMpegArgs) string {
+	wd := l.workDir(sessionID, FfmpegArgs)
+	if err := os.Mkdir(wd, 0755); err != nil {
+		slog.Error("Failed to create ffmpeg working dir", "err", err)
+	} else {
+		slog.Info("Created ffmpeg workdir", "dir", wd)
+	}
+	return wd
+}
+
+func (l LocalEncode) inputSymlink(sessionID string, ffmpegargs FFMpegArgs) string {
+	return filepath.Join(l.workDir(sessionID, ffmpegargs), ffmpegargs.InputFname)
+}
+
+func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error) {
+	slog.Info("Start", "A", "LocalEncode/Prelude", "inputFname", args.FfmpegArgs.InputFname)
+	defer slog.Info("Stop ", "A", "LocalEncode/Prelude", "inputFname", args.FfmpegArgs.InputFname)
+	//slog.Info("local/prelude", "args", args)
+	slog.Info("local/prelude: symlinking input file")
+	_ = l.makeWorkDir(args.SessionID, args.FfmpegArgs)
+	newName := l.inputSymlink(args.SessionID, args.FfmpegArgs)
+	oldName := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
+
+	if err := os.Symlink(oldName, newName); err != nil {
+		slog.Error("Failed to symlink input file", "oldname", oldName, "newname", newName, "err", err)
+		return EncodePreludeResp{}, fmt.Errorf("Failed to symlink input file (%s): %s", args.FfmpegArgs.InputFname, err)
+	}
+	return EncodePreludeResp{
+		FfmpegArgs: args.FfmpegArgs,
+	}, nil
+}
+func (l *LocalEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, error) {
+	slog.Info("Start", "A", "LocalEncode/Encode", "inputFname", args.FfmpegArgs.InputFname)
+	defer slog.Info("Stop ", "A", "LocalEncode/Encode", "inputFname", args.FfmpegArgs.InputFname)
+	slog.Info("local/Encode", "args", args)
+	/*	_, err := FfmpegLocalEncode(ctx, FfmpegEncodeArgs{
+			Ffmpeg:          "/usr/bin/ffmpeg",
+			Args:            args.FfmpegArgs.Args,
+			Workdir:         l.workDir(args.SessionID, args.FfmpegArgs),
+			TotalDurationUs: args.TotalDurationUs,
+		})
+	func FfmpegLocalEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncodeResp, error) {*/
+	var resp EncodeResp
 
 	// Create an extra pipe for progress only
 	pr, pw, _ := os.Pipe()
@@ -39,17 +78,17 @@ func FfmpegLocalEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncode
 
 	var newArgs []string
 	if args.TotalDurationUs != 0 {
-		newArgs = append(args.Args, []string{"-progress", "pipe:3"}...)
+		newArgs = append(args.FfmpegArgs.Args, []string{"-progress", "pipe:3"}...)
 	} else {
-		newArgs = args.Args
+		newArgs = args.FfmpegArgs.Args
 	}
 	spew.Dump(newArgs)
-	cmd := exec.CommandContext(ctx, args.Ffmpeg, newArgs...)
+	cmd := exec.CommandContext(ctx, "/usr/bin/ffmpeg", newArgs...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	cmd.ExtraFiles = []*os.File{pw}
-	cmd.Dir = args.Workdir
+	cmd.Dir = l.workDir(args.SessionID, args.FfmpegArgs)
 
 	// 3. Start progress parser in background
 	if args.TotalDurationUs != 0 {
@@ -65,7 +104,7 @@ func FfmpegLocalEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncode
 						currentUs, _ := strconv.ParseInt(parts[1], 10, 64)
 						percent := (float64(currentUs) / float64(args.TotalDurationUs)) * 100
 						activity.RecordHeartbeat(ctx, fmt.Sprintf("%4.1f percent complete", percent))
-						tlogger.Info("Progress", "F", "FfmpegLocalEncode", "workdir", args.Workdir, "percent", percent)
+						tlogger.Info("Progress", "F", "FfmpegLocalEncode", "workdir", l.workDir(args.SessionID, args.FfmpegArgs), "percent", percent)
 					}
 				}
 			}
@@ -82,7 +121,6 @@ func FfmpegLocalEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncode
 	}
 
 	// Capture outputs
-	resp.Stdout = stdout.String()
 	resp.Stderr = stderr.String()
 	if resp.Stderr != "" {
 		slog.Error("LocalFFmpeg error", "stderr", resp.Stderr)
@@ -101,5 +139,41 @@ func FfmpegLocalEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncode
 		exitCode = cmd.ProcessState.ExitCode()
 	}
 	resp.Exitcode = exitCode
-	return resp, nil
+	return EncodeResp{}, err
+}
+func (l *LocalEncode) EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error) {
+	slog.Info("Start", "A", "LocalEncode/Postlude", "inputFname", args.FfmpegArgs.InputFname)
+	defer slog.Info("Stop ", "A", "LocalEncode/Postlude", "inputFname", args.FfmpegArgs.InputFname)
+
+	//slog.Info("local/postlude", "args", args)
+	//slog.Info("local/postlude: removing input symlink")
+	inputSymlink := l.inputSymlink(args.SessionID, args.FfmpegArgs)
+	workDir := l.workDir(args.SessionID, args.FfmpegArgs)
+	outputPath := filepath.Join(workDir, args.FfmpegArgs.OutputFname)
+	targetOutputPath := filepath.Join(args.FfmpegArgs.OutputDir, args.FfmpegArgs.OutputFname)
+	if err := os.Remove(inputSymlink); err != nil {
+		return EncodePostludeResp{}, Error("Failed to remove symlink to input file", "file", inputSymlink, "err", err)
+	}
+	if err := os.Rename(outputPath, targetOutputPath); err != nil {
+		return EncodePostludeResp{}, Error("Failed to rename ffmpeg result file into place", "outputPath", outputPath, "targetOutputPath", targetOutputPath, "err", err)
+	}
+	if err := os.Remove(workDir); err != nil {
+		return EncodePostludeResp{}, Error("Failed to remove ffmpeg workdir", "workdir", workDir, "err", err)
+	}
+	return EncodePostludeResp{
+		FfmpegArgs: args.FfmpegArgs,
+	}, nil
+}
+
+type FfmpegEncodeArgs struct {
+	Ffmpeg          string
+	Args            []string
+	Workdir         string
+	TotalDurationUs int64
+}
+
+type FfmpegEncodeResp struct {
+	Exitcode int
+	Stdout   string
+	Stderr   string
 }
