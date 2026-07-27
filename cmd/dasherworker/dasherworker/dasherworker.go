@@ -154,7 +154,7 @@ func AudioEncodingWorkflow(ctx workflow.Context, args AudioEncodingWorkflowArgs)
 	if idx == -1 {
 		return AudioEncodingWorkflowResp{}, Error("Found no audio stream source specified", "input", M)
 	}
-	Eargs := NewEncodeStreamArgs(&EncodeStreamArgs{
+	Eargs := NewEncodeStreamArgs(ctx, &EncodeStreamArgs{
 		InputID:  M.Id,
 		InputNo:  idx,
 		Stream:   M.Inputs[idx].Stream,
@@ -232,7 +232,7 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 		if target.profile == "low" {
 			maxRes = WithMaxResolution(Max720p)
 		}
-		Eargs := NewEncodeStreamArgs(&EncodeStreamArgs{
+		Eargs := NewEncodeStreamArgs(ctx, &EncodeStreamArgs{
 			InputID: M.Id,
 			InputNo: idx,
 			Stream:  M.Inputs[idx].Stream,
@@ -660,7 +660,8 @@ type EncodeStreamArgs struct {
 	DstProps CommonProperties
 }
 
-func NewEncodeStreamArgs(base *EncodeStreamArgs, opts ...TranscodeOption) *EncodeStreamArgs {
+func NewEncodeStreamArgs(ctx workflow.Context, base *EncodeStreamArgs, opts ...TranscodeOption) *EncodeStreamArgs {
+	//Apply provided functions
 	for _, opt := range opts {
 		opt(base)
 	}
