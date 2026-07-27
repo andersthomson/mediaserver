@@ -263,11 +263,6 @@ func FinalizeWF(ctx workflow.Context, args FinalizeArgs) (FinalizeResp, error) {
 	return CallActivityIO[FinalizeArgs, FinalizeResp](ctx, Finalize, args)
 }
 
-type CommonProperties struct {
-	GopFrames float64
-	DashMs    float64
-}
-
 func crf(codec string, profile string) string {
 	type crfTbl map[string]map[string]string
 	crfT := crfTbl{
@@ -643,6 +638,11 @@ func representation(args EncodeStreamArgs) string {
 	} else {
 		return fmt.Sprintf("%s", args.Codec)
 	}
+}
+
+type CommonProperties struct {
+	GopFrames int
+	DashMs    float64
 }
 
 type EncodeStreamArgs struct {
