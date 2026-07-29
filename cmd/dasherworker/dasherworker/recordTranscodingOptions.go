@@ -5,14 +5,25 @@ import (
 	"os"
 
 	"github.com/davecgh/go-spew/spew"
+	"go.temporal.io/sdk/workflow"
 )
 
-type RecordTranscodingOptionsArgs struct {
-	Args       EncodeStreamArgs
-	Ffmpegargs FFMpegArgs
+func CallRecordTranscodingOptions(ctx workflow.Context, args EncodeStreamArgs, ffmpegargs FFMpegArgs, stderr string) error {
+	_, err := CallActivityFast[any, string](ctx, RecordTranscodingOptions, args, ffmpegargs, stderr)
+	return err
 }
 
-func RecordTranscodingOptions(_ context.Context, a RecordTranscodingOptionsArgs) (string, error) {
-	buf := spew.Sdump(a.Ffmpegargs)
-	return "", os.WriteFile(storage.DasherReadyRepresentationTranscodingLogFilePath(a.Args), []byte(buf), 0600)
+func RecordTranscodingOptions(_ context.Context, args EncodeStreamArgs, ffmpegargs FFMpegArgs, stderr string) (string, error) {
+	type Log struct {
+		EncodeStream EncodeStreamArgs
+		Ffmpegargs   FFMpegArgs
+		Stderr       string
+	}
+	log := Log{
+		EncodeStream: args,
+		Ffmpegargs:   ffmpegargs,
+		Stderr:       stderr,
+	}
+	buf := spew.Sdump(log)
+	return "", os.WriteFile(storage.DasherReadyRepresentationTranscodingLogFilePath(args), []byte(buf), 0600)
 }

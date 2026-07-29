@@ -432,9 +432,9 @@ func dashMs(g GopMs) float64 {
 	return math.Max(1.0, math.Round(4.0/gopSec)) * gopSec * 1000
 }
 
-var DefaultGopFrames float64 = 96.0
+var DefaultGopFrames int = 96
 
-func gopFrames(ctx workflow.Context, inputId string) float64 {
+func gopFrames(ctx workflow.Context, inputId string) int {
 	props, _ := CallActivityIO[string, GetOneTargetsPropertiesResp](ctx, "GetOneTargetsProperties", storage.ProdDir(inputId))
 	if !props.Found {
 		slog.Info("Using GopFrames", "default", DefaultGopFrames)
@@ -458,8 +458,8 @@ func languageFromArgs(args EncodeStreamArgs) []any {
 func nullStrategy(_ EncodeStreamArgs) []any {
 	return []any{}
 }
-func x264EncodingStrategy(gopFrames float64, crf string, bitrate string) func(args EncodeStreamArgs) []any {
-	gopFramesStr := strconv.FormatFloat(gopFrames, 'f', 0, 64)
+func x264EncodingStrategy(gopFrames int, crf string, bitrate string) func(args EncodeStreamArgs) []any {
+	gopFramesStr := fmt.Sprintf("%d", gopFrames)
 	return func(args EncodeStreamArgs) []any {
 		ffmpegArgs := []any{
 			"-c:v", "libx264",
@@ -476,14 +476,14 @@ func x264EncodingStrategy(gopFrames float64, crf string, bitrate string) func(ar
 		return ffmpegArgs
 	}
 }
-func x265EncodingStrategy(gopFrames float64, crf string, bitrate string) func(args EncodeStreamArgs) []any {
-	gopFramesStr := strconv.FormatFloat(gopFrames, 'f', 0, 64)
+func x265EncodingStrategy(gopFrames int, crf string, bitrate string) func(args EncodeStreamArgs) []any {
+	gopFramesStr := fmt.Sprintf("%d", gopFrames)
 	return func(args EncodeStreamArgs) []any {
 		ffmpegArgs := []any{
 			"-c:v", "libx265",
 			"-profile:v", "main10",
 			"-level:v", "5.1",
-			"-pix_fmt", "yuv420p",
+			"-pix_fmt", "yuv420p10le",
 			"-crf:v", crf,
 			"-preset:v", args.Preset,
 		}
@@ -705,7 +705,7 @@ func PipelineFactory(ctx workflow.Context, args EncodeStreamArgs) ManagedPipelin
 	}
 	res.durationDeriver = durationDeriverFfmpeg
 	res.encoderQueue = QueueSelectorLocal
-	res.packager = MP4BoxPackager(strconv.FormatFloat(dashMs(GopMs(gopFrames(ctx, args.InputID)/25*1000)), 'f', 0, 64))
+	res.packager = MP4BoxPackager(strconv.FormatFloat(dashMs(GopMs(float64(gopFrames(ctx, args.InputID))/25*1000)), 'f', 0, 64))
 	return res
 }
 
@@ -775,11 +775,11 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 
 	var encodePreludeResp EncodePreludeResp
 	var a *LocalEncode
-	ffmpegArgsString := NewFFMpegArgs(ffmpegArgs)
+	ffmpegArgsExpanded := NewFFMpegArgs(ffmpegArgs)
 	//spew.Dump(ffmpegArgs)
 	err = workflow.ExecuteActivity(ctx2, a.EncodePrelude, EncodePreludeArgs{
 		SessionID:  sessionID,
-		FfmpegArgs: ffmpegArgsString,
+		FfmpegArgs: ffmpegArgsExpanded,
 	}).Get(ctx2, &encodePreludeResp)
 	if err != nil {
 		slog.Error(" FfmpegEncodePreludefailed", "err", err.Error())
@@ -789,7 +789,7 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 	var ffmpegEncodeResp EncodeResp
 	err = workflow.ExecuteActivity(ctx2, a.Encode, EncodeArgs{
 		SessionID:       sessionID,
-		FfmpegArgs:      ffmpegArgsString,
+		FfmpegArgs:      ffmpegArgsExpanded,
 		TotalDurationUs: duration,
 	}).Get(ctx2, &ffmpegEncodeResp)
 	if err != nil {
@@ -799,17 +799,14 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 
 	err = workflow.ExecuteActivity(ctx2, a.EncodePostlude, EncodePostludeArgs{
 		SessionID:  sessionID,
-		FfmpegArgs: ffmpegArgsString,
+		FfmpegArgs: ffmpegArgsExpanded,
 	}).Get(ctx2, nil)
 
 	if err := m.packager(ctx, args); err != nil {
 		return Error("Packager failed", "err", err)
 	}
-	_, err = CallActivityFast[RecordTranscodingOptionsArgs, string](ctx, "RecordTranscodingOptions", RecordTranscodingOptionsArgs{
-		Args:       args,
-		Ffmpegargs: NewFFMpegArgs(ffmpegArgs),
-	})
-	if err != nil {
+
+	if err := CallRecordTranscodingOptions(ctx, args, ffmpegArgsExpanded, ffmpegEncodeResp.Stderr); err != nil {
 		return err
 	}
 	return nil
