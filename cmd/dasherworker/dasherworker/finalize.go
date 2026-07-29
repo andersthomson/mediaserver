@@ -123,7 +123,8 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	var mp4BoxInputs []string
 	var inputFiles []string
 	var codecs []string
-	var gopMs GopMs
+	var gopFrames int
+	var fps float64
 
 	for _, match := range matches {
 		lang, err := GetStreamZeroLanguage(match)
@@ -144,11 +145,12 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 			if err != nil {
 				return FinalizeResp{}, Error("Failed to get properties", "file", match, "err", err)
 			}
-			if gopMs != 0 && gopMs != props.GopMilliSec {
-				return FinalizeResp{}, Error("Got different gopMs", "previous", gopMs, "new", props.GopMilliSec)
+			if gopFrames != 0 && gopFrames != props.GopFrames {
+				return FinalizeResp{}, Error("Got different gopFrames", "previous", gopFrames, "new", props.GopFrames)
 			}
-			gopMs = props.GopMilliSec
-			slog.Info("Setting gopMs", "match", match, "gop", gopMs)
+			gopFrames = props.GopFrames
+			fps = props.Fps
+			slog.Info("Setting gopFrames", "match", match, "gopFrames", gopFrames)
 		}
 		if idx := slices.Index(codecs, codec); idx == -1 {
 			codecs = append(codecs, codec)
@@ -162,14 +164,17 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 
 		inputFiles = append(inputFiles, filepath.Base(match))
 	}
-	if gopMs == 0 {
+	if gopFrames == 0 {
 		return FinalizeResp{}, Error("Failed to find a file with video", "matches", matches)
 	}
-	spew.Dump(gopMs)
-	spew.Dump(gopMs.String())
+	fpsI, err := FloatToInt(fps)
+	if err != nil {
+		return FinalizeResp{}, Error("File to put into mpd manifest has fractional fps", "fps", fps, "matches", matches)
+	}
+	spew.Dump(gopFrames)
 
 	//args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
-	boxArgs := []string{"-dash", gopMs.String(), "-rap", "-flat", "-profile", "onDemand", "-out", "manifest.mpd"}
+	boxArgs := []string{"-dash", dashMs2(gopFrames, fpsI), "-rap", "-flat", "-profile", "onDemand", "-out", "manifest.mpd"}
 	boxArgs = append(boxArgs, mp4BoxInputs...)
 	if err := MP4Box(ctx, targetDir, boxArgs); err != nil {
 		return FinalizeResp{}, err

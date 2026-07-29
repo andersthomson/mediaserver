@@ -427,9 +427,10 @@ func videoFilterStrategy(ctx workflow.Context, args EncodeStreamArgs, deinterlac
 		"-map", "[out]"}
 }
 
-func dashMs(g GopMs) float64 {
-	gopSec := float64(g / 1000)
-	return math.Max(1.0, math.Round(4.0/gopSec)) * gopSec * 1000
+func dashMs2(gopFrames int, fps int) string {
+	gopSec := float64(gopFrames / fps)
+	dashMs := math.Max(1.0, math.Round(4.0/gopSec)) * gopSec * 1000
+	return strconv.FormatFloat(dashMs, 'f', 0, 64)
 }
 
 var DefaultGopFrames int = 96
@@ -705,7 +706,7 @@ func PipelineFactory(ctx workflow.Context, args EncodeStreamArgs) ManagedPipelin
 	}
 	res.durationDeriver = durationDeriverFfmpeg
 	res.encoderQueue = QueueSelectorLocal
-	res.packager = MP4BoxPackager(strconv.FormatFloat(dashMs(GopMs(float64(gopFrames(ctx, args.InputID))/25*1000)), 'f', 0, 64))
+	res.packager = MP4BoxPackager(dashMs2(gopFrames(ctx, args.InputID), 25))
 	return res
 }
 

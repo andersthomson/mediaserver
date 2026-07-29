@@ -15,9 +15,9 @@ import (
 )
 
 type SrcProperties struct {
-	Fps         float64
-	GopMilliSec GopMs
-	GopFrames   int
+	Fps float64
+	//GopMilliSec GopMs
+	GopFrames int
 }
 type ProbeParams struct {
 	Filename string
@@ -94,8 +94,8 @@ func GetSourceProperties(ctx context.Context, params ProbeParams) (SrcProperties
 
 	spew.Dump(calculatedFPS)
 	return SrcProperties{
-		Fps:         calculatedFPS,
-		GopMilliSec: GopMs(diff * 1000),
-		GopFrames:   int(diff * calculatedFPS),
+		Fps: calculatedFPS,
+		//GopMilliSec: GopMs(diff * 1000),
+		GopFrames: int(diff * calculatedFPS),
 	}, nil
 }
