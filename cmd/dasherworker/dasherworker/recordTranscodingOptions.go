@@ -2,28 +2,31 @@ package dasherworker
 
 import (
 	"context"
-	"os"
 
-	"github.com/davecgh/go-spew/spew"
 	"go.temporal.io/sdk/workflow"
 )
 
-func CallRecordTranscodingOptions(ctx workflow.Context, args EncodeStreamArgs, ffmpegargs FFMpegArgs, stderr string) error {
-	_, err := CallActivityFast[any, string](ctx, RecordTranscodingOptions, args, ffmpegargs, stderr)
+type TranscodingOptionsRecord struct {
+	EncodeStream EncodeStreamArgs
+	Ffmpegargs   FFMpegArgs
+	Stderr       string
+}
+
+func CallRecordTranscodingOptions(ctx workflow.Context, t TranscodingOptionsRecord) error {
+	_, err := CallActivityFast[any, string](ctx, RecordTranscodingOptions, t)
 	return err
 }
 
-func RecordTranscodingOptions(_ context.Context, args EncodeStreamArgs, ffmpegargs FFMpegArgs, stderr string) (string, error) {
-	type Log struct {
-		EncodeStream EncodeStreamArgs
-		Ffmpegargs   FFMpegArgs
-		Stderr       string
-	}
-	log := Log{
-		EncodeStream: args,
-		Ffmpegargs:   ffmpegargs,
-		Stderr:       stderr,
-	}
-	buf := spew.Sdump(log)
-	return "", os.WriteFile(storage.DasherReadyRepresentationTranscodingLogFilePath(args), []byte(buf), 0600)
+func RecordTranscodingOptions(_ context.Context, t TranscodingOptionsRecord) (string, error) {
+	return "", SaveStructToJSON(storage.DasherReadyRepresentationTranscodingLogFilePath(t.EncodeStream), t)
+}
+
+func CallLoadTranscodingOptions(ctx workflow.Context, e EncodeStreamArgs) (TranscodingOptionsRecord, error) {
+	return CallActivityFast[EncodeStreamArgs, TranscodingOptionsRecord](ctx, LoadTranscodingOptions, e)
+}
+
+func LoadTranscodingOptions(_ context.Context, e EncodeStreamArgs) (TranscodingOptionsRecord, error) {
+	var t TranscodingOptionsRecord
+	err := LoadJSONToStruct(storage.DasherReadyRepresentationTranscodingLogFilePath(e), &t)
+	return t, err
 }

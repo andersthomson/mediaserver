@@ -1,9 +1,11 @@
 package dasherworker
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
+	"os"
 
 	"github.com/pkg/errors"
 )
@@ -17,6 +19,7 @@ func Error(msg string, args ...any) error {
 	return fmt.Errorf("ERROR: %s ; %v", msg, args)
 }
 
+// FloatToInt converts a whole number float64 to int.
 func FloatToInt(f float64) (int, error) {
 	// 1. Check for NaN or Infinities (unusable float states)
 	if math.IsNaN(f) || math.IsInf(f, 0) {
@@ -41,4 +44,41 @@ func FloatToInt(f float64) (int, error) {
 	}
 
 	return int(rounded), nil
+}
+
+func SaveStructToJSON(filename string, data interface{}) error {
+	// 1. Convert struct to pretty-printed JSON bytes
+	// MarshallIndent adds spacing and line breaks for readability on disk
+	jsonData, err := json.MarshalIndent(data, "", "    ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal struct to JSON: %w", err)
+	}
+
+	// 2. Write bytes to disk
+	err = os.WriteFile(filename, jsonData, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to write JSON file to disk: %w", err)
+	}
+
+	return nil
+}
+
+func LoadJSONToStruct(filename string, target interface{}) error {
+	// 1. Read the raw bytes from the file
+	jsonData, err := os.ReadFile(filename)
+	if err != nil {
+		// Provide a helpful error if the file simply doesn't exist
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("file %s not found: %w", filename, err)
+		}
+		return fmt.Errorf("failed to read file from disk: %w", err)
+	}
+
+	// 2. Parse the bytes into the struct pointer
+	err = json.Unmarshal(jsonData, target)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+
+	return nil
 }

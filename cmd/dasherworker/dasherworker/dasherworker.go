@@ -807,7 +807,12 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 		return Error("Packager failed", "err", err)
 	}
 
-	if err := CallRecordTranscodingOptions(ctx, args, ffmpegArgsExpanded, ffmpegEncodeResp.Stderr); err != nil {
+	t := TranscodingOptionsRecord{
+		EncodeStream: args,
+		Ffmpegargs:   ffmpegArgsExpanded,
+		Stderr:       ffmpegEncodeResp.Stderr,
+	}
+	if err := CallRecordTranscodingOptions(ctx, t); err != nil {
 		return err
 	}
 	return nil
