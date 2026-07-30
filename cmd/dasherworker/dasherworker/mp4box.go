@@ -114,11 +114,49 @@ func MP4Box(ctx context.Context, dir string, args []string) error {
 	}
 	return nil
 }
+func MP4BoxDashReadyStrategy(args EncodeStreamArgs, workdir string, dashMs string) MP4BoxDashReadyArgs {
+	drFilePath := storage.DasherReadyRepresentationFilePath(args)
+	drFname := filepath.Base(drFilePath)
+	drDir := filepath.Dir(drFilePath)
+
+	transcodedFilePath := storage.TranscodedRepresentationFilePath(args)
+	transcodedFname := filepath.Base(transcodedFilePath)
+
+	manifestFilePath := storage.DasherReadyRepresentationManifestFilePath(args)
+	manifestFname := filepath.Base(manifestFilePath)
+
+	boxArgs := []string{
+		"-dash", dashMs,
+		"-rap",
+		"-profile",
+		"onDemand",
+		"-segment-name", drFname,
+		"-out", manifestFname,
+		transcodedFname}
+
+	return MP4BoxDashReadyArgs{
+		EncodeArgs:         args,
+		TranscodedFilePath: transcodedFilePath,
+		ManifestFilePath:   manifestFilePath,
+		DrFname:            drFname,
+		DrDir:              drDir,
+		DrFilePath:         drFilePath,
+		WorkDir:            workdir,
+		DashMs:             dashMs,
+		MP4BoxArgs:         boxArgs,
+	}
+}
 
 type MP4BoxDashReadyArgs struct {
-	EncodeArgs EncodeStreamArgs
-	WorkDir    string
-	DashMs     string
+	EncodeArgs         EncodeStreamArgs
+	TranscodedFilePath string
+	ManifestFilePath   string
+	DrFname            string
+	DrFilePath         string
+	DrDir              string
+	WorkDir            string
+	DashMs             string
+	MP4BoxArgs         []string
 }
 
 type MP4BoxDashReadyResp struct {
@@ -127,44 +165,26 @@ type MP4BoxDashReadyResp struct {
 }
 
 func MP4BoxDashReady(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
-	drFilePath := storage.DasherReadyRepresentationFilePath(args.EncodeArgs)
-	drFname := filepath.Base(drFilePath)
-	drDir := filepath.Dir(drFilePath)
 
-	transcodedFilePath := storage.TranscodedRepresentationFilePath(args.EncodeArgs)
-	transcodedFname := filepath.Base(transcodedFilePath)
-
-	manifestFilePath := storage.DasherReadyRepresentationManifestFilePath(args.EncodeArgs)
-	manifestFname := filepath.Base(manifestFilePath)
-
-	boxArgs := []string{
-		"-dash", args.DashMs,
-		"-rap",
-		"-profile",
-		"onDemand",
-		"-segment-name", drFname,
-		"-out", manifestFname,
-		transcodedFname}
-
-	slog.Info("MP4Box dashing stream", "filePath", transcodedFilePath)
-	if err := MP4Box(ctx, args.WorkDir, boxArgs); err != nil {
+	slog.Info("MP4Box dashing stream", "filePath", args.TranscodedFilePath)
+	if err := MP4Box(ctx, args.WorkDir, args.MP4BoxArgs); err != nil {
 		return MP4BoxDashReadyResp{}, err
 	}
 
 	//remove unneded files
-	if err := os.Remove(transcodedFilePath); err != nil {
-		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to remove %s: %v", transcodedFilePath, err)
+	if err := os.Remove(args.TranscodedFilePath); err != nil {
+		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to remove %s: %v", args.TranscodedFilePath, err)
 	}
-	if err := os.Remove(manifestFilePath); err != nil {
-		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to remove %s: %v", manifestFilePath, err)
+	if err := os.Remove(args.ManifestFilePath); err != nil {
+		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to remove %s: %v", args.ManifestFilePath, err)
 	}
 
-	basename, ok := strings.CutSuffix(drFname, ".mp4")
+	basename, ok := strings.CutSuffix(args.DrFname, ".mp4")
 	if !ok {
 		return MP4BoxDashReadyResp{}, errors.New("drFname MUST end in .mp4")
 	}
-	if err := os.Rename(filepath.Join(drDir, basename+".mp4init.mp4"), drFilePath); err != nil {
-		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to rename %s %s:%v", filepath.Join(drDir, basename+".mp4init.mp4"), drFilePath, err)
+	if err := os.Rename(filepath.Join(args.DrDir, basename+".mp4init.mp4"), args.DrFilePath); err != nil {
+		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to rename %s %s:%v", filepath.Join(args.DrDir, basename+".mp4init.mp4"), args.DrFilePath, err)
 	}
 	return MP4BoxDashReadyResp{}, nil
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
+	"github.com/davecgh/go-spew/spew"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -428,7 +429,28 @@ func videoFilterStrategy(ctx workflow.Context, args EncodeStreamArgs, deinterlac
 }
 
 func dashMs2(gopFrames int, fps int) string {
-	gopSec := float64(gopFrames / fps)
+	if fps == 0 || gopFrames == 0 {
+		return "ILLEGAL GOPFRAMES OR FPS" // Guard against division by zero
+	}
+
+	// 1. Calculate the exact millisecond duration of ONE single GOP
+	singleGopMs := (gopFrames * 1000) / fps
+
+	// 2. Find out how many of these GOPs fit closest to our 4000ms target.
+	// We add (singleGopMs / 2) to achieve perfect "round to nearest integer" math.
+	gopCount := (4000 + (singleGopMs / 2)) / singleGopMs
+
+	// 3. Prevent a count of 0 if a single GOP happens to be massive (e.g., 6 seconds)
+	if gopCount == 0 {
+		gopCount = 1
+	}
+
+	// 4. Return the combined duration of the stacked GOPs
+	return fmt.Sprintf("%d", gopCount*singleGopMs)
+}
+
+func XdashMs2(gopFrames int, fps int) string {
+	gopSec := float64(gopFrames) / float64(fps)
 	dashMs := math.Max(1.0, math.Round(4.0/gopSec)) * gopSec * 1000
 	return strconv.FormatFloat(dashMs, 'f', 0, 64)
 }
@@ -599,11 +621,9 @@ func MP4BoxPackager(dashMs string) func(ctx workflow.Context, args EncodeStreamA
 		})
 
 		var MP4BoxDashReadyResp MP4BoxDashReadyResp
-		err := workflow.ExecuteActivity(ctx3, MP4BoxDashReady, MP4BoxDashReadyArgs{
-			EncodeArgs: args,
-			WorkDir:    storage.ProdDir(args.InputID),
-			DashMs:     dashMs,
-		}).Get(ctx3, &MP4BoxDashReadyResp)
+		mP4BoxDashReadyArgs := MP4BoxDashReadyStrategy(args, storage.ProdDir(args.InputID), dashMs)
+		spew.Dump(mP4BoxDashReadyArgs)
+		err := workflow.ExecuteActivity(ctx3, MP4BoxDashReady, mP4BoxDashReadyArgs).Get(ctx3, &MP4BoxDashReadyResp)
 		if err != nil {
 			slog.Error("MP4BoxDashReady activity failed", "err", err.Error())
 			return err
@@ -706,6 +726,7 @@ func PipelineFactory(ctx workflow.Context, args EncodeStreamArgs) ManagedPipelin
 	}
 	res.durationDeriver = durationDeriverFfmpeg
 	res.encoderQueue = QueueSelectorLocal
+	spew.Dump(dashMs2(gopFrames(ctx, args.InputID), 25))
 	res.packager = MP4BoxPackager(dashMs2(gopFrames(ctx, args.InputID), 25))
 	return res
 }
