@@ -7,9 +7,10 @@ import (
 )
 
 type TranscodingOptionsRecord struct {
-	EncodeStream EncodeStreamArgs
-	Ffmpegargs   FFMpegArgs
-	Stderr       string
+	EncodeStream        EncodeStreamArgs
+	Ffmpegargs          FFMpegArgs
+	Stderr              string
+	MP4BoxDashReadyArgs MP4BoxDashReadyArgs
 }
 
 func CallRecordTranscodingOptions(ctx workflow.Context, t TranscodingOptionsRecord) error {

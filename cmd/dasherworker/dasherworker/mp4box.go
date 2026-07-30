@@ -114,38 +114,6 @@ func MP4Box(ctx context.Context, dir string, args []string) error {
 	}
 	return nil
 }
-func MP4BoxDashReadyStrategy(args EncodeStreamArgs, workdir string, dashMs string) MP4BoxDashReadyArgs {
-	drFilePath := storage.DasherReadyRepresentationFilePath(args)
-	drFname := filepath.Base(drFilePath)
-	drDir := filepath.Dir(drFilePath)
-
-	transcodedFilePath := storage.TranscodedRepresentationFilePath(args)
-	transcodedFname := filepath.Base(transcodedFilePath)
-
-	manifestFilePath := storage.DasherReadyRepresentationManifestFilePath(args)
-	manifestFname := filepath.Base(manifestFilePath)
-
-	boxArgs := []string{
-		"-dash", dashMs,
-		"-rap",
-		"-profile",
-		"onDemand",
-		"-segment-name", drFname,
-		"-out", manifestFname,
-		transcodedFname}
-
-	return MP4BoxDashReadyArgs{
-		EncodeArgs:         args,
-		TranscodedFilePath: transcodedFilePath,
-		ManifestFilePath:   manifestFilePath,
-		DrFname:            drFname,
-		DrDir:              drDir,
-		DrFilePath:         drFilePath,
-		WorkDir:            workdir,
-		DashMs:             dashMs,
-		MP4BoxArgs:         boxArgs,
-	}
-}
 
 type MP4BoxDashReadyArgs struct {
 	EncodeArgs         EncodeStreamArgs
