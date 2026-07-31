@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/pkg/errors"
 	"go.temporal.io/sdk/activity"
 	"golang.org/x/time/rate"
 )
@@ -62,7 +61,7 @@ func MP4Box(ctx context.Context, dir string, args []string) error {
 
 	f, err := pty.Start(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to start MP4Box for %v: %+v", args, err)
+		return Error("failed to start MP4Box for %v: %+v", args, err)
 	}
 
 	pw := &mp4BoxProgressWriter{
@@ -110,7 +109,7 @@ func MP4Box(ctx context.Context, dir string, args []string) error {
 
 	<-done // Wait for the background reader to process the last remaining bytes
 	if err != nil {
-		return fmt.Errorf("MP4Box failed: %v", err)
+		return Error("MP4Box failed: %v", err)
 	}
 	return nil
 }
@@ -141,18 +140,18 @@ func MP4BoxDashReady(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashR
 
 	//remove unneded files
 	if err := os.Remove(args.TranscodedFilePath); err != nil {
-		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to remove %s: %v", args.TranscodedFilePath, err)
+		return MP4BoxDashReadyResp{}, Fatal("Failed to remove %s: %v", args.TranscodedFilePath, err)
 	}
 	if err := os.Remove(args.ManifestFilePath); err != nil {
-		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to remove %s: %v", args.ManifestFilePath, err)
+		return MP4BoxDashReadyResp{}, Fatal("Failed to remove %s: %v", args.ManifestFilePath, err)
 	}
 
 	basename, ok := strings.CutSuffix(args.DrFname, ".mp4")
 	if !ok {
-		return MP4BoxDashReadyResp{}, errors.New("drFname MUST end in .mp4")
+		return MP4BoxDashReadyResp{}, Fatal("drFname MUST end in .mp4")
 	}
 	if err := os.Rename(filepath.Join(args.DrDir, basename+".mp4init.mp4"), args.DrFilePath); err != nil {
-		return MP4BoxDashReadyResp{}, fmt.Errorf("Failed to rename %s %s:%v", filepath.Join(args.DrDir, basename+".mp4init.mp4"), args.DrFilePath, err)
+		return MP4BoxDashReadyResp{}, Fatal("Failed to rename %s %s:%v", filepath.Join(args.DrDir, basename+".mp4init.mp4"), args.DrFilePath, err)
 	}
 	return MP4BoxDashReadyResp{}, nil
 }

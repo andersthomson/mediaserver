@@ -791,7 +791,7 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 	mp4boxargs := MP4BoxDashReadyStrategy(args)
 
 	//If both ffmpeg and mp4box cmd lines have been executed before, skip processing.
-	if t, err := CallLoadTranscodingOptions(ctx, args); err == nil {
+	if t, err := CallLoadTranscodingOptions(ctx, args); err == nil && t != nil {
 		spew.Dump(t.Ffmpegargs)
 		spew.Dump(ffmpegArgsExpanded)
 		spew.Dump(t.MP4BoxDashReadyArgs)

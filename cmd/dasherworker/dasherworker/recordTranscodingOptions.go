@@ -2,7 +2,9 @@ package dasherworker
 
 import (
 	"context"
+	"os"
 
+	"github.com/pkg/errors"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -22,12 +24,18 @@ func RecordTranscodingOptions(_ context.Context, t TranscodingOptionsRecord) (st
 	return "", SaveStructToJSON(storage.DasherReadyRepresentationTranscodingLogFilePath(t.EncodeStream), t)
 }
 
-func CallLoadTranscodingOptions(ctx workflow.Context, e EncodeStreamArgs) (TranscodingOptionsRecord, error) {
-	return CallActivityFast[EncodeStreamArgs, TranscodingOptionsRecord](ctx, LoadTranscodingOptions, e)
+func CallLoadTranscodingOptions(ctx workflow.Context, e EncodeStreamArgs) (*TranscodingOptionsRecord, error) {
+	return CallActivityFast[EncodeStreamArgs, *TranscodingOptionsRecord](ctx, LoadTranscodingOptions, e)
 }
 
-func LoadTranscodingOptions(_ context.Context, e EncodeStreamArgs) (TranscodingOptionsRecord, error) {
+func LoadTranscodingOptions(_ context.Context, e EncodeStreamArgs) (*TranscodingOptionsRecord, error) {
 	var t TranscodingOptionsRecord
 	err := LoadJSONToStruct(storage.DasherReadyRepresentationTranscodingLogFilePath(e), &t)
-	return t, err
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, Fatal(err.Error())
+	}
+	return &t, err
 }

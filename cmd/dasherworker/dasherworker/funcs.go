@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/pkg/errors"
+	"go.temporal.io/sdk/temporal"
 )
 
 func DasherReadyFilename2(basename, streamIdx string) string {
@@ -17,6 +18,15 @@ func DasherReadyFilename2(basename, streamIdx string) string {
 func Error(msg string, args ...any) error {
 	slog.Error(msg, args...)
 	return fmt.Errorf("ERROR: %s ; %v", msg, args)
+}
+
+func Fatal(msg string, args ...any) error {
+	slog.Error(msg, args...)
+	return temporal.NewNonRetryableApplicationError(
+		fmt.Sprintf("ERROR: %s ; %v", msg, args),
+		"",
+		nil,
+	)
 }
 
 // FloatToInt converts a whole number float64 to int.
@@ -69,7 +79,7 @@ func LoadJSONToStruct(filename string, target interface{}) error {
 	if err != nil {
 		// Provide a helpful error if the file simply doesn't exist
 		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("file %s not found: %w", filename, err)
+			return fmt.Errorf("file not found", "filename", filename)
 		}
 		return fmt.Errorf("failed to read file from disk: %w", err)
 	}
