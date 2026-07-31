@@ -129,11 +129,11 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	for _, match := range matches {
 		lang, err := GetStreamZeroLanguage(match)
 		if err != nil {
-			return FinalizeResp{}, Error("Failed to find language", "match", match, "err", err)
+			return FinalizeResp{}, Fatal("Failed to find language", "match", match, "err", err)
 		}
 		codec, err := GetStreamZeroCodec(match)
 		if err != nil {
-			return FinalizeResp{}, Error("Failed to find codec", "match", match, "err", err)
+			return FinalizeResp{}, Fatal("Failed to find codec", "match", match, "err", err)
 		}
 		spew.Dump(codec)
 		switch {
@@ -143,10 +143,10 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 				Filename: filepath.Base(match),
 			})
 			if err != nil {
-				return FinalizeResp{}, Error("Failed to get properties", "file", match, "err", err)
+				return FinalizeResp{}, Fatal("Failed to get properties", "file", match, "err", err)
 			}
 			if gopFrames != 0 && gopFrames != props.GopFrames {
-				return FinalizeResp{}, Error("Got different gopFrames", "previous", gopFrames, "new", props.GopFrames)
+				return FinalizeResp{}, Fatal("Got different gopFrames", "previous", gopFrames, "new", props.GopFrames)
 			}
 			gopFrames = props.GopFrames
 			fps = props.Fps

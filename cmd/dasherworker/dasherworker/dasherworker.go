@@ -3,7 +3,6 @@ package dasherworker
 import (
 	"fmt"
 	"log/slog"
-	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
-	"github.com/davecgh/go-spew/spew"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -206,13 +204,7 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 	slog.Info("Start", "W", "VideoEncoding", "msp", args.MspFile)
 	defer slog.Info("Stop ", "W", "VideoEncoding", "msp", args.MspFile)
 
-	ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 10 * time.Minute,
-		TaskQueue:           "dasherQueue",
-		//HeartbeatTimeout:    1000 * time.Second,
-	})
-	var M scrape.Msp
-	err := workflow.ExecuteActivity(ctx1, ReadMspFile, args.Dir, args.MspFile).Get(ctx1, &M)
+	M, err := CallActivityIO[string, scrape.Msp](ctx, ReadMspFile, args.Dir, args.MspFile)
 	if err != nil {
 		slog.Error("MSP read failed", "err", err)
 	}
@@ -225,10 +217,18 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 	}
 	//Find the encoding needs
 	for _, target := range targets {
-		maxRes := WithMaxResolution(Max1080p)
-		if target.profile == "low" {
-			maxRes = WithMaxResolution(Max720p)
+		var opts []TranscodeOption
+		if isVideoCodec(target.codec) {
+			var maxRes TranscodeOption
+			switch target.profile {
+			case "high":
+				maxRes = WithMaxResolution(Max1080p)
+			case "low":
+				maxRes = WithMaxResolution(Max720p)
+			}
+			opts = append(opts, maxRes)
 		}
+
 		Eargs := NewEncodeStreamArgs(ctx, &EncodeStreamArgs{
 			InputID: M.Id,
 			InputNo: idx,
@@ -237,7 +237,7 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 			Preset:  preset(args.Fast),
 			Profile: target.profile,
 			Codec:   target.codec,
-		}, maxRes)
+		}, opts...)
 		fname := storage.DasherReadyRepresentationFilePath(*Eargs)
 		slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
 		if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs); err != nil {
@@ -437,22 +437,19 @@ func dashMs2(gopFrames int, fps int) string {
 	return fmt.Sprintf("%d", gopCount*singleGopMs)
 }
 
-func XdashMs2(gopFrames int, fps int) string {
-	gopSec := float64(gopFrames) / float64(fps)
-	dashMs := math.Max(1.0, math.Round(4.0/gopSec)) * gopSec * 1000
-	return strconv.FormatFloat(dashMs, 'f', 0, 64)
-}
-
 var DefaultGopFrames int = 96
 
 func gopFrames(ctx workflow.Context, inputId string) int {
-	props, _ := CallActivityIO[string, GetOneTargetsPropertiesResp](ctx, "GetOneTargetsProperties", storage.ProdDir(inputId))
-	if !props.Found {
-		slog.Info("Using GopFrames", "default", DefaultGopFrames)
-		return DefaultGopFrames
-	}
-	slog.Info("Using GopFrames", "fromTarget", DefaultGopFrames)
-	return props.Props.GopFrames
+	/*
+		props, _ := CallActivityIO[string, GetOneTargetsPropertiesResp](ctx, "GetOneTargetsProperties", storage.ProdDir(inputId))
+		if !props.Found {
+			slog.Info("Using GopFrames", "default", DefaultGopFrames)
+			return DefaultGopFrames
+		}
+		slog.Info("Using GopFrames", "fromTarget", DefaultGopFrames)
+		return props.Props.GopFrames
+	*/
+	return DefaultGopFrames
 }
 
 func languageFromArgs(args EncodeStreamArgs) []any {
@@ -466,7 +463,7 @@ func languageFromArgs(args EncodeStreamArgs) []any {
 	slog.Info("NO language")
 	return []any{}
 }
-func nullStrategy(_ EncodeStreamArgs) []any {
+func XnullStrategy(_ EncodeStreamArgs) []any {
 	return []any{}
 }
 func x264EncodingStrategy(gopFrames int, crf string, bitrate string) func(args EncodeStreamArgs) []any {
@@ -792,10 +789,10 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 
 	//If both ffmpeg and mp4box cmd lines have been executed before, skip processing.
 	if t, err := CallLoadTranscodingOptions(ctx, args); err == nil && t != nil {
-		spew.Dump(t.Ffmpegargs)
-		spew.Dump(ffmpegArgsExpanded)
-		spew.Dump(t.MP4BoxDashReadyArgs)
-		spew.Dump(mp4boxargs)
+		//spew.Dump(t.Ffmpegargs)
+		//spew.Dump(ffmpegArgsExpanded)
+		//spew.Dump(t.MP4BoxDashReadyArgs)
+		//spew.Dump(mp4boxargs)
 		if reflect.DeepEqual(t.Ffmpegargs, ffmpegArgsExpanded) && reflect.DeepEqual(t.MP4BoxDashReadyArgs, mp4boxargs) {
 			slog.Info("Aldready transcoded. Skipping", "inputID", args.InputID, "codec", args.Codec, "profile", args.Profile)
 			return nil
