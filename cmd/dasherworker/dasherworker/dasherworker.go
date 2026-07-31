@@ -6,12 +6,14 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
+	"github.com/davecgh/go-spew/spew"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -148,6 +150,9 @@ func AudioEncodingWorkflow(ctx workflow.Context, args AudioEncodingWorkflowArgs)
 	defer slog.Info("Stop ", "W", "AudioEncoding", "msp", args.MspFile)
 
 	M, err := CallActivityIO[string, scrape.Msp](ctx, ReadMspFile, args.Dir, args.MspFile)
+	if err != nil {
+		slog.Error("MSP read failed", "err", err)
+	}
 
 	storage.Add(args.Dir, M)
 	idx := getFirstInputStreamWithPrefix(M.Inputs, "a")
@@ -162,14 +167,6 @@ func AudioEncodingWorkflow(ctx workflow.Context, args AudioEncodingWorkflowArgs)
 		Codec:    "aac",
 	})
 	fname := storage.DasherReadyRepresentationFilePath(*Eargs)
-	exists, err := CallActivityFast[string, bool](ctx, FileExists, fname)
-	if err != nil {
-		return AudioEncodingWorkflowResp{}, Error("failed to check for file existence", "err", err)
-	}
-	if exists {
-		slog.Info("Skipping, representation exists", "shortName", M.ShortName, "representation", filepath.Base(fname))
-		return AudioEncodingWorkflowResp{}, nil
-	}
 	slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
 	if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs); err != nil {
 		slog.Error("Pipeline processing failed", "err", err)
@@ -242,14 +239,6 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 			Codec:   target.codec,
 		}, maxRes)
 		fname := storage.DasherReadyRepresentationFilePath(*Eargs)
-		exists, err := CallActivityFast[string, bool](ctx, FileExists, fname)
-		if err != nil {
-			slog.Error("XXX", "err", err)
-		}
-		if exists {
-			slog.Info("Skipping, representation exists", "shortName", M.ShortName, "representation", filepath.Base(fname))
-			continue
-		}
 		slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
 		if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs); err != nil {
 			slog.Error("Pipeline processing failed", "err", err)
@@ -580,7 +569,7 @@ type DurationDeriverUsec func(ctx workflow.Context, inputID string, inputNo int,
 type QueueSelector func(args EncodeStreamArgs) string
 type PackagingStrategy func(ctx workflow.Context, args MP4BoxDashReadyArgs) error
 
-func MP4BoxDashReadyStrategy(args EncodeStreamArgs, workdir string) MP4BoxDashReadyArgs {
+func MP4BoxDashReadyStrategy(args EncodeStreamArgs) MP4BoxDashReadyArgs {
 	drFilePath := storage.DasherReadyRepresentationFilePath(args)
 	drFname := filepath.Base(drFilePath)
 	drDir := filepath.Dir(drFilePath)
@@ -607,7 +596,7 @@ func MP4BoxDashReadyStrategy(args EncodeStreamArgs, workdir string) MP4BoxDashRe
 		DrFname:            drFname,
 		DrDir:              drDir,
 		DrFilePath:         drFilePath,
-		WorkDir:            workdir,
+		WorkDir:            storage.ProdDir(args.InputID),
 		DashMs:             args.DstProps.DashMs,
 		MP4BoxArgs:         boxArgs,
 	}
@@ -797,6 +786,22 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 	ffmpegArgs = append(ffmpegArgs, m.languageStrategy(args)...)
 	ffmpegArgs = append(ffmpegArgs, m.manifestStrategy(args)...)
 
+	ffmpegArgsExpanded := NewFFMpegArgs(ffmpegArgs)
+
+	mp4boxargs := MP4BoxDashReadyStrategy(args)
+
+	//If both ffmpeg and mp4box cmd lines have been executed before, skip processing.
+	if t, err := CallLoadTranscodingOptions(ctx, args); err == nil {
+		spew.Dump(t.Ffmpegargs)
+		spew.Dump(ffmpegArgsExpanded)
+		spew.Dump(t.MP4BoxDashReadyArgs)
+		spew.Dump(mp4boxargs)
+		if reflect.DeepEqual(t.Ffmpegargs, ffmpegArgsExpanded) && reflect.DeepEqual(t.MP4BoxDashReadyArgs, mp4boxargs) {
+			slog.Info("Aldready transcoded. Skipping", "inputID", args.InputID, "codec", args.Codec, "profile", args.Profile)
+			return nil
+		}
+	}
+
 	duration, err := m.durationDeriver(ctx, args.InputID, args.InputNo, args.Stream)
 	if err != nil {
 		return err
@@ -825,7 +830,6 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 
 	var encodePreludeResp EncodePreludeResp
 	var a *LocalEncode
-	ffmpegArgsExpanded := NewFFMpegArgs(ffmpegArgs)
 	//spew.Dump(ffmpegArgs)
 	err = workflow.ExecuteActivity(ctx2, a.EncodePrelude, EncodePreludeArgs{
 		SessionID:  sessionID,
@@ -851,8 +855,6 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 		SessionID:  sessionID,
 		FfmpegArgs: ffmpegArgsExpanded,
 	}).Get(ctx2, nil)
-
-	mp4boxargs := MP4BoxDashReadyStrategy(args, storage.ProdDir(args.InputID))
 
 	if err := m.packager(ctx, mp4boxargs); err != nil {
 		return Error("Packager failed", "err", err)

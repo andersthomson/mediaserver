@@ -117,6 +117,7 @@ func main() {
 	w.RegisterActivity(dasherworker.IsMpeg2VideoWithBrokenDTS)
 	w.RegisterActivity(dasherworker.GenerateHLSLanguageFileActivity)
 	w.RegisterActivity(dasherworker.MP4BoxDashReady)
+	w.RegisterActivity(dasherworker.LoadTranscodingOptions)
 	w.RegisterActivity(dasherworker.FileExists)
 	w.RegisterActivity(dasherworker.GetOneTargetsProperties)
 	w.RegisterWorkflow(dasherworker.StorageAddWF)
