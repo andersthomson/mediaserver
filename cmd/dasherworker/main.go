@@ -37,7 +37,7 @@ func main() {
 			remoteEncodeWorker := tworker.New(c, "encodingQueue", tworker.Options{
 				EnableSessionWorker:                true,
 				Identity:                           "remote-" + rw.Hostname,
-				MaxConcurrentActivityExecutionSize: 1,
+				MaxConcurrentActivityExecutionSize: 2,
 			})
 
 			re := &dasherworker.RemoteEncode{}

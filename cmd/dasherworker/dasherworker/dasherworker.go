@@ -51,7 +51,7 @@ func (s *Storage) Add(dir string, m scrape.Msp) {
 }
 
 func StorageAddWF(ctx workflow.Context, mspPath string) (string, error) {
-	M, err := CallActivityIO[string, scrape.Msp](ctx, ReadMspFile, filepath.Dir(mspPath), filepath.Base(mspPath))
+	M, err := CallReadMspFile(ctx, mspPath)
 	if err != nil {
 		return "", err
 	}

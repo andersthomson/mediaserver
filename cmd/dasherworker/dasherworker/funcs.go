@@ -28,6 +28,9 @@ func Fatal(msg string, args ...any) error {
 		nil,
 	)
 }
+func FatalError(err error) error {
+	return Fatal(err.Error())
+}
 
 // FloatToInt converts a whole number float64 to int.
 func FloatToInt(f float64) (int, error) {
