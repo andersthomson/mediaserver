@@ -166,10 +166,6 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 	return VideoEncodingWorkflowResp{}, nil
 
 }
-func FinalizeWF(ctx workflow.Context, args FinalizeArgs) (FinalizeResp, error) {
-	return CallActivityIO[FinalizeArgs, FinalizeResp](ctx, Finalize, args)
-}
-
 func crf(codec string, profile string) string {
 	type crfTbl map[string]map[string]string
 	crfT := crfTbl{

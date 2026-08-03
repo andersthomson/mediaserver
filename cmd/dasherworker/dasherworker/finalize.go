@@ -15,79 +15,8 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// Check *.mp4 video files and return first file's properties (or an error)
-type GetOneTargetsPropertiesResp struct {
-	Found bool
-	Props SrcProperties
-}
-
-func GetOneTargetsProperties(ctx context.Context, targetDir string) (GetOneTargetsPropertiesResp, error) {
-	pattern := "*.mp4"
-	matches, err := filepath.Glob(targetDir + "/" + pattern)
-	if err != nil {
-		return GetOneTargetsPropertiesResp{}, Error("Failed to glob", "pattern", targetDir+"/"+pattern, "err", err)
-	}
-	slog.Info("MATCHES", "found", matches)
-	for _, match := range matches {
-		codec, err := GetStreamZeroCodec(match)
-		if err != nil {
-			return GetOneTargetsPropertiesResp{}, Error("Failed to find codec", "filePath", match, "err", err)
-		}
-		if isVideoCodec(codec) {
-			props, err := GetSourceProperties(ctx, ProbeParams{
-				Dir:      filepath.Dir(match),
-				Filename: filepath.Base(match),
-			})
-			if err != nil {
-				return GetOneTargetsPropertiesResp{}, Error("Failed to get properties", "filePath", match, "err", err)
-			}
-			return GetOneTargetsPropertiesResp{
-				Found: true,
-				Props: props,
-			}, nil
-		} else {
-			slog.Info("NOt viDEO", "file", match)
-		}
-	}
-	return GetOneTargetsPropertiesResp{
-		Found: false,
-		Props: SrcProperties{},
-	}, nil
-}
-func fileSizesAreEqualAndNonZero(filePath1, filePath2 string) (bool, error) {
-	f1, err := os.Stat(filePath1)
-	if err != nil {
-		return false, Error("Stat failed", "err", err)
-	}
-	f2, err := os.Stat(filePath2)
-	if err != nil {
-		return false, Error("Stat failed", "err", err)
-	}
-	if f1.Size() == 0 || f2.Size() == 0 {
-		return false, Error("At lease one file is zero size", "file1", filePath1, "file2", filePath2)
-	}
-	return f1.Size() == f2.Size(), nil
-}
-
-func dashName(fname string) (string, error) {
-	base, ok := strings.CutSuffix(fname, ".mp4")
-	if !ok {
-		return "", Error("InputFilename does not end in .mp4", "fname", fname)
-	}
-	return base + "_dashinit.mp4", nil
-}
-
-func getVideoAndAudioStartTimes(ctx context.Context, inputID string) (float64, float64) {
-	dir, msp := storage.ResolveInput(inputID)
-	videoSourceIdx := getFirstInputStreamWithPrefix(msp.Inputs, "v")
-	vInput := msp.Inputs[videoSourceIdx]
-	vStart, _ := GetStremStartTime(filepath.Join(dir, vInput.Filename), vInput.Stream)
-
-	audioSourceIdx := getFirstInputStreamWithPrefix(msp.Inputs, "a")
-	aInput := msp.Inputs[audioSourceIdx]
-	aStart, _ := GetStremStartTime(filepath.Join(dir, aInput.Filename), aInput.Stream)
-
-	return vStart, aStart
+func FinalizeWF(ctx workflow.Context, args FinalizeArgs) (FinalizeResp, error) {
+	return CallActivityIO[FinalizeArgs, FinalizeResp](ctx, Finalize, args)
 }
 
 func CallFinalize(ctx workflow.Context, inputID string) error {
@@ -197,6 +126,81 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 		}
 	}
 	return FinalizeResp{}, nil
+}
+
+// Check *.mp4 video files and return first file's properties (or an error)
+type GetOneTargetsPropertiesResp struct {
+	Found bool
+	Props SrcProperties
+}
+
+func GetOneTargetsProperties(ctx context.Context, targetDir string) (GetOneTargetsPropertiesResp, error) {
+	pattern := "*.mp4"
+	matches, err := filepath.Glob(targetDir + "/" + pattern)
+	if err != nil {
+		return GetOneTargetsPropertiesResp{}, Error("Failed to glob", "pattern", targetDir+"/"+pattern, "err", err)
+	}
+	slog.Info("MATCHES", "found", matches)
+	for _, match := range matches {
+		codec, err := GetStreamZeroCodec(match)
+		if err != nil {
+			return GetOneTargetsPropertiesResp{}, Error("Failed to find codec", "filePath", match, "err", err)
+		}
+		if isVideoCodec(codec) {
+			props, err := GetSourceProperties(ctx, ProbeParams{
+				Dir:      filepath.Dir(match),
+				Filename: filepath.Base(match),
+			})
+			if err != nil {
+				return GetOneTargetsPropertiesResp{}, Error("Failed to get properties", "filePath", match, "err", err)
+			}
+			return GetOneTargetsPropertiesResp{
+				Found: true,
+				Props: props,
+			}, nil
+		} else {
+			slog.Info("NOt viDEO", "file", match)
+		}
+	}
+	return GetOneTargetsPropertiesResp{
+		Found: false,
+		Props: SrcProperties{},
+	}, nil
+}
+func fileSizesAreEqualAndNonZero(filePath1, filePath2 string) (bool, error) {
+	f1, err := os.Stat(filePath1)
+	if err != nil {
+		return false, Error("Stat failed", "err", err)
+	}
+	f2, err := os.Stat(filePath2)
+	if err != nil {
+		return false, Error("Stat failed", "err", err)
+	}
+	if f1.Size() == 0 || f2.Size() == 0 {
+		return false, Error("At lease one file is zero size", "file1", filePath1, "file2", filePath2)
+	}
+	return f1.Size() == f2.Size(), nil
+}
+
+func dashName(fname string) (string, error) {
+	base, ok := strings.CutSuffix(fname, ".mp4")
+	if !ok {
+		return "", Error("InputFilename does not end in .mp4", "fname", fname)
+	}
+	return base + "_dashinit.mp4", nil
+}
+
+func getVideoAndAudioStartTimes(ctx context.Context, inputID string) (float64, float64) {
+	dir, msp := storage.ResolveInput(inputID)
+	videoSourceIdx := getFirstInputStreamWithPrefix(msp.Inputs, "v")
+	vInput := msp.Inputs[videoSourceIdx]
+	vStart, _ := GetStremStartTime(filepath.Join(dir, vInput.Filename), vInput.Stream)
+
+	audioSourceIdx := getFirstInputStreamWithPrefix(msp.Inputs, "a")
+	aInput := msp.Inputs[audioSourceIdx]
+	aStart, _ := GetStremStartTime(filepath.Join(dir, aInput.Filename), aInput.Stream)
+
+	return vStart, aStart
 }
 
 func replaceWithSymlink(src, target string) error {
