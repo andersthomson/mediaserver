@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -70,6 +73,16 @@ func main() {
 			fmt.Printf("Success\n")
 			return
 
+		case "keyframeHistogram":
+			h, err := dasherworker.KeyframeHistogramFile(os.Args[2], os.Args[3])
+			if err != nil {
+				log.Fatalf("Error: %v\n", err)
+			}
+			fmt.Print("Keyframes  Occurences\n")
+			for _, key := range slices.Sorted(maps.Keys(h)) {
+				fmt.Printf("%d %d\n", key, h[key])
+			}
+			return
 		case "HLSlinkSources":
 			msp, err := scrape.ReadMspFromFile(os.Args[2])
 			if err != nil {
@@ -285,17 +298,6 @@ func main() {
 			return
 
 		}
-	}
-	dir := filepath.Dir(os.Args[1])
-	base := filepath.Base(os.Args[1])
-	if base == "" || dir == "" {
-		panic("Need as arg 1 path to msp file\n")
-	}
-	//if err := makeDashWorkFlow("/var/lib/media/temp/testfil", "flaskhals.msp"); err != nil {
-	if err := makeDashWorkFlow(c, dir, base); err != nil {
-		fmt.Printf("ERROR: %+v\n", err)
-	} else {
-		fmt.Printf("Done.\n")
 	}
 }
 

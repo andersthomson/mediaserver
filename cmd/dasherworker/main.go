@@ -121,6 +121,7 @@ func main() {
 	w.RegisterActivity(dasherworker.FileExists)
 	w.RegisterActivity(dasherworker.GetOneTargetsProperties)
 	w.RegisterWorkflow(dasherworker.StorageAddWF)
+	w.RegisterActivity(dasherworker.KeyframeHistogram)
 	w.RegisterWorkflow(dasherworker.FinalizeWF)
 	w.RegisterActivity(dasherworker.Finalize)
 	w.RegisterActivity(dasherworker.AnalyzeMediaInterlace)
