@@ -67,7 +67,7 @@ func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remot
 
 	// --info=progress2 is critical for the parser to see a single percentage line
 	args := []string{
-		"-avzP", "--no-inc-recursive", "--mkpath", "--info=progress2", "--append-verify", "-e", "ssh -p " + strconv.Itoa(port) + " -T", src, dst}
+		"-avP", "--no-inc-recursive", "--mkpath", "--info=progress2", "--append-verify", "-e", "ssh -p " + strconv.Itoa(port) + " -T", src, dst}
 
 	cmd := exec.CommandContext(ctx, "rsync", args...)
 	f, err := pty.Start(cmd)
