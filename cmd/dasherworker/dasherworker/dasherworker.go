@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
+	"github.com/davecgh/go-spew/spew"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -28,26 +29,34 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 
 	storage.Add(filepath.Dir(args.MspPath), M)
 
+	var futures []workflow.Future
+
+	for _, target := range targets {
+		childOptions := workflow.ChildWorkflowOptions{
+			WorkflowID: "EnsureDash-child-for-" + M.ShortName + "-" + M.Id + "-" + target.String(), // Unique ID
+		}
+		ctx = workflow.WithChildOptions(ctx, childOptions)
+		futures = append(futures, workflow.ExecuteChildWorkflow(ctx, VideoEncodingWorkflow, VideoEncodingWorkflowArgs{
+			Dir:     filepath.Dir(args.MspPath),
+			MspFile: filepath.Base(args.MspPath),
+			Fast:    args.Fast,
+			Target:  target,
+		}))
+	}
 	childOptions := workflow.ChildWorkflowOptions{
-		WorkflowID: "EnsureDash-child-for-" + M.ShortName + M.Id, // Unique ID
+		WorkflowID: "EnsureDash-child-for-" + M.ShortName + "-" + M.Id + "-" + "audio", // Unique ID
 	}
 	ctx = workflow.WithChildOptions(ctx, childOptions)
-	run := workflow.ExecuteChildWorkflow(ctx, VideoEncodingWorkflow, VideoEncodingWorkflowArgs{
+	futures = append(futures, workflow.ExecuteChildWorkflow(ctx, AudioEncodingWorkflow, AudioEncodingWorkflowArgs{
 		Dir:     filepath.Dir(args.MspPath),
 		MspFile: filepath.Base(args.MspPath),
-		Fast:    args.Fast,
-	})
-	if err := run.Get(ctx, nil); err != nil {
-		return "", Error("Child WF execution failed", "err", err)
+	}))
+	for _, future := range futures {
+		if err := future.Get(ctx, nil); err != nil {
+			spew.Dump(future)
+			return "", Error("Child WF execution failed", "err", err)
+		}
 	}
-	run = workflow.ExecuteChildWorkflow(ctx, AudioEncodingWorkflow, AudioEncodingWorkflowArgs{
-		Dir:     filepath.Dir(args.MspPath),
-		MspFile: filepath.Base(args.MspPath),
-	})
-	if err := run.Get(ctx, nil); err != nil {
-		return "", Error("Child WF execution failed", "err", err)
-	}
-	run.Get(ctx, nil)
 
 	CallFinalize(ctx, M.Id)
 	return "", nil
@@ -98,8 +107,12 @@ func getFirstInputStreamWithPrefix(inputs []scrape.InputT, prefix string) int {
 }
 
 type Target struct {
-	codec   string
-	profile string
+	Codec   string
+	Profile string
+}
+
+func (t Target) String() string {
+	return fmt.Sprintf("%s-%s", t.Codec, t.Profile)
 }
 
 var targets = []Target{
@@ -113,6 +126,7 @@ type VideoEncodingWorkflowArgs struct {
 	Dir     string
 	MspFile string
 	Fast    bool
+	Target  Target
 }
 
 type VideoEncodingWorkflowResp struct {
@@ -134,34 +148,29 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 		return VideoEncodingWorkflowResp{}, Error("Found no video stream source specified", "input", M)
 	}
 	//Find the encoding needs
-	for _, target := range targets {
-		var opts []TranscodeOption
-		if isVideoCodec(target.codec) {
-			var maxRes TranscodeOption
-			switch target.profile {
-			case "high":
-				maxRes = WithMaxResolution(Max1080p)
-			case "low":
-				maxRes = WithMaxResolution(Max720p)
-			}
-			opts = append(opts, maxRes)
-		}
-
-		Eargs := NewEncodeStreamArgs(ctx, &EncodeStreamArgs{
-			InputID: M.Id,
-			InputNo: idx,
-			Stream:  M.Inputs[idx].Stream,
-			Kind:    M.Inputs[idx].Kind,
-			Preset:  preset(args.Fast),
-			Profile: target.profile,
-			Codec:   target.codec,
-		}, opts...)
-		fname := storage.DasherReadyRepresentationFilePath(*Eargs)
-		slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
-		if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs); err != nil {
-			slog.Error("Pipeline processing failed", "err", err)
-			return VideoEncodingWorkflowResp{}, err
-		}
+	var opts []TranscodeOption
+	var maxRes TranscodeOption
+	switch args.Target.Profile {
+	case "high":
+		maxRes = WithMaxResolution(Max1080p)
+	case "low":
+		maxRes = WithMaxResolution(Max720p)
+	}
+	opts = append(opts, maxRes)
+	Eargs := NewEncodeStreamArgs(ctx, &EncodeStreamArgs{
+		InputID: M.Id,
+		InputNo: idx,
+		Stream:  M.Inputs[idx].Stream,
+		Kind:    M.Inputs[idx].Kind,
+		Preset:  preset(args.Fast),
+		Profile: args.Target.Profile,
+		Codec:   args.Target.Codec,
+	}, opts...)
+	fname := storage.DasherReadyRepresentationFilePath(*Eargs)
+	slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
+	if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs); err != nil {
+		slog.Error("Pipeline processing failed", "err", err)
+		return VideoEncodingWorkflowResp{}, err
 	}
 	return VideoEncodingWorkflowResp{}, nil
 
