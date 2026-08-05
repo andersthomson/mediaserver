@@ -7,14 +7,15 @@ import (
 )
 
 type remoteworker struct {
-	Start    bool
-	Name     string
-	Hostname string
-	Port     int
-	Username string
-	Dir      string
-	Ffmpeg   string
-	Id       string
+	Start       bool
+	Name        string
+	Hostname    string
+	Port        int
+	Username    string
+	Dir         string
+	Ffmpeg      string
+	Id          string
+	Concurrency int
 }
 
 type localworker struct {
