@@ -717,7 +717,7 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 		//spew.Dump(t.MP4BoxDashReadyArgs)
 		//spew.Dump(mp4boxargs)
 		if reflect.DeepEqual(t.Ffmpegargs, ffmpegArgsExpanded) && reflect.DeepEqual(t.MP4BoxDashReadyArgs, mp4boxargs) {
-			slog.Info("Aldready transcoded. Skipping", "inputID", args.InputID, "codec", args.Codec, "profile", args.Profile)
+			slog.Info("Already transcoded. Skipping", "inputID", args.InputID, "codec", args.Codec, "profile", args.Profile)
 			return nil
 		}
 	}
