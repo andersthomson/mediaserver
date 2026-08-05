@@ -16,6 +16,13 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+var targets = []Target{
+	//	{"x264", "high"},
+	{"x264", "low"},
+	//	{"x265", "high"},
+	{"x265", "low"},
+}
+
 type EnsureDashWFArgs struct {
 	MspPath string
 	Fast    bool
@@ -113,13 +120,6 @@ type Target struct {
 
 func (t Target) String() string {
 	return fmt.Sprintf("%s-%s", t.Codec, t.Profile)
-}
-
-var targets = []Target{
-	//	{"x264", "high"},
-	{"x264", "low"},
-	//	{"x265", "high"},
-	{"x265", "low"},
 }
 
 type VideoEncodingWorkflowArgs struct {
