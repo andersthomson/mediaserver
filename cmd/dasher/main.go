@@ -83,6 +83,13 @@ func main() {
 				fmt.Printf("%d %d\n", key, h[key])
 			}
 			return
+		case "analyzeMediaInterlace":
+			a, err := dasherworker.AnalyzeMediaInterlaceFile(context.Background(), os.Args[2], os.Args[3])
+			if err != nil {
+				log.Fatalf("Error: %v\n", err)
+			}
+			spew.Dump(a)
+			return
 		case "HLSlinkSources":
 			msp, err := scrape.ReadMspFromFile(os.Args[2])
 			if err != nil {

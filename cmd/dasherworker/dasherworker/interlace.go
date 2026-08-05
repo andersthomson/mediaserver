@@ -52,6 +52,10 @@ func AnalyzeMediaInterlace(ctx context.Context, args AnalyzeMediaInterlaceArgs) 
 	defer slog.Info("Stop ", "A", "AnalyzeMediaInterlace", "args", args)
 	//fullPath := filepath.Join(args.Dir, args.Fname)
 	fullPath := storage.ResolveInputNumber(args.InputID, args.InputNo)
+	return AnalyzeMediaInterlaceFile(ctx, fullPath, args.Stream)
+}
+
+func AnalyzeMediaInterlaceFile(ctx context.Context, fullPath string, stream string) (MediaInterlaceAnalysis, error) {
 	analysis := MediaInterlaceAnalysis{FilterRecommendation: "null"}
 
 	// 1. SYNC PROBE: Capture the First PTS (The 0.08s sync mystery)
