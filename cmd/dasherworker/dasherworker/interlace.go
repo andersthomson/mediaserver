@@ -69,6 +69,7 @@ func AnalyzeMediaInterlaceFile(ctx context.Context, fullPath string, stream stri
 		analysis.FirstPTS, _ = strconv.ParseFloat(match[1], 64)
 	}
 
+	// 2. INTERLACE PROBE: Visual Analysis
 	seekPoint := 0.0
 	duration, err := getVideoDuration(ctx, fullPath)
 	if err != nil {
@@ -77,76 +78,94 @@ func AnalyzeMediaInterlaceFile(ctx context.Context, fullPath string, stream stri
 	if duration > 2.0 {
 		seekPoint = duration / 2
 	}
-	// 2. INTERLACE PROBE: Visual Analysis
-	cmd := exec.CommandContext(ctx, "ffmpeg",
-		"-ss", fmt.Sprintf("%f", seekPoint), // Seek to a safe, dynamic point
+
+	// =====================================================================
+	// COMPLETE STEP 2 REPLACEMENT BLOCK
+	// =====================================================================
+
+	// 1. Fetch raw metadata field order first
+	fieldOrderCmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=field_order", "-of", "default=noprint_wrappers=1:nokey=1", fullPath)
+	fieldOrderOut, _ := fieldOrderCmd.Output()
+	fieldOrder := strings.ToLower(strings.TrimSpace(string(fieldOrderOut)))
+
+	// Identify if the metadata headers explicitly claim interlacing
+	isMetadataInterlaced := strings.Contains(fieldOrder, "top") ||
+		strings.Contains(fieldOrder, "bottom") ||
+		strings.Contains(fieldOrder, "tt") ||
+		strings.Contains(fieldOrder, "bb") ||
+		strings.Contains(fieldOrder, "tb") ||
+		strings.Contains(fieldOrder, "bt")
+
+	// 2. Execute the IDET pixel analyzer tool
+	idetCmd := exec.CommandContext(ctx, "ffmpeg",
+		"-ss", fmt.Sprintf("%f", seekPoint),
 		"-i", fullPath,
 		"-vf", "idet",
-		"-frames:v", "1000", // Analyze exactly 1000 frames
+		"-frames:v", "1000",
 		"-an",
 		"-c:v", "rawvideo",
 		"-f", "null", "-",
 	)
 
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	var idetStderr bytes.Buffer
+	idetCmd.Stderr = &idetStderr
 
-	if err := cmd.Run(); err != nil {
+	if err := idetCmd.Run(); err != nil {
 		return analysis, Error("ffmpeg analysis failed", "err", err)
 	}
 
-	output := stderr.String()
+	// 3. Parse IDET pixel metrics
+	output := idetStderr.String()
 	reIdet := regexp.MustCompile(`TFF:\s+(\d+)\s+BFF:\s+(\d+)\s+Progressive:\s+(\d+)`)
 	matches := reIdet.FindAllStringSubmatch(output, -1)
 
 	if len(matches) > 0 {
-		// Use the final summary match
 		lastMatch := matches[len(matches)-1]
 		tff, _ := strconv.Atoi(lastMatch[1])
 		bff, _ := strconv.Atoi(lastMatch[2])
 		prog, _ := strconv.Atoi(lastMatch[3])
-
 		total := tff + bff + prog
+
 		if total > 0 {
 			analysis.ProgressiveRatio = float64(prog) / float64(total)
 			analysis.InterlacedRatio = float64(tff+bff) / float64(total)
 
-			if analysis.InterlacedRatio > 0.15 {
-				// TRUE INTERLACED
-				// Determine parity based on idet counts
-				if tff > bff {
-					analysis.DetectedParity = "tff"
-				} else if bff > tff {
-					analysis.DetectedParity = "bff"
-				} else {
-					analysis.DetectedParity = "auto"
-				}
-				analysis.FilterRecommendation = fmt.Sprintf("bwdif=mode=0:parity=%s:deint=all", analysis.DetectedParity)
-			} else if analysis.ProgressiveRatio > 0.85 {
-				// PIXELS ARE PROGRESSIVE - Check if Metadata is lying (PsF)
-				// We call ffprobe specifically for the 'field_order' metadata
-				fieldOrderCmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=field_order", "-of", "default=noprint_wrappers=1:nokey=1", fullPath)
-				fieldOrderOut, _ := fieldOrderCmd.Output()
-				fieldOrder := strings.TrimSpace(string(fieldOrderOut))
+			// MASTER RATING SYSTEM: Deinterlace if headers SAY so, OR if pixels LOOK like it
+			if analysis.InterlacedRatio > 0.15 || isMetadataInterlaced {
 
-				// If metadata says 'tt' (top field) or 'bb', but pixels are progressive -> PsF!
-				if fieldOrder != "progressive" && fieldOrder != "unknown" && fieldOrder != "" {
-					var parity string
-					if strings.Contains(fieldOrder, "tb") || strings.Contains(fieldOrder, "top") {
-						parity = "tff"
-					} else if strings.Contains(fieldOrder, "bt") || strings.Contains(fieldOrder, "bottom") {
-						parity = "bff"
-					} else {
-						parity = "auto"
-					}
-					analysis.FilterRecommendation = "fieldmatch=order=" + parity + ":combmatch=full,yadif=mode=send_frame:deint=interlaced,format=yuv420p"
+				// Resolve target parity: Priority goes to metadata tokens, fallback to IDET numbers
+				var parity string = "auto"
+				if strings.Contains(fieldOrder, "top") || strings.Contains(fieldOrder, "tt") || strings.Contains(fieldOrder, "tb") {
+					parity = "tff"
+				} else if strings.Contains(fieldOrder, "bottom") || strings.Contains(fieldOrder, "bb") || strings.Contains(fieldOrder, "bt") {
+					parity = "bff"
+				} else if tff > bff {
+					parity = "tff"
+				} else if bff > tff {
+					parity = "bff"
+				}
+
+				// Diverge into optimizing branches based on pixel reality
+				if analysis.ProgressiveRatio > 0.98 {
+					// PsF: Pixels are practically completely flat, but container headers are lying.
+					// We use fieldmatch to seamlessly reconstruct sharp frames.
+					analysis.FilterRecommendation = "fieldmatch=order=" + parity + ":combmatch=full,yadif=mode=frame:deint=interlaced,format=yuv420p10le"
 					analysis.DetectedParity = "PsF (" + fieldOrder + ")"
 				} else {
-					analysis.FilterRecommendation = "null"
+					// TRUE INTERLACED: Pixels are actively combed (e.g., cartoons, sports).
+					// Use fast, high-quality bwdif to process the split matrices.
+					analysis.FilterRecommendation = "bwdif=mode=0:parity=" + parity + ":deint=all,format=yuv420p10le"
+					analysis.DetectedParity = parity
 				}
+			} else {
+				// Perfectly progressive pixels matching progressive metadata headers
+				analysis.FilterRecommendation = "null"
 			}
 		}
 	}
+	// =====================================================================
+	// END OF STEP 2 REPLACEMENT BLOCK
+	// =====================================================================
 
 	// 3. DUPLICATE PROBE: Detect "Fake" High FPS
 	dupCmd := exec.CommandContext(ctx, "ffmpeg",
@@ -171,7 +190,11 @@ func AnalyzeMediaInterlaceFile(ctx context.Context, fullPath string, stream stri
 	// If drops are > 40% of total frames, it's a doubled cadence (Fake High FPS)
 	if totalCount > 0 && (float64(dropCount)/float64(totalCount)) > 0.40 {
 		analysis.IsFakeHighFPS = true
-		//analysis.FilterRecommendation += ",mpdecimate,fps=25"
+		if analysis.FilterRecommendation == "null" {
+			analysis.FilterRecommendation = "mpdecimate,fps=25"
+		} else {
+			analysis.FilterRecommendation += ",mpdecimate,fps=25"
+		}
 		//analysis.FilterRecommendation += ",fps=25,mpdecimate" + fmt.Sprintf(",setpts=PTS-STARTPTS")
 	}
 
