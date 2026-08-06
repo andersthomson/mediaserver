@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -138,10 +139,14 @@ func (r *RemoteEncode) EncodePostlude(ctx context.Context, args EncodePostludeAr
 	defer slog.Info("Stop ", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
 
 	//slog.Info("Remote/postlude", "host", r.Hostname, "args", args)
-	localPath := filepath.Join(args.FfmpegArgs.OutputDir, args.FfmpegArgs.OutputFname)
+	localPath := filepath.Join(args.FfmpegArgs.OutputDir, args.FfmpegArgs.OutputFname+"-"+args.SessionID)
+	localTmpPath := localPath + "-" + args.SessionID
 	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), args.FfmpegArgs.OutputFname)
-	if err := RsyncActivity(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, false); err != nil {
+	if err := RsyncActivity(ctx, localTmpPath, remotePath, r.Username, r.Hostname, r.Port, false); err != nil {
 		return EncodePostludeResp{}, fmt.Errorf("Rsync to remote failed: %+v", err)
+	}
+	if err := os.Rename(localTmpPath, localPath); err != nil {
+		return EncodePostludeResp{}, Fatal("Failed to rename ffmpeg result file into place", "localTmpPath", localTmpPath, "localPath", localPath, "err", err)
 	}
 	return EncodePostludeResp{
 		FfmpegArgs: args.FfmpegArgs,
