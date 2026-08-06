@@ -191,9 +191,9 @@ func AnalyzeMediaInterlaceFile(ctx context.Context, fullPath string, stream stri
 	if totalCount > 0 && (float64(dropCount)/float64(totalCount)) > 0.40 {
 		analysis.IsFakeHighFPS = true
 		if analysis.FilterRecommendation == "null" {
-			analysis.FilterRecommendation = "mpdecimate,fps=25"
+			analysis.FilterRecommendation = "mpdecimate,fps=fps=25:round=near"
 		} else {
-			analysis.FilterRecommendation += ",mpdecimate,fps=25"
+			analysis.FilterRecommendation += ",mpdecimate,fps=fps=25:round=near"
 		}
 		//analysis.FilterRecommendation += ",fps=25,mpdecimate" + fmt.Sprintf(",setpts=PTS-STARTPTS")
 	}
