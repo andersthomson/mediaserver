@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker"
 	"go.temporal.io/sdk/client"
@@ -15,6 +16,45 @@ func (l *silentLogger) Debug(msg string, kv ...interface{}) {}
 func (l *silentLogger) Info(msg string, kv ...interface{})  {}
 func (l *silentLogger) Warn(msg string, kv ...interface{})  {}
 func (l *silentLogger) Error(msg string, kv ...interface{}) {}
+
+func createRemoteWorker(c client.Client, rw remoteworker) tworker.Worker {
+	execSize := 1
+	if rw.Concurrency > 0 {
+		execSize = rw.Concurrency
+	}
+	remoteEncodeWorker := tworker.New(c, "encodingQueue", tworker.Options{
+		EnableSessionWorker:                true,
+		Identity:                           "remote-" + rw.Name,
+		MaxConcurrentActivityExecutionSize: execSize,
+	})
+
+	re := &dasherworker.RemoteEncode{}
+	if rw.Hostname == "" {
+		panic(fmt.Sprintf("Hostname must be set: %+v", rw))
+	} else {
+		re.Hostname = rw.Hostname
+	}
+	if rw.Port != 0 {
+		re.Port = rw.Port
+	} else {
+		re.Port = 22
+	}
+	if rw.Username != "" {
+		re.Username = rw.Username
+	}
+	if rw.Dir != "" {
+		re.Dir = rw.Dir
+	} else {
+		re.Dir = "dasherworker.d"
+	}
+	if rw.Ffmpeg != "" {
+		re.Ffmpeg = rw.Ffmpeg
+	} else {
+		re.Ffmpeg = "ffmpeg"
+	}
+	remoteEncodeWorker.RegisterActivity(re)
+	return remoteEncodeWorker
+}
 
 func main() {
 
@@ -32,45 +72,23 @@ func main() {
 	}
 	defer c.Close()
 
+	if len(os.Args) > 1 {
+		for _, rw := range conf.Remotes {
+			if rw.Name == os.Args[1] {
+				remoteEncodeWorker := createRemoteWorker(c, rw)
+				fmt.Printf("Starting remote worker for %s\n", rw.Name)
+				if err := remoteEncodeWorker.Run(tworker.InterruptCh()); err != nil {
+					panic(fmt.Sprintf("remoteEncoding worker failed: %+v\n", err))
+				}
+				return
+			}
+		}
+	}
+
 	for _, rw := range conf.Remotes {
 		if rw.Start {
-			execSize := 1
-			if rw.Concurrency > 0 {
-				execSize = rw.Concurrency
-			}
-			remoteEncodeWorker := tworker.New(c, "encodingQueue", tworker.Options{
-				EnableSessionWorker:                true,
-				Identity:                           "remote-" + rw.Hostname,
-				MaxConcurrentActivityExecutionSize: execSize,
-			})
-
-			re := &dasherworker.RemoteEncode{}
-			if rw.Hostname == "" {
-				panic(fmt.Sprintf("Hostname must be set: %+v", rw))
-			} else {
-				re.Hostname = rw.Hostname
-			}
-			if rw.Port != 0 {
-				re.Port = rw.Port
-			} else {
-				re.Port = 22
-			}
-			if rw.Username != "" {
-				re.Username = rw.Username
-			}
-			if rw.Dir != "" {
-				re.Dir = rw.Dir
-			} else {
-				re.Dir = "dasherworker.d"
-			}
-			if rw.Ffmpeg != "" {
-				re.Ffmpeg = rw.Ffmpeg
-			} else {
-				re.Ffmpeg = "ffmpeg"
-			}
-			remoteEncodeWorker.RegisterActivity(re)
-
-			fmt.Printf("Starting remote worker for %s\n", rw.Hostname)
+			remoteEncodeWorker := createRemoteWorker(c, rw)
+			fmt.Printf("Starting remote worker for %s\n", rw.Name)
 			go func() {
 				if err := remoteEncodeWorker.Run(tworker.InterruptCh()); err != nil {
 					panic(fmt.Sprintf("remoteEncoding worker failed: %+v\n", err))
