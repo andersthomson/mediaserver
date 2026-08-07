@@ -109,7 +109,7 @@ func MP4Box(ctx context.Context, dir string, args []string) error {
 
 	<-done // Wait for the background reader to process the last remaining bytes
 	if err != nil {
-		return Error("MP4Box failed: %v", err)
+		return Fatal("MP4Box failed", "err", err)
 	}
 	return nil
 }
