@@ -82,9 +82,9 @@ func LoadJSONToStruct(filename string, target interface{}) error {
 	if err != nil {
 		// Provide a helpful error if the file simply doesn't exist
 		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("file not found", "filename", filename)
+			slog.Info("File not found", "filename", filename)
 		}
-		return fmt.Errorf("failed to read file from disk: %w", err)
+		return err
 	}
 
 	// 2. Parse the bytes into the struct pointer
