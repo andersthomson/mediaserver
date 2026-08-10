@@ -146,10 +146,10 @@ func AnalyzeMediaInterlaceFile(ctx context.Context, fullPath string, stream stri
 				}
 
 				// Diverge into optimizing branches based on pixel reality
-				if analysis.ProgressiveRatio > 0.98 {
+				if analysis.ProgressiveRatio > 0.90 {
 					// PsF: Pixels are practically completely flat, but container headers are lying.
 					// We use fieldmatch to seamlessly reconstruct sharp frames.
-					analysis.FilterRecommendation = "fieldmatch=order=" + parity + ":combmatch=full,yadif=mode=frame:deint=interlaced,format=yuv420p10le"
+					analysis.FilterRecommendation = "fieldmatch=order=" + parity + ":combmatch=full,yadif=mode=send_frame:deint=interlaced,format=yuv420p10le"
 					analysis.DetectedParity = "PsF (" + fieldOrder + ")"
 				} else {
 					// TRUE INTERLACED: Pixels are actively combed (e.g., cartoons, sports).
@@ -190,6 +190,14 @@ func AnalyzeMediaInterlaceFile(ctx context.Context, fullPath string, stream stri
 	// If drops are > 40% of total frames, it's a doubled cadence (Fake High FPS)
 	if totalCount > 0 && (float64(dropCount)/float64(totalCount)) > 0.40 {
 		analysis.IsFakeHighFPS = true
+
+		// Target cadence filter injection logic
+		cadenceFilters := "mpdecimate"
+		// Only append the fps filter if the stream is NOT already native 25fps/PAL cadence
+		if !strings.Contains(output, "25 fps") && !strings.Contains(output, "25 tbr") {
+			cadenceFilters += ",fps=fps=25:round=near"
+		}
+
 		if analysis.FilterRecommendation == "null" {
 			analysis.FilterRecommendation = "mpdecimate,fps=fps=25:round=near"
 		} else {
