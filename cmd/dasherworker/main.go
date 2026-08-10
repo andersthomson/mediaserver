@@ -25,7 +25,8 @@ func createRemoteWorker(c client.Client, rw remoteworker) tworker.Worker {
 	remoteEncodeWorker := tworker.New(c, "encodingQueue", tworker.Options{
 		EnableSessionWorker:                true,
 		Identity:                           "remote-" + rw.Name,
-		MaxConcurrentActivityExecutionSize: execSize,
+		MaxConcurrentSessionExecutionSize:  execSize,
+		MaxConcurrentActivityExecutionSize: execSize + 1,
 	})
 
 	re := &dasherworker.RemoteEncode{}
@@ -100,7 +101,8 @@ func main() {
 		we := tworker.New(c, "encodingQueue", tworker.Options{
 			EnableSessionWorker:                true,
 			Identity:                           "local-encoding",
-			MaxConcurrentActivityExecutionSize: 1,
+			MaxConcurrentSessionExecutionSize:  1,
+			MaxConcurrentActivityExecutionSize: 1 + 1,
 		})
 		we.RegisterActivity(&dasherworker.LocalEncode{})
 		fmt.Printf("Starting local worker\n")
@@ -110,45 +112,43 @@ func main() {
 			}
 		}()
 	}
+
 	// Create a worker on a specific Task Queue
 	w := tworker.New(c, "dasherQueue", tworker.Options{
-		EnableSessionWorker:                true,
-		Identity:                           "dasherQueueWorker",
-		MaxConcurrentActivityExecutionSize: 10,
+		EnableSessionWorker:                    true,
+		Identity:                               "dasherQueueWorker",
+		MaxConcurrentWorkflowTaskExecutionSize: 6,
+		MaxConcurrentActivityExecutionSize:     1,
 	})
 
-	//w.RegisterWorkflow(dasherworker.Encode)
 	w.RegisterWorkflow(dasherworker.EnsureDashWF)
+	w.RegisterWorkflow(dasherworker.GetSourcePropertiesWF)
+	w.RegisterWorkflow(dasherworker.LinkHLSSourcesWF)
+	w.RegisterWorkflow(dasherworker.StorageAddWF)
+	w.RegisterWorkflow(dasherworker.FinalizeWF)
+	w.RegisterWorkflow(dasherworker.HLSRenderMasterWF)
+
 	w.RegisterWorkflow(dasherworker.AudioEncodingWorkflow)
 	w.RegisterWorkflow(dasherworker.VideoEncodingWorkflow)
+
 	w.RegisterActivity(&dasherworker.LocalEncode{})
 	w.RegisterActivity(dasherworker.ReadMspFile)
-	//w.RegisterActivity(dasherworker.Prelude)
-	w.RegisterActivity(dasherworker.RecordTranscodingOptions)
-
+	w.RegisterActivity(dasherworker.GetMediaDurationUsec)
 	w.RegisterActivity(dasherworker.GetSourcePropertiesActivity)
-	w.RegisterWorkflow(dasherworker.GetSourcePropertiesWF)
-
-	w.RegisterWorkflow(dasherworker.HLSRenderMasterWF)
-	w.RegisterActivity(dasherworker.HLSRenderMaster)
-
-	w.RegisterActivity(dasherworker.GetStreamDimensions)
-	w.RegisterWorkflow(dasherworker.LinkHLSSourcesWF)
-	w.RegisterActivity(dasherworker.LinkSrcMedia)
-
-	w.RegisterActivity(dasherworker.IsMpeg2VideoWithBrokenDTS)
-	w.RegisterActivity(dasherworker.GenerateHLSLanguageFileActivity)
-	w.RegisterActivity(dasherworker.MP4BoxDashReady)
 	w.RegisterActivity(dasherworker.LoadTranscodingOptions)
+	w.RegisterActivity(dasherworker.GetStreamDimensions)
+	w.RegisterActivity(dasherworker.LinkSrcMedia)
+	w.RegisterActivity(dasherworker.MP4BoxDashReady)
 	w.RegisterActivity(dasherworker.FileExists)
 	w.RegisterActivity(dasherworker.GetOneTargetsProperties)
-	w.RegisterWorkflow(dasherworker.StorageAddWF)
 	w.RegisterActivity(dasherworker.KeyframeHistogram)
-	w.RegisterWorkflow(dasherworker.FinalizeWF)
 	w.RegisterActivity(dasherworker.Finalize)
+	w.RegisterActivity(dasherworker.RecordTranscodingOptions)
 	w.RegisterActivity(dasherworker.AnalyzeMediaInterlace)
-	w.RegisterActivity(dasherworker.GetMediaDurationUsec)
 
+	w.RegisterActivity(dasherworker.HLSRenderMaster)
+	w.RegisterActivity(dasherworker.GenerateHLSLanguageFileActivity)
+	w.RegisterActivity(dasherworker.IsMpeg2VideoWithBrokenDTS)
 	// Run the worker (blocks until interrupted)
 	err = w.Run(tworker.InterruptCh())
 	if err != nil {
