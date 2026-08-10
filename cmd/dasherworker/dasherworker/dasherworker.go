@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
-	"github.com/davecgh/go-spew/spew"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -60,7 +59,6 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 	}))
 	for _, future := range futures {
 		if err := future.Get(ctx, nil); err != nil {
-			spew.Dump(future)
 			return "", Error("Child WF execution failed", "err", err)
 		}
 	}
@@ -546,18 +544,6 @@ func isVideoCodec(codec string) bool {
 	}
 	return false
 }
-func durationDeriverFfmpeg(ctx workflow.Context, inputID string, inputNo int, stream string) (int64, error) {
-	ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 30 * time.Second,
-	})
-	var duration int64
-	err := workflow.ExecuteActivity(ctx1, GetMediaDurationUsec, inputID, inputNo, stream).Get(ctx1, &duration)
-	if err != nil {
-		return 0, err
-	}
-	return duration, nil
-}
-
 func QueueSelectorLocal(args EncodeStreamArgs) string {
 	var queue string
 	if isVideoCodec(args.Codec) {
