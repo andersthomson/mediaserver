@@ -64,6 +64,9 @@ func main() {
 					spew.Dump(srcProperties)
 			*/
 			return
+		case "stat":
+			stat()
+			return
 		case "splitmp4":
 			_, err := dasherworker.TrySplitMp4ToTs(context.Background(), os.Args[2], os.Args[3])
 			if err != nil {
