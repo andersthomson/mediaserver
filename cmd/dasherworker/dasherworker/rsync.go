@@ -1,9 +1,10 @@
 package dasherworker
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +17,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-type progressWriter struct {
+type progressParser struct {
 	ctx      context.Context
 	re       *regexp.Regexp
 	toRemote bool
@@ -26,26 +27,46 @@ type progressWriter struct {
 	logger   *ThrottledLogger
 }
 
-func (w *progressWriter) Write(p []byte) (n int, err error) {
-	str := string(p)
-	//slog.Info("GOT", "string", str)
-
-	// FindString looks for the first occurrence of digits followed by %
-	// This is more resilient to the leading spaces rsync uses
-	match := w.re.FindString(str)
+func (p *progressParser) parseLine(line string, forceLogger bool) {
+	// FindString will now safely inspect clean, isolated lines
+	match := p.re.FindString(line)
 	if match != "" {
-		// match will be "7%"
 		var dStr string
-		if w.toRemote {
+		if p.toRemote {
 			dStr = "Local->Remote"
 		} else {
 			dStr = "Remote->Local"
 		}
-		str = fmt.Sprintf("%s %s %s completed", dStr, w.fname, match)
-		w.logger.Info("Rsync Heartbeat", "host", w.hostname, "port", w.port, "value", str)
-		activity.RecordHeartbeat(w.ctx, str)
+		str := fmt.Sprintf("%s %s %s completed", dStr, p.fname, match)
+		if forceLogger {
+			slog.Info("Rsync Heartbeat", "host", p.hostname, "port", p.port, "value", str)
+		} else {
+			p.logger.Info("Rsync Heartbeat", "host", p.hostname, "port", p.port, "value", str)
+		}
+		activity.RecordHeartbeat(p.ctx, str)
 	}
-	return len(p), nil
+}
+
+// dropCRLF is a custom split function that splits on BOTH \n and \r
+func dropCRLF(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+
+	// Find either a newline or a carriage return
+	if i := bytes.IndexAny(data, "\r\n"); i >= 0 {
+		// We found a line termination character.
+		// Return the data up to the character, and advance past it.
+		return i + 1, data[:i], nil
+	}
+
+	// If we're at EOF, we have a final, non-terminated line. Return it.
+	if atEOF {
+		return len(data), data, nil
+	}
+
+	// Request more data.
+	return 0, nil, nil
 }
 
 func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remoteHost string, port int, toRemote bool) error {
@@ -65,7 +86,6 @@ func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remot
 		dst = localPath
 	}
 
-	// --info=progress2 is critical for the parser to see a single percentage line
 	args := []string{
 		"-avP", "--no-inc-recursive", "--mkpath", "--info=progress2", "--append-verify", "-e", "ssh -p " + strconv.Itoa(port) + " -T", src, dst}
 
@@ -77,7 +97,8 @@ func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remot
 	defer f.Close()
 
 	slog.Info("rsync here", "args", args)
-	pw := &progressWriter{
+
+	pp := &progressParser{
 		ctx:      ctx,
 		re:       regexp.MustCompile(`\d+%`),
 		toRemote: toRemote,
@@ -87,11 +108,21 @@ func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remot
 		logger:   NewThrottledLogger(rate.Every(5*time.Second), 3),
 	}
 
-	// Connect stdout directly to our spy writer
+	// Initialize the scanner using the pseudo-terminal file descriptor
+	scanner := bufio.NewScanner(f)
+	scanner.Split(dropCRLF)
+
+	// Read line-by-line concurrently
 	go func() {
-		_, _ = io.Copy(pw, f)
+		for scanner.Scan() {
+			pp.parseLine(scanner.Text(), false)
+		}
 	}()
 
-	return cmd.Wait()
-
+	err = cmd.Wait()
+	if err != nil {
+		return Error("rsync execution failed", "err", err)
+	}
+	pp.parseLine("100%", true)
+	return nil
 }
