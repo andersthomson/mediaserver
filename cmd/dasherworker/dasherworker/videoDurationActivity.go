@@ -7,32 +7,21 @@ import (
 	"log/slog"
 	"os/exec"
 	"strconv"
+
+	"go.temporal.io/sdk/workflow"
 )
 
-type ProbeOutput struct {
-	Format struct {
-		Duration string `json:"duration"`
-	} `json:"format"`
-}
-
-// FFProbeOutput matches the top-level JSON wrapper returned by ffprobe
-type FFProbeOutput struct {
-	Streams []StreamInfo `json:"streams"`
-}
-
-// StreamInfo extracts the specific stream-level duration
-type StreamInfo struct {
-	DurationStr string `json:"duration"` //seconds
-}
-
-func (s StreamInfo) GetDuration() (float64, error) {
-	if s.DurationStr == "" {
-		return 0, fmt.Errorf("duration metadata not found in stream")
-	}
-	return strconv.ParseFloat(s.DurationStr, 64)
+func durationDeriverFfmpeg(ctx workflow.Context, inputID string, inputNo int, stream string) (int64, error) {
+	return CallActivityIO[any, int64](ctx, GetMediaDurationUsec, inputID, inputNo, stream)
 }
 
 func GetMediaDurationUsec(ctx context.Context, inputID string, inputNo int, stream string) (int64, error) {
+	type ProbeOutput struct {
+		Format struct {
+			Duration string `json:"duration"`
+		} `json:"format"`
+	}
+
 	mediaPath := storage.ResolveInputNumber(inputID, inputNo)
 	slog.Info("GetMediaDurationUsec", "mediaPath", mediaPath, "stream", stream)
 
@@ -45,7 +34,7 @@ func GetMediaDurationUsec(ctx context.Context, inputID string, inputNo int, stre
 	cmd := exec.CommandContext(ctx, "ffprobe", args...)
 	out, err := cmd.Output()
 	if err != nil {
-		slog.Error("Exec failed", "GetVideoDurationUsec", err)
+		slog.Error("Exec failed", "func", "GetVideoDurationUsec", "args", args, "err", err)
 		return 0, err
 	}
 
