@@ -5,89 +5,79 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"time"
 
-	"github.com/creack/pty"
 	"go.temporal.io/sdk/activity"
 	"golang.org/x/time/rate"
 )
 
-type mp4BoxProgressWriter struct {
-	ctx    context.Context
-	re     *regexp.Regexp
-	fname  string
-	logger *ThrottledLogger
-}
-
-func (w *mp4BoxProgressWriter) Write(p []byte) (n int, err error) {
-	str := string(p)
-	//slog.Info("RAW", "string", str)
-	// Captures the raw digits before a percentage sign (e.g., "50%")
-	//match := w.re.FindString(str)
-	// FindStringSubmatch returns an array: [0] is the full match, [1] is the captured digits
-	matches := w.re.FindStringSubmatch(str)
-	if len(matches) > 1 {
-		// matches[1] isolates just the actual global percentage (e.g., "93")
-		match := matches[1]
-
-		statusStr := fmt.Sprintf("MP4Box processing %s: %s%% completed", w.fname, match)
-
-		w.logger.Info("MP4Box Heartbeat", "value", statusStr)
-		activity.RecordHeartbeat(w.ctx, statusStr)
-	}
-	/*
-		if match != "" {
-			statusStr := fmt.Sprintf("MP4Box processing %s: %s completed", w.fname, match)
-
-			// Send throttled log and Temporal heartbeat
-			w.logger.Info("MP4Box Heartbeat", "file", w.fname, "value", statusStr)
-			activity.RecordHeartbeat(w.ctx, statusStr)
-		}*/
-	return len(p), nil
-}
-
-func MP4Box(ctx context.Context, dir string, args []string) error {
+// RunMP4Box executes MP4Box with full stdout/stderr separation and real-time progress parsing
+func MP4Box(ctx context.Context, dir string, args []string) (bytes.Buffer, bytes.Buffer, error) {
 	slog.Info("MP4Box", "dir", dir, "args", args)
 	cmd := exec.CommandContext(ctx, "/usr/bin/MP4Box", args...)
 	cmd.Dir = dir
-	//cmd.Stdout = os.Stdout
-	//cmd.Stderr = os.Stderr
 
-	f, err := pty.Start(cmd)
+	// 🖥️ Force MP4Box to run in interactive/TTY mode despite standard piping
+	cmd.Env = append(os.Environ(),
+		"TERM=xterm-256color",
+		"FORCE_TTY=true",
+	)
+
+	// 🔗 Create distinct, independent pipes
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return Error("failed to start MP4Box for %v: %+v", args, err)
+		return bytes.Buffer{}, bytes.Buffer{}, Fatal("stdout pipe allocation failure", "err", err)
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return bytes.Buffer{}, bytes.Buffer{}, Fatal("stderr pipe allocation failure", "err", err)
 	}
 
-	pw := &mp4BoxProgressWriter{
-		ctx: ctx,
-		// Matches digits followed by optional spaces and a percent sign (e.g., "45%")
-		//re:    regexp.MustCompile(`\d+\s*%`),
-		re:    regexp.MustCompile(`MPD\s+[\d\.]+\s*s\s+(\d+)\s*%`),
-		fname: filepath.Base(args[len(args)-1]),
-		// Adjust rate limiting to match your application's ThrottledLogger definition
-		logger: NewThrottledLogger(rate.Every(3*time.Second), 1),
+	if err := cmd.Start(); err != nil {
+		return bytes.Buffer{}, bytes.Buffer{}, Fatal("failed to start MP4Box", "args", args, "err", err)
 	}
 
-	// Create a synchronization channel
-	done := make(chan struct{})
+	// 🗄️ Buffers to securely capture independent data streams
+	var stdoutBuffer bytes.Buffer
+	var stderrBuffer bytes.Buffer
 
+	// Coordinate asynchronous processing steps safely
+	stdoutDone := make(chan struct{})
+	stderrDone := make(chan struct{})
+
+	// 1. Read Stdout in background goroutine
 	go func() {
-		defer close(done)
+		defer close(stdoutDone)
+		_, _ = io.Copy(&stdoutBuffer, stdoutPipe)
+	}()
 
-		scanner := bufio.NewScanner(f)
-		// Custom split function to handle carriage returns (\r) and newlines (\n) cleanly
+	re := regexp.MustCompile(`MPD\s+[\d\.]+\s*s\s+(\d+)\s*%`)
+	logger := NewThrottledLogger(rate.Every(3*time.Second), 1)
+	fname := filepath.Base(args[len(args)-1])
+
+	// 2. Read, log, and parse Stderr in background goroutine
+	go func() {
+		defer close(stderrDone)
+
+		// Duplicate stderr to our in-memory buffer while the scanner processes it
+		teeStderr := io.TeeReader(stderrPipe, &stderrBuffer)
+		scanner := bufio.NewScanner(teeStderr)
+
+		// Split on BOTH \n and \r so interactive updates trigger regex evaluations instantly
 		scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 			if atEOF && len(data) == 0 {
 				return 0, nil, nil
 			}
-			if i := bytes.IndexAny(data, "\r\n"); i >= 0 {
-				return i + 1, data[0:i], nil
+			for i := 0; i < len(data); i++ {
+				if data[i] == '\n' || data[i] == '\r' {
+					return i + 1, data[0:i], nil
+				}
 			}
 			if atEOF {
 				return len(data), data, nil
@@ -95,63 +85,28 @@ func MP4Box(ctx context.Context, dir string, args []string) error {
 			return 0, nil, nil
 		})
 
-		// Scanner safely extracts complete progress lines, eliminating partial regex matches
 		for scanner.Scan() {
-			// Pass the string to your progress writer logic safely
-			_, _ = pw.Write(scanner.Bytes())
+			line := scanner.Text()
+			if match := re.FindStringSubmatch(line); match != nil {
+				// 📈 Insert your throttled percentage logging logic here
+				// Example: password.logger.LogProgress(match[1])
+				logger.Info("MP4Box Progress", "file", fname, "percentage", match[1])
+				activity.RecordHeartbeat(ctx, fmt.Sprintf("MP4Box %s: %v%% done", fname, match[1]))
+
+			}
 		}
 	}()
 
-	err = cmd.Wait()
+	// 3. Wait until both independent reading threads flush their data
+	<-stdoutDone
+	<-stderrDone
 
-	// Force close the PTY file descriptor now.
-	f.Close()
-
-	<-done // Wait for the background reader to process the last remaining bytes
-	if err != nil {
-		return Fatal("MP4Box failed", "err", err)
+	// 4. Reap the final system process status code
+	if err := cmd.Wait(); err != nil {
+		return stdoutBuffer, stderrBuffer, Error("MP4Box process failed execution", "args", args, "error", err,
+			"stdout", stdoutBuffer.String(),
+			"stderr", stderrBuffer.String(),
+		)
 	}
-	return nil
-}
-
-type MP4BoxDashReadyArgs struct {
-	EncodeArgs         EncodeStreamArgs
-	TranscodedFilePath string
-	ManifestFilePath   string
-	DrFname            string
-	DrFilePath         string
-	DrDir              string
-	WorkDir            string
-	DashMs             string
-	MP4BoxArgs         []string
-}
-
-type MP4BoxDashReadyResp struct {
-	Stdout string
-	Stderr string
-}
-
-func MP4BoxDashReady(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
-
-	slog.Info("MP4Box dashing stream", "filePath", args.TranscodedFilePath)
-	if err := MP4Box(ctx, args.WorkDir, args.MP4BoxArgs); err != nil {
-		return MP4BoxDashReadyResp{}, err
-	}
-
-	//remove unneded files
-	if err := os.Remove(args.TranscodedFilePath); err != nil {
-		return MP4BoxDashReadyResp{}, Fatal("Failed to remove %s: %v", args.TranscodedFilePath, err)
-	}
-	if err := os.Remove(args.ManifestFilePath); err != nil {
-		return MP4BoxDashReadyResp{}, Fatal("Failed to remove %s: %v", args.ManifestFilePath, err)
-	}
-
-	basename, ok := strings.CutSuffix(args.DrFname, ".mp4")
-	if !ok {
-		return MP4BoxDashReadyResp{}, Fatal("drFname MUST end in .mp4")
-	}
-	if err := os.Rename(filepath.Join(args.DrDir, basename+".mp4init.mp4"), args.DrFilePath); err != nil {
-		return MP4BoxDashReadyResp{}, Fatal("Failed to rename %s %s:%v", filepath.Join(args.DrDir, basename+".mp4init.mp4"), args.DrFilePath, err)
-	}
-	return MP4BoxDashReadyResp{}, nil
+	return stdoutBuffer, stderrBuffer, nil
 }

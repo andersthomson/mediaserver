@@ -32,6 +32,8 @@ type FinalizeArgs struct {
 }
 
 type FinalizeResp struct {
+	MP4BoxStdout string
+	MP4BoxStderr string
 }
 
 func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
@@ -105,8 +107,12 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	//args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
 	boxArgs := []string{"-dash", dashMs2(gopFrames, fpsI), "-rap", "-flat", "-profile", "onDemand", "-out", "manifest.mpd"}
 	boxArgs = append(boxArgs, mp4BoxInputs...)
-	if err := MP4Box(ctx, targetDir, boxArgs); err != nil {
-		return FinalizeResp{}, err
+	stdoutBuf, stderrBuf, err := MP4Box(ctx, targetDir, boxArgs)
+	if err != nil {
+		return FinalizeResp{
+			MP4BoxStdout: stdoutBuf.String(),
+			MP4BoxStderr: stderrBuf.String(),
+		}, err
 	}
 	fixManifestBaseURLs(filepath.Join(targetDir, "manifest.mpd"))
 	for _, in := range inputFiles {
@@ -125,7 +131,10 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 			return FinalizeResp{}, Error("os.Remove failed", "filename", filepath.Join(targetDir, dName), "err", err)
 		}
 	}
-	return FinalizeResp{}, nil
+	return FinalizeResp{
+		MP4BoxStdout: stdoutBuf.String(),
+		MP4BoxStderr: stderrBuf.String(),
+	}, nil
 }
 
 // Check *.mp4 video files and return first file's properties (or an error)
