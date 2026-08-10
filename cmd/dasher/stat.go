@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 
+	"go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 )
@@ -31,6 +32,14 @@ func stat() {
 		topType := info.Type.Name
 		fmt.Printf("\n====== Top WF: %s [%s] ======\n", topType, topID)
 
+		// Describe to pull current activity telemetry
+		desc, err := c.DescribeWorkflowExecution(ctx, info.Execution.WorkflowId, info.Execution.RunId)
+		if err != nil {
+			continue
+		}
+		for _, act := range desc.PendingActivities {
+			showActivity(act)
+		}
 		// Find children pointing back to this parent
 		childQuery := fmt.Sprintf("ExecutionStatus='Running' AND ParentWorkflowId='%s'", topID)
 		childResponse, err := c.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{Query: childQuery})
@@ -63,29 +72,33 @@ func stat() {
 			}
 
 			for _, act := range desc.PendingActivities {
-				actName := act.ActivityType.Name
-				attempt := act.Attempt
-
-				// Infer max attempts boundary text safely
-				maxAttempts := "∞"
-				if act.MaximumAttempts > 0 {
-					maxAttempts = fmt.Sprintf("%d", act.MaximumAttempts)
-				}
-
-				// Abbreviate and truncate raw argument string payloads
-				rawArgs := "[]"
-				if act.HeartbeatDetails != nil {
-					rawArgs = string(act.HeartbeatDetails.Payloads[0].Data)
-				} else if act.LastFailure != nil {
-					rawArgs = act.LastFailure.Message
-				}
-				abbrArgs := abbrev(rawArgs, 45)
-
-				fmt.Printf("        --> Activity: %s (try %d/%s) args: %s\n",
-					actName, attempt, maxAttempts, abbrArgs)
+				showActivity(act)
 			}
 		}
 	}
+}
+
+func showActivity(act *workflow.PendingActivityInfo) {
+	actName := act.ActivityType.Name
+	attempt := act.Attempt
+
+	// Infer max attempts boundary text safely
+	maxAttempts := "∞"
+	if act.MaximumAttempts > 0 {
+		maxAttempts = fmt.Sprintf("%d", act.MaximumAttempts)
+	}
+
+	// Abbreviate and truncate raw argument string payloads
+	rawArgs := "[]"
+	if act.HeartbeatDetails != nil {
+		rawArgs = string(act.HeartbeatDetails.Payloads[0].Data)
+	} else if act.LastFailure != nil {
+		rawArgs = act.LastFailure.Message
+	}
+	abbrArgs := abbrev(rawArgs, 45)
+
+	fmt.Printf("        --> Activity: %s (try %d/%s) args: %s\n",
+		actName, attempt, maxAttempts, abbrArgs)
 }
 
 func abbrev(s string, max int) string {
