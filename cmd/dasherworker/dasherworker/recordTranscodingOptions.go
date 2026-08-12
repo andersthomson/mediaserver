@@ -8,11 +8,19 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+type Invocation struct {
+	Dir      string
+	Args     []string
+	Stdout   string
+	Stderr   string
+	ExitCode int
+}
 type TranscodingOptionsRecord struct {
 	EncodeStream        EncodeStreamArgs
 	Ffmpegargs          FFMpegArgs
 	Stderr              string
 	MP4BoxDashReadyArgs MP4BoxDashReadyArgs
+	MP4Box              Invocation
 }
 
 func CallRecordTranscodingOptions(ctx workflow.Context, t TranscodingOptionsRecord) error {

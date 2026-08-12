@@ -485,7 +485,7 @@ type LanguageStrategy func(args EncodeStreamArgs) []any
 type ManifestStrategy func(args EncodeStreamArgs) []any
 type DurationDeriverUsec func(ctx workflow.Context, inputID string, inputNo int, stream string) (int64, error)
 type QueueSelector func(args EncodeStreamArgs) string
-type PackagingStrategy func(ctx workflow.Context, args MP4BoxDashReadyArgs) error
+type PackagingStrategy func(ctx workflow.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error)
 
 func MP4BoxDashReadyStrategy(args EncodeStreamArgs) MP4BoxDashReadyArgs {
 	drFilePath := storage.DasherReadyRepresentationFilePath(args)
@@ -519,7 +519,7 @@ func MP4BoxDashReadyStrategy(args EncodeStreamArgs) MP4BoxDashReadyArgs {
 		MP4BoxArgs:         boxArgs,
 	}
 }
-func MP4BoxPackager(ctx workflow.Context, args MP4BoxDashReadyArgs) error {
+func MP4BoxPackager(ctx workflow.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
 	ctx3 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: time.Minute * 50,
 		TaskQueue:           "dasherQueue",
@@ -530,9 +530,8 @@ func MP4BoxPackager(ctx workflow.Context, args MP4BoxDashReadyArgs) error {
 	err := workflow.ExecuteActivity(ctx3, MP4BoxDashReady, args).Get(ctx3, &MP4BoxDashReadyResp)
 	if err != nil {
 		slog.Error("MP4BoxDashReady activity failed", "err", err.Error())
-		return err
 	}
-	return nil
+	return MP4BoxDashReadyResp, err
 }
 
 func isVideoCodec(codec string) bool {
@@ -762,7 +761,8 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 		FfmpegArgs: ffmpegArgsExpanded,
 	}).Get(ctx2, nil)
 
-	if err := m.packager(ctx, mp4boxargs); err != nil {
+	mp4boxresp, err := m.packager(ctx, mp4boxargs)
+	if err != nil {
 		return Error("Packager failed", "err", err)
 	}
 
@@ -771,6 +771,12 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 		Ffmpegargs:          ffmpegArgsExpanded,
 		Stderr:              ffmpegEncodeResp.Stderr,
 		MP4BoxDashReadyArgs: mp4boxargs,
+		MP4Box: Invocation{
+			Dir:    mp4boxresp.Dir,
+			Args:   mp4boxargs.MP4BoxArgs,
+			Stdout: mp4boxresp.Stdout,
+			Stderr: mp4boxresp.Stderr,
+		},
 	}
 	if err := CallRecordTranscodingOptions(ctx, t); err != nil {
 		return err

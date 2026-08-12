@@ -21,6 +21,7 @@ type MP4BoxDashReadyArgs struct {
 }
 
 type MP4BoxDashReadyResp struct {
+	Dir    string
 	Stdout string
 	Stderr string
 }
@@ -32,24 +33,25 @@ func MP4BoxDashReady(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashR
 	if err != nil {
 		return MP4BoxDashReadyResp{}, err
 	}
-
+	resp := MP4BoxDashReadyResp{
+		Dir:    args.WorkDir,
+		Stdout: stdoutBuf.String(),
+		Stderr: stderrBuf.String(),
+	}
 	//remove unneded files
 	if err := os.Remove(args.TranscodedFilePath); err != nil {
-		return MP4BoxDashReadyResp{}, Fatal("Failed to remove %s: %v", args.TranscodedFilePath, err)
+		return resp, Fatal("Failed to remove %s: %v", args.TranscodedFilePath, err)
 	}
 	if err := os.Remove(args.ManifestFilePath); err != nil {
-		return MP4BoxDashReadyResp{}, Fatal("Failed to remove %s: %v", args.ManifestFilePath, err)
+		return resp, Fatal("Failed to remove %s: %v", args.ManifestFilePath, err)
 	}
 
 	basename, ok := strings.CutSuffix(args.DrFname, ".mp4")
 	if !ok {
-		return MP4BoxDashReadyResp{}, Fatal("drFname MUST end in .mp4")
+		return resp, Fatal("drFname MUST end in .mp4")
 	}
 	if err := os.Rename(filepath.Join(args.DrDir, basename+".mp4init.mp4"), args.DrFilePath); err != nil {
-		return MP4BoxDashReadyResp{}, Fatal("Failed to rename %s %s:%v", filepath.Join(args.DrDir, basename+".mp4init.mp4"), args.DrFilePath, err)
+		return resp, Fatal("Failed to rename %s %s:%v", filepath.Join(args.DrDir, basename+".mp4init.mp4"), args.DrFilePath, err)
 	}
-	return MP4BoxDashReadyResp{
-		Stdout: stdoutBuf.String(),
-		Stderr: stderrBuf.String(),
-	}, nil
+	return resp, nil
 }
