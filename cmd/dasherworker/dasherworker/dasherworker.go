@@ -98,7 +98,16 @@ func AudioEncodingWorkflow(ctx workflow.Context, args AudioEncodingWorkflowArgs)
 	})
 	fname := storage.DasherReadyRepresentationFilePath(*Eargs)
 	slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
-	if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs); err != nil {
+	factory := PipelineFactory(ctx, *Eargs)
+	ffmpegArgs, err := factory.FfmpegArgs(ctx, *Eargs)
+	if err != nil {
+		return AudioEncodingWorkflowResp{}, err
+	}
+	mp4boxArgs, err := factory.MP4BoxArgs(ctx, *Eargs)
+	if err != nil {
+		return AudioEncodingWorkflowResp{}, err
+	}
+	if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs, ffmpegArgs, mp4boxArgs); err != nil {
 		slog.Error("Pipeline processing failed", "err", err)
 		return AudioEncodingWorkflowResp{}, err
 	}
@@ -166,7 +175,16 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 	}, opts...)
 	fname := storage.DasherReadyRepresentationFilePath(*Eargs)
 	slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
-	if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs); err != nil {
+	factory := PipelineFactory(ctx, *Eargs)
+	ffmpegArgs, err := factory.FfmpegArgs(ctx, *Eargs)
+	if err != nil {
+		return VideoEncodingWorkflowResp{}, err
+	}
+	mp4boxArgs, err := factory.MP4BoxArgs(ctx, *Eargs)
+	if err != nil {
+		return VideoEncodingWorkflowResp{}, err
+	}
+	if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs, ffmpegArgs, mp4boxArgs); err != nil {
 		slog.Error("Pipeline processing failed", "err", err)
 		return VideoEncodingWorkflowResp{}, err
 	}
@@ -661,13 +679,7 @@ type ManagedPipeline struct {
 	packager         PackagingStrategy
 }
 
-func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) error {
-
-	if err := os.MkdirAll(storage.ProdDir(args.InputID), os.ModePerm); err != nil {
-		return err
-	}
-	args.DstProps.DashMs = dashMs2(gopFrames(ctx, args.InputID), 25)
-
+func (m ManagedPipeline) FfmpegArgs(ctx workflow.Context, args EncodeStreamArgs) (FFMpegArgs, error) {
 	var ffmpegArgs []any
 	ffmpegArgs = append(ffmpegArgs, m.inputStrategy(ctx, args)...)
 	if isVideoCodec(args.Codec) {
@@ -683,7 +695,7 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 			Stream:  args.Stream,
 		}).Get(ctx1, &MediaInterlaceAnalysis)
 		if err != nil {
-			return err
+			return FFMpegArgs{}, err
 		}
 		ffmpegArgs = append(ffmpegArgs, videoFilterStrategy(ctx, args, MediaInterlaceAnalysis.FilterRecommendation)...)
 	}
@@ -692,8 +704,19 @@ func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs) er
 	ffmpegArgs = append(ffmpegArgs, m.manifestStrategy(args)...)
 
 	ffmpegArgsExpanded := NewFFMpegArgs(ffmpegArgs)
+	return ffmpegArgsExpanded, nil
+}
 
-	mp4boxargs := MP4BoxDashReadyStrategy(args)
+func (m ManagedPipeline) MP4BoxArgs(ctx workflow.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
+	args.DstProps.DashMs = dashMs2(gopFrames(ctx, args.InputID), 25)
+	return MP4BoxDashReadyStrategy(args), nil
+}
+
+func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) error {
+
+	if err := os.MkdirAll(storage.ProdDir(args.InputID), os.ModePerm); err != nil {
+		return err
+	}
 
 	//If both ffmpeg and mp4box cmd lines have been executed before, skip processing.
 	if t, err := CallLoadTranscodingOptions(ctx, args); err == nil && t != nil {
