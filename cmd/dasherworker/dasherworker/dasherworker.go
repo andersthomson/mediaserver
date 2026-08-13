@@ -50,15 +50,6 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 			Target:  target,
 		}))
 	}
-	/*
-		childOptions := workflow.ChildWorkflowOptions{
-			WorkflowID: "EnsureDash-child-for-" + M.ShortName + "-" + M.Id + "-" + "audio", // Unique ID
-		}
-		ctx = workflow.WithChildOptions(ctx, childOptions)
-		futures = append(futures, workflow.ExecuteChildWorkflow(ctx, AudioEncodingWorkflow, AudioEncodingWorkflowArgs{
-			Dir:     filepath.Dir(args.MspPath),
-			MspFile: filepath.Base(args.MspPath),
-		}))*/
 	for _, future := range futures {
 		if err := future.Get(ctx, nil); err != nil {
 			return "", Error("Child WF execution failed", "err", err)
@@ -67,62 +58,6 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 
 	CallFinalize(ctx, M.Id)
 	return "", nil
-}
-
-type AudioEncodingWorkflowArgs struct {
-	Dir     string
-	MspFile string
-}
-
-type AudioEncodingWorkflowResp struct {
-}
-
-func AudioEncodingWorkflow(ctx workflow.Context, args AudioEncodingWorkflowArgs) (AudioEncodingWorkflowResp, error) {
-	slog.Info("Start", "W", "AudioEncoding", "msp", args.MspFile)
-	defer slog.Info("Stop ", "W", "AudioEncoding", "msp", args.MspFile)
-
-	M, err := CallActivityIO[string, scrape.Msp](ctx, ReadMspFile, args.Dir, args.MspFile)
-	if err != nil {
-		slog.Error("MSP read failed", "err", err)
-	}
-
-	storage.Add(args.Dir, M)
-	idx := getFirstInputStreamWithPrefix(M.Inputs, "a")
-	if idx == -1 {
-		return AudioEncodingWorkflowResp{}, Error("Found no audio stream source specified", "input", M)
-	}
-	Eargs := NewEncodeStreamArgs(ctx, &EncodeStreamArgs{
-		InputID:  M.Id,
-		InputNo:  idx,
-		Stream:   M.Inputs[idx].Stream,
-		Language: M.Inputs[idx].Language,
-		Codec:    "aac",
-	})
-	fname := storage.DasherReadyRepresentationFilePath(*Eargs)
-	slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
-	factory := PipelineFactory(ctx, *Eargs)
-	ffmpegArgs, err := factory.FfmpegArgs(ctx, *Eargs)
-	if err != nil {
-		return AudioEncodingWorkflowResp{}, err
-	}
-	mp4boxArgs, err := factory.MP4BoxArgs(ctx, *Eargs)
-	if err != nil {
-		return AudioEncodingWorkflowResp{}, err
-	}
-	if t, err := CallLoadTranscodingOptions(ctx, *Eargs); err == nil && t != nil {
-		//We have a history
-		if diff := factory.NeedsProcessing(*t, ffmpegArgs, mp4boxArgs); diff == "" {
-			slog.Info("Already processed", "ShortName", M.ShortName, "InputID", M.Id, "Stream", M.Inputs[idx].Stream)
-			return AudioEncodingWorkflowResp{}, nil
-		} else {
-			slog.Info("Need reprocessing", "ShortName", M.ShortName, "InputID", M.Id, "Stream", M.Inputs[idx].Stream, "new trancoding diff", diff)
-		}
-	}
-	err = factory.Process(ctx, *Eargs, ffmpegArgs, mp4boxArgs)
-	if err != nil {
-		slog.Error("Pipeline processing failed", "err", err)
-	}
-	return AudioEncodingWorkflowResp{}, err
 }
 
 func getFirstInputStreamWithPrefix(inputs []scrape.InputT, prefix string) int {

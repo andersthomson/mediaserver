@@ -128,7 +128,6 @@ func main() {
 	w.RegisterWorkflow(dasherworker.FinalizeWF)
 	w.RegisterWorkflow(dasherworker.HLSRenderMasterWF)
 
-	w.RegisterWorkflow(dasherworker.AudioEncodingWorkflow)
 	w.RegisterWorkflow(dasherworker.RepresentationEncodingWorkflow)
 
 	w.RegisterActivity(&dasherworker.LocalEncode{})
