@@ -236,6 +236,10 @@ func bitrate(codec string, profile string) string {
 
 type Preset string
 
+func (p Preset) String() string {
+	return string(p)
+}
+
 func preset(fast bool) Preset {
 	if fast {
 		return "ultrafast"
@@ -580,7 +584,7 @@ type EncodeStreamArgs struct {
 	Kind     string
 	Language string
 
-	Preset       string
+	Preset       Preset
 	Profile      string
 	Codec        string
 	VideoFilters VideoFilterSettings
@@ -607,7 +611,7 @@ func WithMaxResolution(maxx Resolution) TranscodeOption {
 
 func WithPreset(p Preset) TranscodeOption {
 	return func(j *EncodeStreamArgs) {
-		j.Preset = string(p)
+		j.Preset = p
 	}
 }
 

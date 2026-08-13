@@ -55,6 +55,8 @@ func NewFFMpegArgs(s []any) FFMpegArgs {
 				continue
 			}
 			slog.Error("Found more than 2 DirFile:s in the ffmpeg args", "args", s)
+		case fmt.Stringer:
+			res.Args[idx] = x.String()
 		case OutputDirFile:
 			res.Args[idx] = x.Fname
 			res.OutputDirFiles = append(res.OutputDirFiles, x)
