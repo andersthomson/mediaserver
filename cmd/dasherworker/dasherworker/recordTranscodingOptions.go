@@ -40,7 +40,7 @@ func RecordTranscodingOptions(_ context.Context, t TranscodingOptionsRecord) (st
 		return "", FatalError(err)
 	}
 	// Intentional: OK if the name does not exist.
-	_ = os.Remove(base)
+	_ = os.Rename(base, base+".old")
 
 	if err := os.Symlink(filepath.Base(fname), base); err != nil {
 		return "", FatalError(err)
