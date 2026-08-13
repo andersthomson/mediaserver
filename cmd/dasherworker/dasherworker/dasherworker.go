@@ -5,13 +5,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
+	"github.com/google/go-cmp/cmp"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -107,11 +107,20 @@ func AudioEncodingWorkflow(ctx workflow.Context, args AudioEncodingWorkflowArgs)
 	if err != nil {
 		return AudioEncodingWorkflowResp{}, err
 	}
-	if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs, ffmpegArgs, mp4boxArgs); err != nil {
-		slog.Error("Pipeline processing failed", "err", err)
-		return AudioEncodingWorkflowResp{}, err
+	if t, err := CallLoadTranscodingOptions(ctx, *Eargs); err == nil && t != nil {
+		//We have a history
+		if diff := factory.NeedsProcessing(*t, ffmpegArgs, mp4boxArgs); diff == "" {
+			slog.Info("Already processed", "ShortName", M.ShortName, "InputID", M.Id, "Stream", M.Inputs[idx].Stream)
+			return AudioEncodingWorkflowResp{}, nil
+		} else {
+			slog.Info("Need reprocessing", "ShortName", M.ShortName, "InputID", M.Id, "Stream", M.Inputs[idx].Stream, "new trancoding diff", diff)
+		}
 	}
-	return AudioEncodingWorkflowResp{}, nil
+	err = factory.Process(ctx, *Eargs, ffmpegArgs, mp4boxArgs)
+	if err != nil {
+		slog.Error("Pipeline processing failed", "err", err)
+	}
+	return AudioEncodingWorkflowResp{}, err
 }
 
 func getFirstInputStreamWithPrefix(inputs []scrape.InputT, prefix string) int {
@@ -712,22 +721,22 @@ func (m ManagedPipeline) MP4BoxArgs(ctx workflow.Context, args EncodeStreamArgs)
 	return MP4BoxDashReadyStrategy(args), nil
 }
 
+func (m ManagedPipeline) NeedsProcessing(t TranscodingOptionsRecord, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) string {
+	//If either of ffmpeg and mp4box cmd lines differ, we need (re)processing.
+	var diffs []string
+	if d := cmp.Diff(t.Ffmpegargs, ffmpegArgsExpanded); d != "" {
+		diffs = append(diffs, d)
+	}
+	if d := cmp.Diff(t.MP4BoxDashReadyArgs, mp4boxargs); d != "" {
+		diffs = append(diffs, d)
+	}
+	return strings.Join(diffs, "\n")
+}
+
 func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) error {
 
 	if err := os.MkdirAll(storage.ProdDir(args.InputID), os.ModePerm); err != nil {
 		return err
-	}
-
-	//If both ffmpeg and mp4box cmd lines have been executed before, skip processing.
-	if t, err := CallLoadTranscodingOptions(ctx, args); err == nil && t != nil {
-		//spew.Dump(t.Ffmpegargs)
-		//spew.Dump(ffmpegArgsExpanded)
-		//spew.Dump(t.MP4BoxDashReadyArgs)
-		//spew.Dump(mp4boxargs)
-		if reflect.DeepEqual(t.Ffmpegargs, ffmpegArgsExpanded) && reflect.DeepEqual(t.MP4BoxDashReadyArgs, mp4boxargs) {
-			slog.Info("Already transcoded. Skipping", "inputID", args.InputID, "codec", args.Codec, "profile", args.Profile)
-			return nil
-		}
 	}
 
 	duration, err := m.durationDeriver(ctx, args.InputID, args.InputNo, args.Stream)

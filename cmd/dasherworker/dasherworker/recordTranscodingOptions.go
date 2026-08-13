@@ -3,6 +3,8 @@ package dasherworker
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/pkg/errors"
 	"go.temporal.io/sdk/workflow"
@@ -29,7 +31,21 @@ func CallRecordTranscodingOptions(ctx workflow.Context, t TranscodingOptionsReco
 }
 
 func RecordTranscodingOptions(_ context.Context, t TranscodingOptionsRecord) (string, error) {
-	return "", SaveStructToJSON(storage.DasherReadyRepresentationTranscodingLogFilePath(t.EncodeStream), t)
+	stamp := time.Now().Format("20060102150405")
+	base := storage.DasherReadyRepresentationTranscodingLogFilePath(t.EncodeStream)
+	fname := base + "-" + stamp
+
+	err := SaveStructToJSON(fname, t)
+	if err != nil {
+		return "", FatalError(err)
+	}
+	// Intentional: OK if the name does not exist.
+	_ = os.Remove(base)
+
+	if err := os.Symlink(filepath.Base(fname), base); err != nil {
+		return "", FatalError(err)
+	}
+	return "", nil
 }
 
 func CallLoadTranscodingOptions(ctx workflow.Context, e EncodeStreamArgs) (*TranscodingOptionsRecord, error) {
