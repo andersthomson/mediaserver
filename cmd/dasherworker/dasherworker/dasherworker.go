@@ -193,9 +193,18 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 	if err != nil {
 		return VideoEncodingWorkflowResp{}, err
 	}
-	if err := PipelineFactory(ctx, *Eargs).Process(ctx, *Eargs, ffmpegArgs, mp4boxArgs); err != nil {
-		slog.Error("Pipeline processing failed", "err", err)
-		return VideoEncodingWorkflowResp{}, err
+	if t, err := CallLoadTranscodingOptions(ctx, *Eargs); err == nil && t != nil {
+		//We have a history
+		if diff := factory.NeedsProcessing(*t, ffmpegArgs, mp4boxArgs); diff == "" {
+			slog.Info("Already processed", "ShortName", M.ShortName, "inputID", M.Id, "stream", M.Inputs[idx].Stream, "target", args.Target)
+			return VideoEncodingWorkflowResp{}, nil
+		} else {
+			slog.Info("Need reprocessing", "ShortName", M.ShortName, "InputID", M.Id, "Stream", M.Inputs[idx].Stream, "target", args.Target, "new trancoding diff", diff)
+		}
+	}
+	err = factory.Process(ctx, *Eargs, ffmpegArgs, mp4boxArgs)
+	if err != nil {
+		slog.Error("Pipeline processing failed", "ShortName", M.ShortName, "InputID", M.Id, "Stream", M.Inputs[idx].Stream, "target", args.Target, "err", err)
 	}
 	return VideoEncodingWorkflowResp{}, nil
 
