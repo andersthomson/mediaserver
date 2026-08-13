@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker"
 	"github.com/andersthomson/mediaserver/scrape"
@@ -133,34 +132,17 @@ func main() {
 			}
 			run.Get(context.Background(), nil)
 			return
-		case "video":
+		case "representation":
 			run, err := c.ExecuteWorkflow(context.Background(),
 				client.StartWorkflowOptions{
 					ID:        uuid.New().String(), // Unique ID for business logic
 					TaskQueue: "dasherQueue",       // Which worker group should handle this
 				},
-				"VideoEncodingWorkflow",
-				dasherworker.VideoEncodingWorkflowArgs{
+				"RepresentationEncodingWorkflow",
+				dasherworker.RepresentationEncodingWorkflowArgs{
 					Dir:     filepath.Dir(os.Args[2]),
 					MspFile: filepath.Base(os.Args[2]),
 					Fast:    fast(),
-				})
-			if err != nil {
-				slog.Info("Couldn't start workflow", "err", err)
-				return
-			}
-			run.Get(context.Background(), nil)
-			return
-		case "audio":
-			run, err := c.ExecuteWorkflow(context.Background(),
-				client.StartWorkflowOptions{
-					ID:        uuid.New().String(), // Unique ID for business logic
-					TaskQueue: "dasherQueue",       // Which worker group should handle this
-				},
-				"AudioEncodingWorkflow",
-				dasherworker.AudioEncodingWorkflowArgs{
-					Dir:     filepath.Dir(os.Args[2]),
-					MspFile: filepath.Base(os.Args[2]),
 				})
 			if err != nil {
 				slog.Info("Couldn't start workflow", "err", err)
@@ -332,30 +314,4 @@ func LookupEnvCaseInsensitive(key string) (string, bool) {
 func fast() bool {
 	_, ok := LookupEnvCaseInsensitive("dasher_fast")
 	return ok
-}
-
-func makeDashWorkFlow(tc client.Client, dir string, mspFile string) error {
-	////////////////////////////////////////////// call here
-	slog.Info("Starting wf")
-	run, err := tc.ExecuteWorkflow(context.Background(),
-		client.StartWorkflowOptions{
-			ID: "EncodeMsp-" + filepath.Base(mspFile) + "-" + time.Now().String(), // Unique ID for business logic
-			//ID:        "EncodeMsp-" + filepath.Base(mspFile), // Unique ID for business logic
-			TaskQueue: "dasherQueue", // Which worker group should handle this
-		},
-		"VideoEncodingWorkflow",
-		dasherworker.VideoEncodingWorkflowArgs{
-			Dir:     dir,
-			MspFile: mspFile,
-			Fast:    fast(),
-		})
-	if err != nil {
-		slog.Info("Couldn't start workflow", "err", err)
-		return fmt.Errorf("Couldn't start workflow. %+v", err)
-	}
-	if err := run.Get(context.Background(), nil); err != nil {
-		return err
-	}
-	//Build Dash
-	return nil
 }

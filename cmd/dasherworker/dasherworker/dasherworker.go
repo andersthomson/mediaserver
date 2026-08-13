@@ -20,6 +20,7 @@ var targets = []Target{
 	{"x264", "low"},
 	//	{"x265", "high"},
 	{"x265", "low"},
+	{"aac", ""},
 }
 
 type EnsureDashWFArgs struct {
@@ -42,21 +43,22 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 			WorkflowID: "EnsureDash-child-for-" + M.ShortName + "-" + M.Id + "-" + target.String(), // Unique ID
 		}
 		ctx = workflow.WithChildOptions(ctx, childOptions)
-		futures = append(futures, workflow.ExecuteChildWorkflow(ctx, VideoEncodingWorkflow, VideoEncodingWorkflowArgs{
+		futures = append(futures, workflow.ExecuteChildWorkflow(ctx, RepresentationEncodingWorkflow, RepresentationEncodingWorkflowArgs{
 			Dir:     filepath.Dir(args.MspPath),
 			MspFile: filepath.Base(args.MspPath),
 			Fast:    args.Fast,
 			Target:  target,
 		}))
 	}
-	childOptions := workflow.ChildWorkflowOptions{
-		WorkflowID: "EnsureDash-child-for-" + M.ShortName + "-" + M.Id + "-" + "audio", // Unique ID
-	}
-	ctx = workflow.WithChildOptions(ctx, childOptions)
-	futures = append(futures, workflow.ExecuteChildWorkflow(ctx, AudioEncodingWorkflow, AudioEncodingWorkflowArgs{
-		Dir:     filepath.Dir(args.MspPath),
-		MspFile: filepath.Base(args.MspPath),
-	}))
+	/*
+		childOptions := workflow.ChildWorkflowOptions{
+			WorkflowID: "EnsureDash-child-for-" + M.ShortName + "-" + M.Id + "-" + "audio", // Unique ID
+		}
+		ctx = workflow.WithChildOptions(ctx, childOptions)
+		futures = append(futures, workflow.ExecuteChildWorkflow(ctx, AudioEncodingWorkflow, AudioEncodingWorkflowArgs{
+			Dir:     filepath.Dir(args.MspPath),
+			MspFile: filepath.Base(args.MspPath),
+		}))*/
 	for _, future := range futures {
 		if err := future.Get(ctx, nil); err != nil {
 			return "", Error("Child WF execution failed", "err", err)
@@ -138,19 +140,19 @@ func (t Target) String() string {
 	return fmt.Sprintf("%s-%s", t.Codec, t.Profile)
 }
 
-type VideoEncodingWorkflowArgs struct {
+type RepresentationEncodingWorkflowArgs struct {
 	Dir     string
 	MspFile string
 	Fast    bool
 	Target  Target
 }
 
-type VideoEncodingWorkflowResp struct {
+type RepresentationEncodingWorkflowResp struct {
 }
 
-func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs) (VideoEncodingWorkflowResp, error) {
-	slog.Info("Start", "W", "VideoEncoding", "msp", args.MspFile)
-	defer slog.Info("Stop ", "W", "VideoEncoding", "msp", args.MspFile)
+func RepresentationEncodingWorkflow(ctx workflow.Context, args RepresentationEncodingWorkflowArgs) (RepresentationEncodingWorkflowResp, error) {
+	slog.Info("Start", "W", "RepresentationEncoding", "msp", args.MspFile)
+	defer slog.Info("Stop ", "W", "RepresentationEncoding", "msp", args.MspFile)
 
 	M, err := CallActivityIO[string, scrape.Msp](ctx, ReadMspFile, args.Dir, args.MspFile)
 	if err != nil {
@@ -159,45 +161,56 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 
 	storage.Add(args.Dir, M)
 
-	idx := getFirstInputStreamWithPrefix(M.Inputs, "v")
-	if idx == -1 {
-		return VideoEncodingWorkflowResp{}, Error("Found no video stream source specified", "input", M)
-	}
 	//Find the encoding needs
 	var opts []TranscodeOption
-	var maxRes TranscodeOption
-	switch args.Target.Profile {
-	case "high":
-		maxRes = WithMaxResolution(Max1080p)
-	case "low":
-		maxRes = WithMaxResolution(Max720p)
+
+	var idx int
+	if isVideoCodec(args.Target.Codec) {
+		idx = getFirstInputStreamWithPrefix(M.Inputs, "v")
+		if idx == -1 {
+			return RepresentationEncodingWorkflowResp{}, Error("Found no video stream source specified", "input", M)
+		}
+		var maxRes TranscodeOption
+		switch args.Target.Profile {
+		case "high":
+			maxRes = WithMaxResolution(Max1080p)
+		case "low":
+			maxRes = WithMaxResolution(Max720p)
+		}
+		opts = append(opts, maxRes)
+		opts = append(opts, WithPreset(preset(args.Fast)))
+	} else {
+		idx = getFirstInputStreamWithPrefix(M.Inputs, "a")
+		if idx == -1 {
+			return RepresentationEncodingWorkflowResp{}, Error("Found no audio stream source specified", "input", M)
+		}
 	}
-	opts = append(opts, maxRes)
+
 	Eargs := NewEncodeStreamArgs(ctx, &EncodeStreamArgs{
-		InputID: M.Id,
-		InputNo: idx,
-		Stream:  M.Inputs[idx].Stream,
-		Kind:    M.Inputs[idx].Kind,
-		Preset:  preset(args.Fast),
-		Profile: args.Target.Profile,
-		Codec:   args.Target.Codec,
+		InputID:  M.Id,
+		InputNo:  idx,
+		Stream:   M.Inputs[idx].Stream,
+		Kind:     M.Inputs[idx].Kind,
+		Language: M.Inputs[idx].Language,
+		Profile:  args.Target.Profile,
+		Codec:    args.Target.Codec,
 	}, opts...)
 	fname := storage.DasherReadyRepresentationFilePath(*Eargs)
 	slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
 	factory := PipelineFactory(ctx, *Eargs)
 	ffmpegArgs, err := factory.FfmpegArgs(ctx, *Eargs)
 	if err != nil {
-		return VideoEncodingWorkflowResp{}, err
+		return RepresentationEncodingWorkflowResp{}, err
 	}
 	mp4boxArgs, err := factory.MP4BoxArgs(ctx, *Eargs)
 	if err != nil {
-		return VideoEncodingWorkflowResp{}, err
+		return RepresentationEncodingWorkflowResp{}, err
 	}
 	if t, err := CallLoadTranscodingOptions(ctx, *Eargs); err == nil && t != nil {
 		//We have a history
 		if diff := factory.NeedsProcessing(*t, ffmpegArgs, mp4boxArgs); diff == "" {
 			slog.Info("Already processed", "ShortName", M.ShortName, "inputID", M.Id, "stream", M.Inputs[idx].Stream, "target", args.Target)
-			return VideoEncodingWorkflowResp{}, nil
+			return RepresentationEncodingWorkflowResp{}, nil
 		} else {
 			slog.Info("Need reprocessing", "ShortName", M.ShortName, "InputID", M.Id, "Stream", M.Inputs[idx].Stream, "target", args.Target, "new trancoding diff", diff)
 		}
@@ -206,7 +219,7 @@ func VideoEncodingWorkflow(ctx workflow.Context, args VideoEncodingWorkflowArgs)
 	if err != nil {
 		slog.Error("Pipeline processing failed", "ShortName", M.ShortName, "InputID", M.Id, "Stream", M.Inputs[idx].Stream, "target", args.Target, "err", err)
 	}
-	return VideoEncodingWorkflowResp{}, nil
+	return RepresentationEncodingWorkflowResp{}, nil
 
 }
 func crf(codec string, profile string) string {
@@ -286,7 +299,9 @@ func bitrate(codec string, profile string) string {
 	return T[codec][profile]
 }
 
-func preset(fast bool) string {
+type Preset string
+
+func preset(fast bool) Preset {
 	if fast {
 		return "ultrafast"
 	} else {
@@ -652,6 +667,12 @@ type TranscodeOption func(*EncodeStreamArgs)
 func WithMaxResolution(maxx Resolution) TranscodeOption {
 	return func(j *EncodeStreamArgs) {
 		j.VideoFilters.MaxResolution = maxx
+	}
+}
+
+func WithPreset(p Preset) TranscodeOption {
+	return func(j *EncodeStreamArgs) {
+		j.Preset = string(p)
 	}
 }
 
