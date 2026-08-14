@@ -191,19 +191,26 @@ func AnalyzeMediaInterlaceFile(ctx context.Context, fullPath string, stream stri
 	if totalCount > 0 && (float64(dropCount)/float64(totalCount)) > 0.40 {
 		analysis.IsFakeHighFPS = true
 
-		// Target cadence filter injection logic
-		cadenceFilters := "mpdecimate"
-		// Only append the fps filter if the stream is NOT already native 25fps/PAL cadence
-		if !strings.Contains(output, "25 fps") && !strings.Contains(output, "25 tbr") {
-			cadenceFilters += ",fps=fps=25:round=near"
-		}
-
+		// CRITICAL FIX: If the recommended filter is 'null', do not use mpdecimate for DASH streams.
+		// We normalize frame drops safely via frame-rate adjustments instead of breaking the timeline.
 		if analysis.FilterRecommendation == "null" {
-			analysis.FilterRecommendation = "mpdecimate,fps=fps=25:round=near"
+			analysis.FilterRecommendation = "null" // Let standard encoder references handle optimization
 		} else {
-			analysis.FilterRecommendation += ",mpdecimate,fps=fps=25:round=near"
+			// Fix the PsF mode double frame rate generation (send_frame -> mode=0)
+			analysis.FilterRecommendation = strings.ReplaceAll(analysis.FilterRecommendation, "mode=send_frame", "mode=0")
 		}
-		//analysis.FilterRecommendation += ",fps=25,mpdecimate" + fmt.Sprintf(",setpts=PTS-STARTPTS")
+	} else {
+		// Ensure that standard PsF deinterlacing stays at a clean frame rate target (mode=0)
+		if strings.Contains(analysis.FilterRecommendation, "mode=send_frame") {
+			analysis.FilterRecommendation = strings.ReplaceAll(analysis.FilterRecommendation, "mode=send_frame", "mode=0")
+		}
+	}
+	analysis.FilterRecommendation += ",fps=fps=25:round=near"
+	forceStartAtZero := "setpts=N/25/TB"
+	if analysis.FilterRecommendation == "null" {
+		analysis.FilterRecommendation = forceStartAtZero
+	} else {
+		analysis.FilterRecommendation += "," + forceStartAtZero
 	}
 
 	slog.Info("Analysis Complete", "fullPath", fullPath, "PTS", analysis.FirstPTS, "filterRecommendation", analysis.FilterRecommendation)

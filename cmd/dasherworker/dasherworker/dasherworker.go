@@ -389,7 +389,7 @@ func x264EncodingStrategy(gopFrames int, crf string, bitrate string) func(args E
 			"-preset:v", args.Preset}
 		ffmpegArgs = append(ffmpegArgs, tune("x264", args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs,
-			"-x264-params:v", "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1")
+			"-x264-params:v", "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:strict-gop=1:b-pyramid=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1")
 
 		ffmpegArgs = append(ffmpegArgs, []any{"-fps_mode", "cfr"}...)
 		return ffmpegArgs
@@ -453,7 +453,8 @@ func dashManifestStrategy(args EncodeStreamArgs) []any {
 		"-map_chapters", "-1",
 		"-map_metadata", "-1",
 		//These are supposedly needed if ffmpeg does the dash packaging (not using e.g. mp4box)
-		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+		//"-movflags", "frag_keyframe+empty_moov+default_base_moof",
+		"-movflags", "faststart",
 		"-y",
 		DirFile{
 			Dir:   filepath.Dir(storage.TranscodedRepresentationFilePath(args)),
