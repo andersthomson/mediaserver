@@ -152,7 +152,7 @@ func (r *RemoteEncode) EncodePostlude(ctx context.Context, args EncodePostludeAr
 
 	//slog.Info("Remote/postlude", "host", r.Hostname, "args", args)
 	localPath := filepath.Join(args.FfmpegArgs.OutputDir, args.FfmpegArgs.OutputFname)
-	localTmpPath := localPath + "-" + args.SessionID
+	localTmpPath := filepath.Join(args.FfmpegArgs.OutputDir, "."+args.FfmpegArgs.OutputFname+"-"+args.SessionID)
 	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), args.FfmpegArgs.OutputFname)
 	if err := RsyncActivity(ctx, localTmpPath, remotePath, r.Username, r.Hostname, r.Port, false); err != nil {
 		return EncodePostludeResp{}, fmt.Errorf("Rsync to remote failed: %+v", err)
