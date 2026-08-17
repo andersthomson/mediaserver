@@ -100,8 +100,20 @@ func (r *RemoteEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp,
 		scanner := bufio.NewScanner(stdoutPipe)
 		tlogger := NewThrottledLogger(rate.Every(5*time.Second), 3)
 
+		// Track rolling processing performance safely across lines inside the loop matrix
+		var currentFPS float64 = 0.0
+
 		for scanner.Scan() {
 			line := scanner.Text()
+
+			// Capture the processing speed token (e.g., "fps=145.2" or "fps=0")
+			if strings.HasPrefix(line, "fps=") {
+				parts := strings.Split(line, "=")
+				if len(parts) == 2 {
+					currentFPS, _ = strconv.ParseFloat(parts[1], 64)
+				}
+			}
+
 			// Same logic as the local function
 			if strings.HasPrefix(line, "out_time_ms=") && args.TotalDurationUs != 0 {
 				parts := strings.Split(line, "=")
@@ -110,7 +122,7 @@ func (r *RemoteEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp,
 					percent := (float64(currentUs) / float64(args.TotalDurationUs)) * 100
 					str := fmt.Sprintf("%4.1f%% completed", percent)
 					activity.RecordHeartbeat(ctx, str)
-					tlogger.Info("Progress", "F", "FfmpegRemoteEncode", "id", fmt.Sprintf("%s@%s#%d", r.Username, r.Hostname, r.Port), "workdir", r.remoteDir(ctx, args.FfmpegArgs.InputFname), "percent", percent)
+					tlogger.Info("Progress", "F", "FfmpegRemoteEncode", "id", fmt.Sprintf("%s@%s#%d", r.Username, r.Hostname, r.Port), "workdir", r.remoteDir(ctx, args.FfmpegArgs.InputFname), "percent", percent, "fps", currentFPS)
 				}
 			}
 		}
