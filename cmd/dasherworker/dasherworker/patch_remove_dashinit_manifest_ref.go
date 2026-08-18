@@ -46,7 +46,7 @@ func fixManifestBaseURLs(mpdPath string) {
 				// Simple <BaseURL>url_dashinit.mp4</BaseURL>
 				if strings.Contains(v, "_dashinit") {
 					rep["BaseURL"] = strings.ReplaceAll(v, "_dashinit", "")
-					fmt.Printf("Patched simple BaseURL for Video ID %v\n", id)
+					fmt.Printf("Patched simple BaseURL for representation ID %v\n", id)
 				}
 			case map[string]interface{}:
 				// Complex element with attributes: <BaseURL attribute="val">url_dashinit.mp4</BaseURL>

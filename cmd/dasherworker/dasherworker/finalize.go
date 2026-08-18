@@ -19,19 +19,21 @@ func FinalizeWF(ctx workflow.Context, args FinalizeArgs) (FinalizeResp, error) {
 	return CallActivityIO[FinalizeArgs, FinalizeResp](ctx, Finalize, args)
 }
 
-func CallFinalize(ctx workflow.Context, inputID string) error {
-	_, err := CallActivityIO[FinalizeArgs, FinalizeResp](ctx, Finalize, FinalizeArgs{InputID: inputID})
+func CallFinalize(ctx workflow.Context, inputID string, ensure bool) (FinalizeResp, error) {
+	resp, err := CallActivityIO[FinalizeArgs, FinalizeResp](ctx, Finalize, FinalizeArgs{InputID: inputID, Ensure: ensure})
 	if err != nil {
-		return Error("CallFinalizefailed", "err", err)
+		return resp, Error("CallFinalize failed", "err", err)
 	}
-	return nil
+	return resp, nil
 }
 
 type FinalizeArgs struct {
+	Ensure  bool
 	InputID string
 }
 
 type FinalizeResp struct {
+	DidExecute   bool
 	MP4BoxStdout string
 	MP4BoxStderr string
 }
@@ -104,12 +106,38 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	}
 	spew.Dump(gopFrames)
 
+	if args.Ensure {
+		//If manifest newer than all referenced files, skip creating it
+		mfinfo, err := os.Stat(filepath.Join(targetDir, "manifest.mpd"))
+		if errors.Is(err, os.ErrNotExist) {
+			goto proceed
+		}
+		if err != nil {
+			return FinalizeResp{}, err
+		}
+		mTime := mfinfo.ModTime()
+		for _, in := range inputFiles {
+			f, err := os.Stat(filepath.Join(targetDir, in))
+			if err != nil {
+				return FinalizeResp{}, err
+			}
+			if mTime.Before(f.ModTime()) {
+				slog.Info("Need manifest rebuild", "newer file", in)
+				goto proceed
+			}
+
+		}
+		//No need to process
+		return FinalizeResp{}, nil
+	}
+proceed:
 	//args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
 	boxArgs := []string{"-dash", dashMs2(gopFrames, fpsI), "-rap", "-flat", "-profile", "onDemand", "-out", "manifest.mpd"}
 	boxArgs = append(boxArgs, mp4BoxInputs...)
 	stdoutBuf, stderrBuf, err := MP4Box(ctx, targetDir, boxArgs)
 	if err != nil {
 		return FinalizeResp{
+			DidExecute:   true,
 			MP4BoxStdout: stdoutBuf.String(),
 			MP4BoxStderr: stderrBuf.String(),
 		}, err

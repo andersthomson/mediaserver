@@ -56,8 +56,8 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 		}
 	}
 
-	CallFinalize(ctx, M.Id)
-	return "", nil
+	_, err = CallFinalize(ctx, M.Id, true)
+	return "", err
 }
 
 func getFirstInputStreamWithPrefix(inputs []scrape.InputT, prefix string) int {
