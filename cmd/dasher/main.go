@@ -131,8 +131,8 @@ func main() {
 					ID:        uuid.New().String(), // Unique ID for business logic
 					TaskQueue: "dasherQueue",       // Which worker group should handle this
 				},
-				"RepresentationEncodingWorkflow",
-				dasherworker.RepresentationEncodingWorkflowArgs{
+				"CreateRepresentation",
+				dasherworker.CreateRepresentationArgs{
 					Dir:     filepath.Dir(os.Args[2]),
 					MspFile: filepath.Base(os.Args[2]),
 					Fast:    fast(),

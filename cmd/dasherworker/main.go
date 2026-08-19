@@ -128,7 +128,7 @@ func main() {
 	w.RegisterWorkflow(dasherworker.FinalizeWF)
 	w.RegisterWorkflow(dasherworker.HLSRenderMasterWF)
 
-	w.RegisterWorkflow(dasherworker.RepresentationEncodingWorkflow)
+	w.RegisterWorkflow(dasherworker.CreateRepresentation)
 
 	w.RegisterActivity(&dasherworker.LocalEncode{})
 	w.RegisterActivity(dasherworker.ReadMspFile)

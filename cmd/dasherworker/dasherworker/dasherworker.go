@@ -43,7 +43,7 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 			WorkflowID: "EnsureDash-child-for-" + M.ShortName + "-" + M.Id + "-" + target.String(), // Unique ID
 		}
 		ctx = workflow.WithChildOptions(ctx, childOptions)
-		futures = append(futures, workflow.ExecuteChildWorkflow(ctx, RepresentationEncodingWorkflow, RepresentationEncodingWorkflowArgs{
+		futures = append(futures, workflow.ExecuteChildWorkflow(ctx, CreateRepresentation, CreateRepresentationArgs{
 			Dir:     filepath.Dir(args.MspPath),
 			MspFile: filepath.Base(args.MspPath),
 			Fast:    args.Fast,
@@ -75,19 +75,19 @@ func (t Target) String() string {
 	return fmt.Sprintf("%s-%s", t.Codec, t.Profile)
 }
 
-type RepresentationEncodingWorkflowArgs struct {
+type CreateRepresentationArgs struct {
 	Dir     string
 	MspFile string
 	Fast    bool
 	Target  Target
 }
 
-type RepresentationEncodingWorkflowResp struct {
+type CreateRepresentationResp struct {
 }
 
-func RepresentationEncodingWorkflow(ctx workflow.Context, args RepresentationEncodingWorkflowArgs) (RepresentationEncodingWorkflowResp, error) {
-	slog.Info("Start", "W", "RepresentationEncoding", "msp", args.MspFile)
-	defer slog.Info("Stop ", "W", "RepresentationEncoding", "msp", args.MspFile)
+func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (CreateRepresentationResp, error) {
+	slog.Info("Start", "W", "CreateRepresentation", "msp", args.MspFile)
+	defer slog.Info("Stop ", "W", "CreateRepresentation", "msp", args.MspFile)
 
 	M, err := CallActivityIO[string, scrape.Msp](ctx, ReadMspFile, args.Dir, args.MspFile)
 	if err != nil {
@@ -98,12 +98,13 @@ func RepresentationEncodingWorkflow(ctx workflow.Context, args RepresentationEnc
 
 	//Find the encoding needs
 	var opts []TranscodeOption
+	var probeRawData ProbeRawData
 
 	var idx int
 	if isVideoCodec(args.Target.Codec) {
 		idx = getFirstInputStreamWithPrefix(M.Inputs, "v")
 		if idx == -1 {
-			return RepresentationEncodingWorkflowResp{}, Error("Found no video stream source specified", "input", M)
+			return CreateRepresentationResp{}, Error("Found no video stream source specified", "input", M)
 		}
 		var maxRes TranscodeOption
 		switch args.Target.Profile {
@@ -114,10 +115,14 @@ func RepresentationEncodingWorkflow(ctx workflow.Context, args RepresentationEnc
 		}
 		opts = append(opts, maxRes)
 		opts = append(opts, WithPreset(preset(args.Fast)))
+		probeRawData, err = CallExecuteProbes(ctx, M.Id, idx, M.Inputs[idx].Stream)
+		if err != nil {
+			return CreateRepresentationResp{}, err
+		}
 	} else {
 		idx = getFirstInputStreamWithPrefix(M.Inputs, "a")
 		if idx == -1 {
-			return RepresentationEncodingWorkflowResp{}, Error("Found no audio stream source specified", "input", M)
+			return CreateRepresentationResp{}, Error("Found no audio stream source specified", "input", M)
 		}
 	}
 
@@ -132,20 +137,20 @@ func RepresentationEncodingWorkflow(ctx workflow.Context, args RepresentationEnc
 	}, opts...)
 	fname := storage.DasherReadyRepresentationFilePath(*Eargs)
 	slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
-	factory := PipelineFactory(ctx, *Eargs)
-	ffmpegArgs, err := factory.FfmpegArgs(ctx, *Eargs)
+	factory := TranscodingPipelineFactory(ctx, *Eargs)
+	ffmpegArgs, err := factory.FfmpegArgs(ctx, *Eargs, probeRawData)
 	if err != nil {
-		return RepresentationEncodingWorkflowResp{}, err
+		return CreateRepresentationResp{}, err
 	}
 	mp4boxArgs, err := factory.MP4BoxArgs(ctx, *Eargs)
 	if err != nil {
-		return RepresentationEncodingWorkflowResp{}, err
+		return CreateRepresentationResp{}, err
 	}
 	if t, err := CallLoadTranscodingOptions(ctx, *Eargs); err == nil && t != nil {
 		//We have a history
 		if diff := factory.NeedsProcessing(*t, ffmpegArgs, mp4boxArgs); diff == "" {
 			slog.Info("Already processed", "ShortName", M.ShortName, "inputID", M.Id, "stream", M.Inputs[idx].Stream, "target", args.Target)
-			return RepresentationEncodingWorkflowResp{}, nil
+			return CreateRepresentationResp{}, nil
 		} else {
 			slog.Info("Need reprocessing", "ShortName", M.ShortName, "InputID", M.Id, "Stream", M.Inputs[idx].Stream, "target", args.Target, "new trancoding diff", diff)
 		}
@@ -154,7 +159,7 @@ func RepresentationEncodingWorkflow(ctx workflow.Context, args RepresentationEnc
 	if err != nil {
 		slog.Error("Pipeline processing failed", "ShortName", M.ShortName, "InputID", M.Id, "Stream", M.Inputs[idx].Stream, "target", args.Target, "err", err)
 	}
-	return RepresentationEncodingWorkflowResp{}, nil
+	return CreateRepresentationResp{}, nil
 
 }
 func crf(codec string, profile string) string {
@@ -470,7 +475,6 @@ func rawOutputStrategy(args EncodeStreamArgs) []any {
 }
 
 type InputStrategy func(ctx workflow.Context, args EncodeStreamArgs) []any
-type FilterStrategy func(args EncodeStreamArgs, deinterlaceFilter string) []any
 type EncodingStrategy func(args EncodeStreamArgs) []any
 type LanguageStrategy func(args EncodeStreamArgs) []any
 type ManifestStrategy func(args EncodeStreamArgs) []any
@@ -616,8 +620,8 @@ func WithPreset(p Preset) TranscodeOption {
 	}
 }
 
-func PipelineFactory(ctx workflow.Context, args EncodeStreamArgs) ManagedPipeline {
-	res := ManagedPipeline{}
+func TranscodingPipelineFactory(ctx workflow.Context, args EncodeStreamArgs) TranscodingPipeline {
+	res := TranscodingPipeline{}
 	switch args.Codec {
 	case "x264":
 		res.inputStrategy = inputDirFileStrategy
@@ -640,7 +644,7 @@ func PipelineFactory(ctx workflow.Context, args EncodeStreamArgs) ManagedPipelin
 		res.manifestStrategy = rawOutputStrategy
 	default:
 		slog.Error("UNSUPPORTED CODEC", "codec", args.Codec)
-		return ManagedPipeline{}
+		return TranscodingPipeline{}
 	}
 	res.durationDeriver = durationDeriverFfmpeg
 	res.encoderQueue = QueueSelectorLocal
@@ -648,7 +652,7 @@ func PipelineFactory(ctx workflow.Context, args EncodeStreamArgs) ManagedPipelin
 	return res
 }
 
-type ManagedPipeline struct {
+type TranscodingPipeline struct {
 	inputStrategy    InputStrategy
 	encodingStrategy EncodingStrategy
 	languageStrategy LanguageStrategy
@@ -658,15 +662,11 @@ type ManagedPipeline struct {
 	packager         PackagingStrategy
 }
 
-func (m ManagedPipeline) FfmpegArgs(ctx workflow.Context, args EncodeStreamArgs) (FFMpegArgs, error) {
+func (m TranscodingPipeline) FfmpegArgs(ctx workflow.Context, args EncodeStreamArgs, probeRawData ProbeRawData) (FFMpegArgs, error) {
 	var ffmpegArgs []any
 	ffmpegArgs = append(ffmpegArgs, m.inputStrategy(ctx, args)...)
 	if isVideoCodec(args.Codec) {
-		probeData, err := CallExecuteProbes(ctx, args.InputID, args.InputNo, args.Stream)
-		if err != nil {
-			return NewFFMpegArgs(ffmpegArgs), err
-		}
-		filterRec := DeriveFilterRecommendation(probeData)
+		filterRec := DeriveFilterRecommendation(probeRawData)
 		ffmpegArgs = append(ffmpegArgs, videoFilterStrategy(ctx, args, filterRec.FilterRecommendation)...)
 	}
 	ffmpegArgs = append(ffmpegArgs, m.encodingStrategy(args)...)
@@ -677,12 +677,12 @@ func (m ManagedPipeline) FfmpegArgs(ctx workflow.Context, args EncodeStreamArgs)
 	return ffmpegArgsExpanded, nil
 }
 
-func (m ManagedPipeline) MP4BoxArgs(ctx workflow.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
+func (m TranscodingPipeline) MP4BoxArgs(ctx workflow.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
 	args.DstProps.DashMs = dashMs2(gopFrames(ctx, args.InputID), 25)
 	return MP4BoxDashReadyStrategy(args), nil
 }
 
-func (m ManagedPipeline) NeedsProcessing(t TranscodingOptionsRecord, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) string {
+func (m TranscodingPipeline) NeedsProcessing(t TranscodingOptionsRecord, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) string {
 	//If either of ffmpeg and mp4box cmd lines differ, we need (re)processing.
 	var diffs []string
 	if d := cmp.Diff(t.Ffmpegargs, ffmpegArgsExpanded); d != "" {
@@ -694,7 +694,7 @@ func (m ManagedPipeline) NeedsProcessing(t TranscodingOptionsRecord, ffmpegArgsE
 	return strings.Join(diffs, "\n")
 }
 
-func (m ManagedPipeline) Process(ctx workflow.Context, args EncodeStreamArgs, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) error {
+func (m TranscodingPipeline) Process(ctx workflow.Context, args EncodeStreamArgs, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) error {
 
 	if err := os.MkdirAll(storage.ProdDir(args.InputID), os.ModePerm); err != nil {
 		return err

@@ -3,6 +3,7 @@ package dasherworker
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -26,6 +27,15 @@ type ProbeRawData struct {
 	ProgCount    int
 	DecimateDrop int
 	DecimateKeep int
+
+	CodecName   string
+	Width       int
+	Height      int
+	PAR         string
+	StartTime   float64
+	IsCFR       bool
+	HasFixedGOP bool
+	GOPSize     int
 }
 
 func CallExecuteProbes(ctx workflow.Context, inputID string, inputNo int, stream string) (ProbeRawData, error) {
@@ -38,6 +48,22 @@ func ExecuteProbes(ctx context.Context, inputID string, inputNo int, stream stri
 }
 
 func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (ProbeRawData, error) {
+	type FFprobeJSON struct {
+		Streams []struct {
+			CodecName    string `json:"codec_name"`
+			Width        int    `json:"width"`
+			Height       int    `json:"height"`
+			SampleAspect string `json:"sample_aspect_ratio"`
+			StartTime    string `json:"start_time"`
+			RFrameRate   string `json:"r_frame_rate"`
+			AvgFrameRate string `json:"avg_frame_rate"`
+		} `json:"streams"`
+		Frames []struct {
+			PictType string `json:"pict_type"`
+			CodedNum int    `json:"coded_picture_number"`
+		} `json:"frames"`
+	}
+
 	var raw ProbeRawData
 
 	// 2. Fetch Duration and calculate seek point
@@ -48,6 +74,42 @@ func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (Pro
 	seekPoint := 0.0
 	if duration > 2.0 {
 		seekPoint = duration / 2
+	}
+	// 2.5 Fetch Container Structural Metadata & GOP Cadence
+	structCmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", stream, "-show_entries", "stream=codec_name,width,height,sample_aspect_ratio,start_time,r_frame_rate,avg_frame_rate:frame=pict_type,coded_picture_number", "-read_intervals", "%+#300", "-of", "json", fullPath)
+	if structOut, err := structCmd.Output(); err == nil {
+		var probeData FFprobeJSON
+		if json.Unmarshal(structOut, &probeData) == nil && len(probeData.Streams) > 0 {
+			s := probeData.Streams[0]
+			raw.CodecName = s.CodecName
+			raw.Width = s.Width
+			raw.Height = s.Height
+			raw.PAR = s.SampleAspect
+			if raw.PAR == "" || raw.PAR == "0:1" {
+				raw.PAR = "1:1"
+			}
+			raw.StartTime, _ = strconv.ParseFloat(s.StartTime, 64)
+			raw.IsCFR = (s.RFrameRate == s.AvgFrameRate && s.RFrameRate != "0/0")
+
+			var keyframeIndices []int
+			for _, frame := range probeData.Frames {
+				if frame.PictType == "I" {
+					keyframeIndices = append(keyframeIndices, frame.CodedNum)
+				}
+			}
+			if len(keyframeIndices) >= 2 {
+				firstInterval := keyframeIndices[1] - keyframeIndices[0]
+				isUniform := true
+				for i := 2; i < len(keyframeIndices); i++ {
+					if (keyframeIndices[i] - keyframeIndices[i-1]) != firstInterval {
+						isUniform = false
+						break
+					}
+				}
+				raw.HasFixedGOP = isUniform
+				raw.GOPSize = firstInterval
+			}
+		}
 	}
 
 	// 3. Fetch Container Metadata Field Order
@@ -60,7 +122,7 @@ func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (Pro
 	var idetStderr bytes.Buffer
 	idetCmd.Stderr = &idetStderr
 	if err := idetCmd.Run(); err != nil {
-		return raw, errors.Wrap(err, "ffmpeg idet analysis failed")
+		return raw, Fatal("ffmpeg idet analysis failed", "err", err, "stderr", idetStderr.String())
 	}
 
 	reIdet := regexp.MustCompile(`TFF:\s+(\d+)\s+BFF:\s+(\d+)\s+Progressive:\s+(\d+)`)
