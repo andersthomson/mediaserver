@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -12,15 +11,10 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
+	"go.temporal.io/sdk/workflow"
 )
 
-type AnalyzeMediaInterlaceArgs struct {
-	InputID string
-	InputNo int
-	Stream  string
-}
-
-type MediaInterlaceAnalysis struct {
+type FilterRecommendation struct {
 	FilterRecommendation string `json:"filter_recommendation"`
 }
 
@@ -34,25 +28,16 @@ type ProbeRawData struct {
 	DecimateKeep int
 }
 
-func AnalyzeMediaInterlace(ctx context.Context, args AnalyzeMediaInterlaceArgs) (MediaInterlaceAnalysis, error) {
-	slog.Info("Start", "A", "AnalyzeMediaInterlace", "args", args)
-	defer slog.Info("Stop ", "A", "AnalyzeMediaInterlace", "args", args)
-	fullPath := storage.ResolveInputNumber(args.InputID, args.InputNo)
-	return AnalyzeMediaInterlaceFile(ctx, fullPath, args.Stream)
+func CallExecuteProbes(ctx workflow.Context, inputID string, inputNo int, stream string) (ProbeRawData, error) {
+	return CallActivityIO[any, ProbeRawData](ctx, ExecuteProbes, inputID, inputNo, stream)
 }
 
-func AnalyzeMediaInterlaceFile(ctx context.Context, fullPath string, stream string) (MediaInterlaceAnalysis, error) {
-	raw, err := ExecuteProbes(ctx, fullPath)
-	if err != nil {
-		return MediaInterlaceAnalysis{}, err
-	}
-
-	analysis := DeriveFilterRecommendation(raw)
-	slog.Info("Analysis Complete", "fullPath", fullPath, "filterRecommendation", analysis.FilterRecommendation)
-	return analysis, nil
+func ExecuteProbes(ctx context.Context, inputID string, inputNo int, stream string) (ProbeRawData, error) {
+	fullPath := storage.ResolveInputNumber(inputID, inputNo)
+	return ExecuteProbesFile(ctx, fullPath, stream)
 }
 
-func ExecuteProbes(ctx context.Context, fullPath string) (ProbeRawData, error) {
+func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (ProbeRawData, error) {
 	var raw ProbeRawData
 
 	// 2. Fetch Duration and calculate seek point
@@ -66,7 +51,7 @@ func ExecuteProbes(ctx context.Context, fullPath string) (ProbeRawData, error) {
 	}
 
 	// 3. Fetch Container Metadata Field Order
-	fieldOrderCmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=field_order", "-of", "default=noprint_wrappers=1:nokey=1", fullPath)
+	fieldOrderCmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", stream, "-show_entries", "stream=field_order", "-of", "default=noprint_wrappers=1:nokey=1", fullPath)
 	fieldOrderOut, _ := fieldOrderCmd.Output()
 	raw.FieldOrder = strings.ToLower(strings.TrimSpace(string(fieldOrderOut)))
 
@@ -109,8 +94,8 @@ func getVideoDuration(ctx context.Context, fullPath string) (float64, error) {
 	return strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
 }
 
-func DeriveFilterRecommendation(raw ProbeRawData) MediaInterlaceAnalysis {
-	analysis := MediaInterlaceAnalysis{
+func DeriveFilterRecommendation(raw ProbeRawData) FilterRecommendation {
+	analysis := FilterRecommendation{
 		FilterRecommendation: "null",
 	}
 

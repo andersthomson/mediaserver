@@ -662,21 +662,12 @@ func (m ManagedPipeline) FfmpegArgs(ctx workflow.Context, args EncodeStreamArgs)
 	var ffmpegArgs []any
 	ffmpegArgs = append(ffmpegArgs, m.inputStrategy(ctx, args)...)
 	if isVideoCodec(args.Codec) {
-		ctx1 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-			StartToCloseTimeout: 10 * time.Minute,
-			TaskQueue:           "dasherQueue",
-			//HeartbeatTimeout:    1000 * time.Second,
-		})
-		var MediaInterlaceAnalysis MediaInterlaceAnalysis
-		err := workflow.ExecuteActivity(ctx1, AnalyzeMediaInterlace, AnalyzeMediaInterlaceArgs{
-			InputID: args.InputID,
-			InputNo: args.InputNo,
-			Stream:  args.Stream,
-		}).Get(ctx1, &MediaInterlaceAnalysis)
+		probeData, err := CallExecuteProbes(ctx, args.InputID, args.InputNo, args.Stream)
 		if err != nil {
-			return FFMpegArgs{}, err
+			return NewFFMpegArgs(ffmpegArgs), err
 		}
-		ffmpegArgs = append(ffmpegArgs, videoFilterStrategy(ctx, args, MediaInterlaceAnalysis.FilterRecommendation)...)
+		filterRec := DeriveFilterRecommendation(probeData)
+		ffmpegArgs = append(ffmpegArgs, videoFilterStrategy(ctx, args, filterRec.FilterRecommendation)...)
 	}
 	ffmpegArgs = append(ffmpegArgs, m.encodingStrategy(args)...)
 	ffmpegArgs = append(ffmpegArgs, m.languageStrategy(args)...)

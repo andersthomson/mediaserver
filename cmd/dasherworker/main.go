@@ -143,7 +143,7 @@ func main() {
 	w.RegisterActivity(dasherworker.KeyframeHistogram)
 	w.RegisterActivity(dasherworker.Finalize)
 	w.RegisterActivity(dasherworker.RecordTranscodingOptions)
-	w.RegisterActivity(dasherworker.AnalyzeMediaInterlace)
+	w.RegisterActivity(dasherworker.ExecuteProbes)
 
 	w.RegisterActivity(dasherworker.HLSRenderMaster)
 	w.RegisterActivity(dasherworker.GenerateHLSLanguageFileActivity)
