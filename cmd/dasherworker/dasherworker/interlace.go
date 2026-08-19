@@ -60,7 +60,6 @@ func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (Pro
 		} `json:"streams"`
 		Frames []struct {
 			PictType string `json:"pict_type"`
-			CodedNum int    `json:"coded_picture_number"`
 		} `json:"frames"`
 	}
 
@@ -75,8 +74,9 @@ func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (Pro
 	if duration > 2.0 {
 		seekPoint = duration / 2
 	}
-	// 2.5 Fetch Container Structural Metadata & GOP Cadence
-	structCmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", stream, "-show_entries", "stream=codec_name,width,height,sample_aspect_ratio,start_time,r_frame_rate,avg_frame_rate:frame=pict_type,coded_picture_number", "-read_intervals", "%+#300", "-of", "json", fullPath)
+
+	// 2.5 Fetch Container Structural Metadata & GOP Cadence (Fixed to avoid deprecated fields)
+	structCmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", stream, "-show_streams", "-show_frames", "-show_entries", "stream=codec_name,width,height,sample_aspect_ratio,start_time,r_frame_rate,avg_frame_rate:frame=pict_type", "-read_intervals", "%+#300", "-of", "json", fullPath)
 	if structOut, err := structCmd.Output(); err == nil {
 		var probeData FFprobeJSON
 		if json.Unmarshal(structOut, &probeData) == nil && len(probeData.Streams) > 0 {
@@ -92,12 +92,12 @@ func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (Pro
 			raw.IsCFR = (s.RFrameRate == s.AvgFrameRate && s.RFrameRate != "0/0")
 
 			var keyframeIndices []int
-			for _, frame := range probeData.Frames {
+			for frameIdx, frame := range probeData.Frames {
 				if frame.PictType == "I" {
-					keyframeIndices = append(keyframeIndices, frame.CodedNum)
+					keyframeIndices = append(keyframeIndices, frameIdx)
 				}
 			}
-			if len(keyframeIndices) >= 2 {
+			if len(keyframeIndices) >= 3 {
 				firstInterval := keyframeIndices[1] - keyframeIndices[0]
 				isUniform := true
 				for i := 2; i < len(keyframeIndices); i++ {
@@ -105,6 +105,9 @@ func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (Pro
 						isUniform = false
 						break
 					}
+				}
+				if keyframeIndices[0] != 0 {
+					isUniform = false
 				}
 				raw.HasFixedGOP = isUniform
 				raw.GOPSize = firstInterval

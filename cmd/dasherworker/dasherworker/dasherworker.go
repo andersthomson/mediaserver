@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-cmp/cmp"
 	"go.temporal.io/sdk/workflow"
 )
@@ -119,6 +120,7 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 		if err != nil {
 			return CreateRepresentationResp{}, err
 		}
+		spew.Dump(EvaluateDashPassThrough(probeRawData))
 	} else {
 		idx = getFirstInputStreamWithPrefix(M.Inputs, "a")
 		if idx == -1 {
