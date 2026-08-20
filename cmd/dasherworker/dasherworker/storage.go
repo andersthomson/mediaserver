@@ -106,11 +106,6 @@ func (s *Storage) ResolveInput(id string) (string, scrape.Msp) { //dir,msp
 	return x.dir, x.m
 }
 
-func (s *Storage) ResolveInputNumber(id string, number int) string {
-	dir, m := s.ResolveInput(id)
-	return filepath.Join(dir, m.Inputs[number].Filename)
-}
-
 func (s *Storage) ProdDir(id string) string {
 	s.m.RLock()
 	defer s.m.RUnlock()
@@ -121,12 +116,14 @@ func (s *Storage) ProdDir(id string) string {
 	}
 	return "/var/cache/mediacache/" + x.m.ShortName + "-" + x.m.Id + "/dash"
 }
-func (s *Storage) TranscodedRepresentationFilePath(args EncodeStreamArgs) string {
-	return filepath.Join(s.ProdDir(args.InputID), representation(args)+"-transcoded.mp4")
-}
 
 func (s *Storage) DasherReadyRepresentationTranscodingLogFilePath(args EncodeStreamArgs) string {
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+".mp4.transcodinglog")
+}
+
+func (s *Storage) ResolveInputNumber(id string, number int) string {
+	dir, m := s.ResolveInput(id)
+	return filepath.Join(dir, m.Inputs[number].Filename)
 }
 
 // Interface to WFs
@@ -153,6 +150,11 @@ func prodDir(m scrape.Msp) string {
 	return "/var/cache/mediacache/" + m.ShortName + "-" + m.Id + "/dash"
 }
 
+func ResolveInputNumber(ctx workflow.Context, id string, number int) string {
+	dir, m := CallResolveInput(ctx, id)
+	return filepath.Join(dir, m.Inputs[number].Filename)
+}
+
 func DasherReadyRepresentationFilePath(ctx workflow.Context, args EncodeStreamArgs) string {
 	_, m := CallResolveInput(ctx, args.InputID)
 	return filepath.Join(prodDir(m), representation(args)+".mp4")
@@ -160,4 +162,9 @@ func DasherReadyRepresentationFilePath(ctx workflow.Context, args EncodeStreamAr
 func DasherReadyRepresentationManifestFilePath(ctx workflow.Context, args EncodeStreamArgs) string {
 	_, m := CallResolveInput(ctx, args.InputID)
 	return filepath.Join(prodDir(m), representation(args)+"-manifest.mpd")
+}
+
+func TranscodedRepresentationFilePath(ctx workflow.Context, args EncodeStreamArgs) string {
+	_, m := CallResolveInput(ctx, args.InputID)
+	return filepath.Join(prodDir(m), representation(args)+"-transcoded.mp4")
 }

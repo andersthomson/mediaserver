@@ -326,8 +326,8 @@ func inputDirFileStrategy(ctx workflow.Context, args EncodeStreamArgs) []any {
 	return append(
 		inputArgsStrategy.Process(ctx, args),
 		"-i", DirFile{
-			Dir:   filepath.Dir(storage.ResolveInputNumber(args.InputID, args.InputNo)),
-			Fname: filepath.Base(storage.ResolveInputNumber(args.InputID, args.InputNo)),
+			Dir:   filepath.Dir(ResolveInputNumber(ctx, args.InputID, args.InputNo)),
+			Fname: filepath.Base(ResolveInputNumber(ctx, args.InputID, args.InputNo)),
 		})
 }
 
@@ -335,8 +335,8 @@ func inputDirFileWithMapStrategy(ctx workflow.Context, args EncodeStreamArgs) []
 	return []any{
 		//"-copyts",
 		"-i", DirFile{
-			Dir:   filepath.Dir(storage.ResolveInputNumber(args.InputID, args.InputNo)),
-			Fname: filepath.Base(storage.ResolveInputNumber(args.InputID, args.InputNo)),
+			Dir:   filepath.Dir(ResolveInputNumber(ctx, args.InputID, args.InputNo)),
+			Fname: filepath.Base(ResolveInputNumber(ctx, args.InputID, args.InputNo)),
 		},
 		"-map", "0:" + args.Stream,
 	}
@@ -473,7 +473,7 @@ func copyStreamStrategy(args EncodeStreamArgs) []any {
 		}
 	}
 */
-func dashManifestStrategy(args EncodeStreamArgs) []any {
+func dashManifestStrategy(ctx workflow.Context, args EncodeStreamArgs) []any {
 	return []any{
 		"-map_chapters", "-1",
 		"-map_metadata", "-1",
@@ -482,8 +482,8 @@ func dashManifestStrategy(args EncodeStreamArgs) []any {
 		"-movflags", "faststart",
 		"-y",
 		DirFile{
-			Dir:   filepath.Dir(storage.TranscodedRepresentationFilePath(args)),
-			Fname: filepath.Base(storage.TranscodedRepresentationFilePath(args)),
+			Dir:   filepath.Dir(TranscodedRepresentationFilePath(ctx, args)),
+			Fname: filepath.Base(TranscodedRepresentationFilePath(ctx, args)),
 		},
 	}
 }
@@ -491,7 +491,7 @@ func dashManifestStrategy(args EncodeStreamArgs) []any {
 type InputStrategy func(ctx workflow.Context, args EncodeStreamArgs) []any
 type EncodingStrategy func(args EncodeStreamArgs) []any
 type LanguageStrategy func(args EncodeStreamArgs) []any
-type ManifestStrategy func(args EncodeStreamArgs) []any
+type ManifestStrategy func(ctx workflow.Context, args EncodeStreamArgs) []any
 type DurationDeriverUsec func(ctx workflow.Context, inputID string, inputNo int, stream string) (int64, error)
 type QueueSelector func(args EncodeStreamArgs) string
 type PackagingStrategy func(ctx workflow.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error)
@@ -501,7 +501,7 @@ func MP4BoxDashReadyStrategy(ctx workflow.Context, args EncodeStreamArgs) MP4Box
 	drFname := filepath.Base(drFilePath)
 	drDir := filepath.Dir(drFilePath)
 
-	transcodedFilePath := storage.TranscodedRepresentationFilePath(args)
+	transcodedFilePath := TranscodedRepresentationFilePath(ctx, args)
 	transcodedFname := filepath.Base(transcodedFilePath)
 
 	manifestFilePath := DasherReadyRepresentationManifestFilePath(ctx, args)
@@ -681,7 +681,7 @@ func (m TranscodingPipeline) FfmpegArgs(ctx workflow.Context, args EncodeStreamA
 	}
 	ffmpegArgs = append(ffmpegArgs, m.encodingStrategy(args)...)
 	ffmpegArgs = append(ffmpegArgs, m.languageStrategy(args)...)
-	ffmpegArgs = append(ffmpegArgs, m.manifestStrategy(args)...)
+	ffmpegArgs = append(ffmpegArgs, m.manifestStrategy(ctx, args)...)
 
 	ffmpegArgsExpanded := NewFFMpegArgs(ffmpegArgs)
 	return ffmpegArgsExpanded, nil
