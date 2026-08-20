@@ -132,6 +132,7 @@ func main() {
 
 	w.RegisterActivity(&dasherworker.LocalEncode{})
 	w.RegisterActivity(dasherworker.ReadMspFile)
+	w.RegisterActivity(dasherworker.ResolveInput)
 	w.RegisterActivity(dasherworker.GetMediaDurationUsec)
 	w.RegisterActivity(dasherworker.GetSourcePropertiesActivity)
 	w.RegisterActivity(dasherworker.LoadTranscodingOptions)

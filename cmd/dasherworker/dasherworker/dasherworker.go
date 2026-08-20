@@ -154,7 +154,7 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 		Profile:  args.Target.Profile,
 		Codec:    args.Target.Codec,
 	}, opts...)
-	fname := storage.DasherReadyRepresentationFilePath(*Eargs)
+	fname := DasherReadyRepresentationFilePath(ctx, *Eargs)
 	slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
 	factory := TranscodingPipelineFactory(ctx, *Eargs)
 	ffmpegArgs, err := factory.FfmpegArgs(ctx, *Eargs, args.ProbeRawData)
@@ -459,19 +459,20 @@ func copyStreamStrategy(args EncodeStreamArgs) []any {
 	}
 }
 
-func HLSManifestStrategy(args EncodeStreamArgs) []any {
-	return []any{
-		"-map_chapters", "-1",
-		"-map_metadata", "-1",
-		"-movflags", "+faststart+disable_chpl",
-		"-hls_time", "3.84", //FIXME
-		"-hls_list_size", "0",
-		"-hls_flags", "single_file",
-		"-hls_playlist_type", "static",
-		storage.DasherReadyRepresentationFilePath(args),
+/*
+	func HLSManifestStrategy(args EncodeStreamArgs) []any {
+		return []any{
+			"-map_chapters", "-1",
+			"-map_metadata", "-1",
+			"-movflags", "+faststart+disable_chpl",
+			"-hls_time", "3.84", //FIXME
+			"-hls_list_size", "0",
+			"-hls_flags", "single_file",
+			"-hls_playlist_type", "static",
+			DasherReadyRepresentationFilePath(args),
+		}
 	}
-}
-
+*/
 func dashManifestStrategy(args EncodeStreamArgs) []any {
 	return []any{
 		"-map_chapters", "-1",
@@ -487,12 +488,6 @@ func dashManifestStrategy(args EncodeStreamArgs) []any {
 	}
 }
 
-func rawOutputStrategy(args EncodeStreamArgs) []any {
-	return []any{
-		storage.DasherReadyRepresentationFilePath(args),
-	}
-}
-
 type InputStrategy func(ctx workflow.Context, args EncodeStreamArgs) []any
 type EncodingStrategy func(args EncodeStreamArgs) []any
 type LanguageStrategy func(args EncodeStreamArgs) []any
@@ -501,8 +496,8 @@ type DurationDeriverUsec func(ctx workflow.Context, inputID string, inputNo int,
 type QueueSelector func(args EncodeStreamArgs) string
 type PackagingStrategy func(ctx workflow.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error)
 
-func MP4BoxDashReadyStrategy(args EncodeStreamArgs) MP4BoxDashReadyArgs {
-	drFilePath := storage.DasherReadyRepresentationFilePath(args)
+func MP4BoxDashReadyStrategy(ctx workflow.Context, args EncodeStreamArgs) MP4BoxDashReadyArgs {
+	drFilePath := DasherReadyRepresentationFilePath(ctx, args)
 	drFname := filepath.Base(drFilePath)
 	drDir := filepath.Dir(drFilePath)
 
@@ -657,10 +652,6 @@ func TranscodingPipelineFactory(ctx workflow.Context, args EncodeStreamArgs) Tra
 		res.encodingStrategy = aac2cEncodingStrategy
 		res.languageStrategy = languageFromArgs
 		res.manifestStrategy = dashManifestStrategy
-	case "copy":
-		res.inputStrategy = inputDirFileWithMapStrategy
-		res.encodingStrategy = copyStreamStrategy
-		res.manifestStrategy = rawOutputStrategy
 	default:
 		slog.Error("UNSUPPORTED CODEC", "codec", args.Codec)
 		return TranscodingPipeline{}
@@ -698,7 +689,7 @@ func (m TranscodingPipeline) FfmpegArgs(ctx workflow.Context, args EncodeStreamA
 
 func (m TranscodingPipeline) MP4BoxArgs(ctx workflow.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
 	args.DstProps.DashMs = dashMs2(gopFrames(ctx, args.InputID), 25)
-	return MP4BoxDashReadyStrategy(args), nil
+	return MP4BoxDashReadyStrategy(ctx, args), nil
 }
 
 func (m TranscodingPipeline) NeedsProcessing(t TranscodingOptionsRecord, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) string {

@@ -5,12 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/pkg/errors"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -67,13 +67,13 @@ func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (Pro
 	// 2. Fetch Duration and calculate seek point
 	duration, err := getVideoDuration(ctx, fullPath)
 	if err != nil {
-		return raw, errors.WithStack(err)
+		return raw, fmt.Errorf("Failed to get video duration", err)
 	}
 	seekPoint := 0.0
 	if duration > 2.0 {
 		seekPoint = duration / 2
 	}
-
+	slog.Info("HERE 2.5")
 	// 2.5 Fetch Container Structural Metadata & GOP Cadence (Fixed to avoid deprecated fields)
 	structCmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", stream, "-show_streams", "-show_frames", "-show_entries", "stream=codec_name,width,height,sample_aspect_ratio,start_time,r_frame_rate,avg_frame_rate:frame=pict_type", "-read_intervals", "%+#300", "-of", "json", fullPath)
 	if structOut, err := structCmd.Output(); err == nil {
@@ -114,11 +114,13 @@ func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (Pro
 		}
 	}
 
+	slog.Info("HERE 2.5")
 	// 3. Fetch Container Metadata Field Order
 	fieldOrderCmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-select_streams", stream, "-show_entries", "stream=field_order", "-of", "default=noprint_wrappers=1:nokey=1", fullPath)
 	fieldOrderOut, _ := fieldOrderCmd.Output()
 	raw.FieldOrder = strings.ToLower(strings.TrimSpace(string(fieldOrderOut)))
 
+	slog.Info("HERE 2.5")
 	// 4. Run IDET Pixel Scan
 	idetCmd := exec.CommandContext(ctx, "ffmpeg", "-ss", fmt.Sprintf("%f", seekPoint), "-i", fullPath, "-vf", "idet", "-frames:v", "1000", "-an", "-c:v", "rawvideo", "-f", "null", "-")
 	var idetStderr bytes.Buffer
@@ -127,6 +129,7 @@ func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (Pro
 		return raw, Fatal("ffmpeg idet analysis failed", "err", err, "stderr", idetStderr.String())
 	}
 
+	slog.Info("HERE 2.5")
 	reIdet := regexp.MustCompile(`TFF:\s+(\d+)\s+BFF:\s+(\d+)\s+Progressive:\s+(\d+)`)
 	idetMatches := reIdet.FindAllStringSubmatch(idetStderr.String(), -1)
 	if len(idetMatches) > 0 {
@@ -136,6 +139,7 @@ func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (Pro
 		raw.ProgCount, _ = strconv.Atoi(lastMatch[3])
 	}
 
+	slog.Info("HERE 2.5")
 	// 5. Run Duplicate Frame Detection Pass
 	dupCmd := exec.CommandContext(ctx, "ffmpeg", "-ss", "00:10:00", "-t", "10", "-i", fullPath, "-vf", "mpdecimate", "-loglevel", "debug", "-f", "null", "-")
 	var dupBuf bytes.Buffer
@@ -146,14 +150,17 @@ func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (Pro
 	raw.DecimateDrop = strings.Count(dupOutput, "drop")
 	raw.DecimateKeep = strings.Count(dupOutput, "keep")
 
+	slog.Info("HERE 2.5")
 	return raw, nil
 }
 
 func getVideoDuration(ctx context.Context, fullPath string) (float64, error) {
 	cmd := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", fullPath)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("Error: %v: %s", err, stderr.String())
 	}
 	return strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
 }

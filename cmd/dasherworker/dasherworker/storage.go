@@ -7,12 +7,14 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/andersthomson/mediaserver/scrape"
 	"go.temporal.io/sdk/workflow"
 )
 
 type Storage struct {
+	m     sync.RWMutex
 	items map[string]struct {
 		m   scrape.Msp
 		dir string
@@ -34,10 +36,12 @@ func init() {
 }
 
 func (s *Storage) Add(dir string, m scrape.Msp) {
+	s.m.Lock()
+	defer s.m.Unlock()
 	old, ok := s.items[m.Id] // Check if it exists
 	if ok {
-		if !reflect.DeepEqual(old, m) {
-			slog.Error("Storage: Loading a new item with an EXISTING id!!!", "old", old, "new", m)
+		if !reflect.DeepEqual(old.m, m) || old.dir != dir {
+			slog.Error("Storage: Loading a new item with an EXISTING id!!!", "old", old.m, "new", m, "olddir", old.dir, "newdir", dir)
 		} else {
 			slog.Info("Storage: Reloading item", "id", m.Id, "shortname", m.ShortName)
 		}
@@ -54,7 +58,7 @@ func (s *Storage) Add(dir string, m scrape.Msp) {
 func (s *Storage) AddMspsFromTree(ctx context.Context, root string) error {
 	suffix := "msp"
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		slog.Info("Considering", "entry", path)
+		//slog.Info("Considering", "entry", path)
 		// 1. Check if the context was cancelled before processing the next entry
 		if err := ctx.Err(); err != nil {
 			return err
@@ -71,18 +75,14 @@ func (s *Storage) AddMspsFromTree(ctx context.Context, root string) error {
 
 		// 2. Filter for files matching the suffix
 		if !d.IsDir() && strings.HasSuffix(d.Name(), suffix) {
-			// Process the file. You can pass ctx down if parseJSONFile is slow/networked.
-			slog.Info("Adding", "path", path)
 			M, err := ReadMspFile(ctx, filepath.Dir(path), d.Name())
 			if err != nil {
 				return err
 			}
-			s.Add(d.Name(), M)
-			slog.Info("Adding", "path", path, "done", 0)
+			s.Add(filepath.Dir(path), M)
 		}
 		return nil
 	})
-
 	return err
 }
 
@@ -97,6 +97,8 @@ func StorageAddWF(ctx workflow.Context, mspPath string) (string, error) {
 
 // id is the uuid
 func (s *Storage) ResolveInput(id string) (string, scrape.Msp) { //dir,msp
+	s.m.RLock()
+	defer s.m.RUnlock()
 	x, ok := s.items[id]
 	if !ok {
 		slog.Error("Item does not exist", "id", id)
@@ -110,6 +112,8 @@ func (s *Storage) ResolveInputNumber(id string, number int) string {
 }
 
 func (s *Storage) ProdDir(id string) string {
+	s.m.RLock()
+	defer s.m.RUnlock()
 	x, ok := s.items[id]
 	//spew.Dump(s)
 	if !ok {
@@ -125,10 +129,35 @@ func (s *Storage) DasherReadyRepresentationManifestFilePath(args EncodeStreamArg
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+"-manifest.mpd")
 }
 
-func (s *Storage) DasherReadyRepresentationFilePath(args EncodeStreamArgs) string {
-	return filepath.Join(s.ProdDir(args.InputID), representation(args)+".mp4")
-}
-
 func (s *Storage) DasherReadyRepresentationTranscodingLogFilePath(args EncodeStreamArgs) string {
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+".mp4.transcodinglog")
+}
+
+// Interface to WFs
+type ResolveInputResp struct {
+	Dir string
+	M   scrape.Msp
+}
+
+func ResolveInput(ctx context.Context, id string) (ResolveInputResp, error) {
+	dir, m := storage.ResolveInput(id)
+	return ResolveInputResp{
+		Dir: dir,
+		M:   m,
+	}, nil
+}
+
+// Convinience funcs for WFs
+func CallResolveInput(ctx workflow.Context, id string) (string, scrape.Msp) {
+	resp, _ := CallActivityFast[string, ResolveInputResp](ctx, ResolveInput, id)
+	return resp.Dir, resp.M
+}
+
+func prodDir(m scrape.Msp) string {
+	return "/var/cache/mediacache/" + m.ShortName + "-" + m.Id + "/dash"
+}
+
+func DasherReadyRepresentationFilePath(ctx workflow.Context, args EncodeStreamArgs) string {
+	_, m := CallResolveInput(ctx, args.InputID)
+	return filepath.Join(prodDir(m), representation(args)+".mp4")
 }
