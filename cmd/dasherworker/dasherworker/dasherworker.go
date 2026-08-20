@@ -504,7 +504,7 @@ func MP4BoxDashReadyStrategy(ctx workflow.Context, args EncodeStreamArgs) MP4Box
 	transcodedFilePath := storage.TranscodedRepresentationFilePath(args)
 	transcodedFname := filepath.Base(transcodedFilePath)
 
-	manifestFilePath := storage.DasherReadyRepresentationManifestFilePath(args)
+	manifestFilePath := DasherReadyRepresentationManifestFilePath(ctx, args)
 	manifestFname := filepath.Base(manifestFilePath)
 
 	boxArgs := []string{

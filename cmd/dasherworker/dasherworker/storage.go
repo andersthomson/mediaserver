@@ -125,10 +125,6 @@ func (s *Storage) TranscodedRepresentationFilePath(args EncodeStreamArgs) string
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+"-transcoded.mp4")
 }
 
-func (s *Storage) DasherReadyRepresentationManifestFilePath(args EncodeStreamArgs) string {
-	return filepath.Join(s.ProdDir(args.InputID), representation(args)+"-manifest.mpd")
-}
-
 func (s *Storage) DasherReadyRepresentationTranscodingLogFilePath(args EncodeStreamArgs) string {
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+".mp4.transcodinglog")
 }
@@ -160,4 +156,8 @@ func prodDir(m scrape.Msp) string {
 func DasherReadyRepresentationFilePath(ctx workflow.Context, args EncodeStreamArgs) string {
 	_, m := CallResolveInput(ctx, args.InputID)
 	return filepath.Join(prodDir(m), representation(args)+".mp4")
+}
+func DasherReadyRepresentationManifestFilePath(ctx workflow.Context, args EncodeStreamArgs) string {
+	_, m := CallResolveInput(ctx, args.InputID)
+	return filepath.Join(prodDir(m), representation(args)+"-manifest.mpd")
 }
