@@ -1,6 +1,7 @@
 package dasherworker
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -35,8 +36,28 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 		return "", err
 	}
 
-	storage.Add(filepath.Dir(args.MspPath), M)
+	if err := storage.AddMspsFromTree(context.TODO(), "/var/lib/media/"); err != nil {
+		return "", err
+	}
 
+	slog.Info("HERE", "err", err)
+
+	var VprobeRawData ProbeRawData
+	for _, target := range targets {
+		//if a target calls for video, probe the input source
+		if isVideoCodec(target.Codec) {
+			idx := getFirstInputStreamWithPrefix(M.Inputs, "v")
+			if idx == -1 {
+				return "", Error("Found no video stream source specified", "input", M)
+			}
+			VprobeRawData, err = CallExecuteProbes(ctx, M.Id, idx, M.Inputs[idx].Stream)
+			if err != nil {
+				return "", err
+			}
+			spew.Dump(EvaluateDashPassThrough(VprobeRawData))
+			break
+		}
+	}
 	var futures []workflow.Future
 
 	for _, target := range targets {
@@ -45,10 +66,11 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 		}
 		ctx = workflow.WithChildOptions(ctx, childOptions)
 		futures = append(futures, workflow.ExecuteChildWorkflow(ctx, CreateRepresentation, CreateRepresentationArgs{
-			Dir:     filepath.Dir(args.MspPath),
-			MspFile: filepath.Base(args.MspPath),
-			Fast:    args.Fast,
-			Target:  target,
+			Dir:          filepath.Dir(args.MspPath),
+			MspFile:      filepath.Base(args.MspPath),
+			Fast:         args.Fast,
+			Target:       target,
+			ProbeRawData: VprobeRawData, //Ok even if target is not video. it is input used for video flows
 		}))
 	}
 	for _, future := range futures {
@@ -77,10 +99,11 @@ func (t Target) String() string {
 }
 
 type CreateRepresentationArgs struct {
-	Dir     string
-	MspFile string
-	Fast    bool
-	Target  Target
+	Dir          string
+	MspFile      string
+	Fast         bool
+	Target       Target
+	ProbeRawData ProbeRawData
 }
 
 type CreateRepresentationResp struct {
@@ -99,7 +122,6 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 
 	//Find the encoding needs
 	var opts []TranscodeOption
-	var probeRawData ProbeRawData
 
 	var idx int
 	if isVideoCodec(args.Target.Codec) {
@@ -116,11 +138,6 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 		}
 		opts = append(opts, maxRes)
 		opts = append(opts, WithPreset(preset(args.Fast)))
-		probeRawData, err = CallExecuteProbes(ctx, M.Id, idx, M.Inputs[idx].Stream)
-		if err != nil {
-			return CreateRepresentationResp{}, err
-		}
-		spew.Dump(EvaluateDashPassThrough(probeRawData))
 	} else {
 		idx = getFirstInputStreamWithPrefix(M.Inputs, "a")
 		if idx == -1 {
@@ -140,7 +157,7 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 	fname := storage.DasherReadyRepresentationFilePath(*Eargs)
 	slog.Info("Creating representation", "shortName", M.ShortName, "representation", filepath.Base(fname))
 	factory := TranscodingPipelineFactory(ctx, *Eargs)
-	ffmpegArgs, err := factory.FfmpegArgs(ctx, *Eargs, probeRawData)
+	ffmpegArgs, err := factory.FfmpegArgs(ctx, *Eargs, args.ProbeRawData)
 	if err != nil {
 		return CreateRepresentationResp{}, err
 	}

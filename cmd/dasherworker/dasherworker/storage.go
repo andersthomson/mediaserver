@@ -1,8 +1,12 @@
 package dasherworker
 
 import (
+	"context"
 	"log/slog"
+	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 
 	"github.com/andersthomson/mediaserver/scrape"
 	"go.temporal.io/sdk/workflow"
@@ -30,9 +34,13 @@ func init() {
 }
 
 func (s *Storage) Add(dir string, m scrape.Msp) {
-	_, ok := s.items[m.Id] // Check if it exists
+	old, ok := s.items[m.Id] // Check if it exists
 	if ok {
-		slog.Error("Item ID already exists!!!")
+		if !reflect.DeepEqual(old, m) {
+			slog.Error("Storage: Loading a new item with an EXISTING id!!!", "old", old, "new", m)
+		} else {
+			slog.Info("Storage: Reloading item", "id", m.Id, "shortname", m.ShortName)
+		}
 	}
 	s.items[m.Id] = struct {
 		m   scrape.Msp
@@ -41,6 +49,41 @@ func (s *Storage) Add(dir string, m scrape.Msp) {
 		m:   m,
 		dir: dir,
 	}
+}
+
+func (s *Storage) AddMspsFromTree(ctx context.Context, root string) error {
+	suffix := "msp"
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		slog.Info("Considering", "entry", path)
+		// 1. Check if the context was cancelled before processing the next entry
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		// Handle directory read errors (like lost+found Permission Denied)
+		if err != nil {
+			if os.IsPermission(err) {
+				slog.Warn("Skipping directory due to permission denied", "path", path)
+				return filepath.SkipDir // Tells Go to skip this folder and keep going
+			}
+			return err // Return other critical system errors
+		}
+
+		// 2. Filter for files matching the suffix
+		if !d.IsDir() && strings.HasSuffix(d.Name(), suffix) {
+			// Process the file. You can pass ctx down if parseJSONFile is slow/networked.
+			slog.Info("Adding", "path", path)
+			M, err := ReadMspFile(ctx, filepath.Dir(path), d.Name())
+			if err != nil {
+				return err
+			}
+			s.Add(d.Name(), M)
+			slog.Info("Adding", "path", path, "done", 0)
+		}
+		return nil
+	})
+
+	return err
 }
 
 func StorageAddWF(ctx workflow.Context, mspPath string) (string, error) {

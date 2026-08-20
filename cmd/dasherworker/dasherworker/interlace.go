@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 	"go.temporal.io/sdk/workflow"
 )
@@ -203,8 +202,8 @@ func DeriveFilterRecommendation(raw ProbeRawData) FilterRecommendation {
 
 	// Process Cadence Verification Metrics
 	totalDecimateFrames := raw.DecimateDrop + raw.DecimateKeep
-	spew.Dump(raw.DecimateDrop)
-	spew.Dump(raw.DecimateKeep)
+	//spew.Dump(raw.DecimateDrop)
+	//spew.Dump(raw.DecimateKeep)
 
 	if totalDecimateFrames > 0 && (float64(raw.DecimateDrop)/float64(totalDecimateFrames)) > 0.40 {
 		//"Fake High FPS"
