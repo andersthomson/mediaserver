@@ -221,14 +221,14 @@ func tune(codec string, kind string) []any {
 	case "x264":
 		switch kind {
 		case "animation":
-			return []any{"-tune:v", "animation"}
+			return []any{NewFFMpegArg(KindString, "-tune:v"), NewFFMpegArg(KindString, "animation")}
 		default:
-			return []any{"-tune:v", "film"}
+			return []any{NewFFMpegArg(KindString, "-tune:v"), NewFFMpegArg(KindString, "film")}
 		}
 	case "x265":
 		switch kind {
 		case "animation":
-			return []any{"-tune:v", "animation"}
+			return []any{NewFFMpegArg(KindString, "-tune:v"), NewFFMpegArg(KindString, "animation")}
 		}
 	}
 	return nil
@@ -296,10 +296,10 @@ func (m mpeg2videoWithBrokenPTS) CanHandle(ctx workflow.Context, args EncodeStre
 }
 func (m mpeg2videoWithBrokenPTS) Process(ctx workflow.Context, args EncodeStreamArgs) []any {
 	return []any{
-		"-fflags",
-		"+genpts+igndts",
-		"-copyts",
-		"-start_at_zero",
+		NewFFMpegArg(KindString, "-fflags"),
+		NewFFMpegArg(KindString, "+genpts+igndts"),
+		NewFFMpegArg(KindString, "-copyts"),
+		NewFFMpegArg(KindString, "-start_at_zero"),
 	}
 }
 
@@ -316,30 +316,31 @@ func inputDirFileStrategy(ctx workflow.Context, args EncodeStreamArgs) []any {
 	inputArgsStrategy := selectInputFileArgumentsStrategy(ctx, args)
 	return append(
 		inputArgsStrategy.Process(ctx, args),
-		"-i", DirFile{
+		NewFFMpegArg(KindString, "-i"), NewFFMpegArg(KindDirFile, DirFile{
 			Dir:   filepath.Dir(ResolveInputNumber(ctx, args.InputID, args.InputNo)),
 			Fname: filepath.Base(ResolveInputNumber(ctx, args.InputID, args.InputNo)),
-		})
+		}))
 }
 
 func inputDirFileWithMapStrategy(ctx workflow.Context, args EncodeStreamArgs) []any {
 	return []any{
 		//"-copyts",
-		"-i", DirFile{
+		NewFFMpegArg(KindString, "-i"), NewFFMpegArg(KindDirFile, DirFile{
 			Dir:   filepath.Dir(ResolveInputNumber(ctx, args.InputID, args.InputNo)),
 			Fname: filepath.Base(ResolveInputNumber(ctx, args.InputID, args.InputNo)),
-		},
-		"-map", "0:" + args.Stream,
+		}),
+		NewFFMpegArg(KindString, "-map"), NewFFMpegArg(KindString, "0:"+args.Stream),
 	}
 }
 
 func videoFilterStrategy(ctx workflow.Context, args EncodeStreamArgs, deinterlaceFilter string) []any {
 	scaleFilter := scaleFilter(ctx, args)
-	return []any{"-filter_complex",
-		strings.Join([]string{
+	return []any{NewFFMpegArg(KindString, "-filter_complex"),
+		NewFFMpegArg(KindString, strings.Join([]string{
 			interlaceIfNeeded("0:v:0", "postdeint", deinterlaceFilter),
-			scaleIfNeeded("postdeint", "out", scaleFilter)}, ";"),
-		"-map", "[out]"}
+			scaleIfNeeded("postdeint", "out", scaleFilter)}, ";")),
+		NewFFMpegArg(KindString, "-map"), NewFFMpegArg(KindString, "[out]"),
+	}
 }
 
 func dashMs2(gopFrames int, fps int) string {
@@ -382,8 +383,8 @@ func languageFromArgs(args EncodeStreamArgs) []any {
 	if args.Language != "" {
 		slog.Info("setting lang", "to", args.Language)
 		return []any{
-			"-metadata:s:0",
-			"language=" + args.Language,
+			NewFFMpegArg(KindString, "-metadata:s:0"),
+			NewFFMpegArg(KindString, "language="+args.Language),
 		}
 	}
 	slog.Info("NO language")
@@ -396,17 +397,17 @@ func x264EncodingStrategy(gopFrames int, crf string, bitrate string) func(args E
 	gopFramesStr := fmt.Sprintf("%d", gopFrames)
 	return func(args EncodeStreamArgs) []any {
 		ffmpegArgs := []any{
-			"-c:v", "libx264",
-			"-profile:v", "high",
-			"-level:v", "4.1",
-			"-pix_fmt", "yuv420p",
-			"-crf:v", crf,
-			"-preset:v", args.Preset}
+			NewFFMpegArg(KindString, "-c:v"), NewFFMpegArg(KindString, "libx264"),
+			NewFFMpegArg(KindString, "-profile:v"), NewFFMpegArg(KindString, "high"),
+			NewFFMpegArg(KindString, "-level:v"), NewFFMpegArg(KindString, "4.1"),
+			NewFFMpegArg(KindString, "-pix_fmt"), NewFFMpegArg(KindString, "yuv420p"),
+			NewFFMpegArg(KindString, "-crf:v"), NewFFMpegArg(KindString, crf),
+			NewFFMpegArg(KindString, "-preset:v"), NewFFMpegArg(KindString, args.Preset)}
 		ffmpegArgs = append(ffmpegArgs, tune("x264", args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs,
-			"-x264-params:v", "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:strict-gop=1:b-pyramid=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1")
+			NewFFMpegArg(KindString, "-x264-params:v"), NewFFMpegArg(KindString, "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:strict-gop=1:b-pyramid=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1"))
 
-		ffmpegArgs = append(ffmpegArgs, []any{"-fps_mode", "cfr"}...)
+		ffmpegArgs = append(ffmpegArgs, []any{NewFFMpegArg(KindString, "-fps_mode"), NewFFMpegArg(KindString, "cfr")}...)
 		return ffmpegArgs
 	}
 }
@@ -414,39 +415,39 @@ func x265EncodingStrategy(gopFrames int, crf string, bitrate string) func(args E
 	gopFramesStr := fmt.Sprintf("%d", gopFrames)
 	return func(args EncodeStreamArgs) []any {
 		ffmpegArgs := []any{
-			"-c:v", "libx265",
-			"-profile:v", "main10",
-			"-level:v", "5.1",
-			"-pix_fmt", "yuv420p10le",
-			"-crf:v", crf,
-			"-preset:v", args.Preset,
+			NewFFMpegArg(KindString, "-c:v"), NewFFMpegArg(KindString, "libx265"),
+			NewFFMpegArg(KindString, "-profile:v"), NewFFMpegArg(KindString, "main10"),
+			NewFFMpegArg(KindString, "-level:v"), NewFFMpegArg(KindString, "5.1"),
+			NewFFMpegArg(KindString, "-pix_fmt"), NewFFMpegArg(KindString, "yuv420p10le"),
+			NewFFMpegArg(KindString, "-crf:v"), NewFFMpegArg(KindString, crf),
+			NewFFMpegArg(KindString, "-preset:v"), NewFFMpegArg(KindString, args.Preset),
 		}
 		ffmpegArgs = append(ffmpegArgs, tune("x265", args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs,
-			"-tag:v", "hvc1",
-			"-x265-params:v", "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate))
-		ffmpegArgs = append(ffmpegArgs, []any{"-fps_mode", "cfr"}...)
+			NewFFMpegArg(KindString, "-tag:v"), NewFFMpegArg(KindString, "hvc1"),
+			NewFFMpegArg(KindString, "-x265-params:v"), NewFFMpegArg(KindString, "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)))
+		ffmpegArgs = append(ffmpegArgs, []any{NewFFMpegArg(KindString, "-fps_mode"), NewFFMpegArg(KindString, "cfr")}...)
 		return ffmpegArgs
 	}
 }
 func aac2cEncodingStrategy(args EncodeStreamArgs) []any {
 	return []any{
-		"-vn",
-		"-c", "aac",
-		"-aac_coder", "twoloop",
+		NewFFMpegArg(KindString, "-vn"),
+		NewFFMpegArg(KindString, "-c"), NewFFMpegArg(KindString, "aac"),
+		NewFFMpegArg(KindString, "-aac_coder"), NewFFMpegArg(KindString, "twoloop"),
 		//"-frame_size", "960",
-		"-b:a", "448k",
-		"-ar", "48000",
+		NewFFMpegArg(KindString, "-b:a"), NewFFMpegArg(KindString, "448k"),
+		NewFFMpegArg(KindString, "-ar"), NewFFMpegArg(KindString, "48000"),
 		//FIXME: Keep mono as mono. Dont upsample
-		"-ac", "2",
+		NewFFMpegArg(KindString, "-ac"), NewFFMpegArg(KindString, "2"),
 		//"-af", "aresample=async=1",
-		"-af", "aresample=async=1:comp_duration=1:max_soft_comp=0.05",
+		NewFFMpegArg(KindString, "-af"), NewFFMpegArg(KindString, "aresample=async=1:comp_duration=1:max_soft_comp=0.05"),
 	}
 }
 
 func copyStreamStrategy(args EncodeStreamArgs) []any {
 	return []any{
-		"-c", "copy",
+		NewFFMpegArg(KindString, "-c"), NewFFMpegArg(KindString, "copy"),
 	}
 }
 
@@ -466,16 +467,16 @@ func copyStreamStrategy(args EncodeStreamArgs) []any {
 */
 func dashManifestStrategy(ctx workflow.Context, args EncodeStreamArgs) []any {
 	return []any{
-		"-map_chapters", "-1",
-		"-map_metadata", "-1",
+		NewFFMpegArg(KindString, "-map_chapters"), NewFFMpegArg(KindString, "-1"),
+		NewFFMpegArg(KindString, "-map_metadata"), NewFFMpegArg(KindString, "-1"),
 		//These are supposedly needed if ffmpeg does the dash packaging (not using e.g. mp4box)
 		//"-movflags", "frag_keyframe+empty_moov+default_base_moof",
-		"-movflags", "faststart",
-		"-y",
-		DirFile{
+		NewFFMpegArg(KindString, "-movflags"), NewFFMpegArg(KindString, "faststart"),
+		NewFFMpegArg(KindString, "-y"),
+		NewFFMpegArg(KindDirFile, DirFile{
 			Dir:   filepath.Dir(TranscodedRepresentationFilePath(ctx, args)),
 			Fname: filepath.Base(TranscodedRepresentationFilePath(ctx, args)),
-		},
+		}),
 	}
 }
 
