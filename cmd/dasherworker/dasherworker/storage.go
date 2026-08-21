@@ -117,6 +117,10 @@ func (s *Storage) ResolveInput(id string) (string, scrape.Msp) { //dir,msp
 	}
 	return x.dir, x.m
 }
+func (s *Storage) ResolveInputNumber(id string, number int) string {
+	dir, m := s.ResolveInput(id)
+	return filepath.Join(dir, m.Inputs[number].Filename)
+}
 
 func (s *Storage) ProdDir(id string) string {
 	s.m.RLock()
@@ -133,9 +137,15 @@ func (s *Storage) DasherReadyRepresentationTranscodingLogFilePath(args EncodeStr
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+".mp4.transcodinglog")
 }
 
-func (s *Storage) ResolveInputNumber(id string, number int) string {
-	dir, m := s.ResolveInput(id)
-	return filepath.Join(dir, m.Inputs[number].Filename)
+func (s *Storage) DasherReadyRepresentationFilePath(args EncodeStreamArgs) string {
+	return filepath.Join(s.ProdDir(args.InputID), representation(args)+".mp4")
+}
+func (s *Storage) TranscodedRepresentationFilePath(args EncodeStreamArgs) string {
+	return filepath.Join(s.ProdDir(args.InputID), representation(args)+"-transcoded.mp4")
+}
+
+func (s *Storage) DasherReadyRepresentationManifestFilePath(args EncodeStreamArgs) string {
+	return filepath.Join(s.ProdDir(args.InputID), representation(args)+"-manifest.mpd")
 }
 
 // Interface to WFs

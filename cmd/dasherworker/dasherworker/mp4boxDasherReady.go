@@ -31,7 +31,7 @@ type MP4BoxDashReadyResp struct {
 	Stderr string
 }
 
-func MP4BoxDashReady(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
+func MP4BoxDashReadyExecute(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
 
 	slog.Info("MP4Box dashing stream", "filePath", args.TranscodedFilePath)
 	stdoutBuf, stderrBuf, err := MP4Box(ctx, args.WorkDir, args.MP4BoxArgs)

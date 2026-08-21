@@ -1,6 +1,7 @@
 package dasherworker
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -486,15 +487,15 @@ type ManifestStrategy func(ctx workflow.Context, args EncodeStreamArgs) []any
 type DurationDeriverUsec func(ctx workflow.Context, inputID string, inputNo int, stream string) (int64, error)
 type QueueSelector func(args EncodeStreamArgs) string
 
-func MP4BoxDashReadyPrepare(ctx workflow.Context, args EncodeStreamArgs) MP4BoxDashReadyArgs {
-	drFilePath := DasherReadyRepresentationFilePath(ctx, args)
+func MP4BoxDashReadyPrepare(ctx context.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
+	drFilePath := storage.DasherReadyRepresentationFilePath(args)
 	drFname := filepath.Base(drFilePath)
 	drDir := filepath.Dir(drFilePath)
 
-	transcodedFilePath := TranscodedRepresentationFilePath(ctx, args)
+	transcodedFilePath := storage.TranscodedRepresentationFilePath(args)
 	transcodedFname := filepath.Base(transcodedFilePath)
 
-	manifestFilePath := DasherReadyRepresentationManifestFilePath(ctx, args)
+	manifestFilePath := storage.DasherReadyRepresentationManifestFilePath(args)
 	manifestFname := filepath.Base(manifestFilePath)
 
 	boxArgs := []string{
@@ -513,27 +514,18 @@ func MP4BoxDashReadyPrepare(ctx workflow.Context, args EncodeStreamArgs) MP4BoxD
 		DrFname:            drFname,
 		DrDir:              drDir,
 		DrFilePath:         drFilePath,
-		WorkDir:            ProdDir(ctx, args.InputID),
+		WorkDir:            storage.ProdDir(args.InputID),
 		DashMs:             args.DstProps.DashMs,
 		MP4BoxArgs:         boxArgs,
-	}
+	}, nil
 }
-func CallMP4BoxDashReadyExecute(ctx workflow.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
-	/*
-		ctx3 := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-			StartToCloseTimeout: time.Minute * 50,
-			TaskQueue:           "dasherQueue",
-			HeartbeatTimeout:    3600 * time.Second,
-		})
 
-		var MP4BoxDashReadyResp MP4BoxDashReadyResp
-		err := workflow.ExecuteActivity(ctx3, MP4BoxDashReady, args).Get(ctx3, &MP4BoxDashReadyResp)
-		if err != nil {
-			slog.Error("MP4BoxDashReady activity failed", "err", err.Error())
-		}
-		return MP4BoxDashReadyResp, err
-	*/
-	return CallActivityIO[MP4BoxDashReadyArgs, MP4BoxDashReadyResp](ctx, MP4BoxDashReady, args)
+func CallMP4BoxDashReadyPrepare(ctx workflow.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
+	return CallActivityIO[EncodeStreamArgs, MP4BoxDashReadyArgs](ctx, MP4BoxDashReadyPrepare, args)
+}
+
+func CallMP4BoxDashReadyExecute(ctx workflow.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
+	return CallActivityIO[MP4BoxDashReadyArgs, MP4BoxDashReadyResp](ctx, MP4BoxDashReadyExecute, args)
 }
 
 func isVideoCodec(codec string) bool {
@@ -680,7 +672,7 @@ func (m TranscodingPipeline) FfmpegArgs(ctx workflow.Context, args EncodeStreamA
 
 func (m TranscodingPipeline) MP4BoxArgs(ctx workflow.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
 	args.DstProps.DashMs = dashMs2(gopFrames(ctx, args.InputID), 25)
-	return MP4BoxDashReadyPrepare(ctx, args), nil
+	return CallMP4BoxDashReadyPrepare(ctx, args)
 }
 
 func (m TranscodingPipeline) NeedsProcessing(t TranscodingOptionsRecord, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) string {
