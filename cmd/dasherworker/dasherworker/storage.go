@@ -186,11 +186,6 @@ func DasherReadyRepresentationFilePath(ctx workflow.Context, args EncodeStreamAr
 	_, m := CallResolveInput(ctx, args.InputID)
 	return filepath.Join(prodDir(m), representation(args)+".mp4")
 }
-func DasherReadyRepresentationManifestFilePath(ctx workflow.Context, args EncodeStreamArgs) string {
-	_, m := CallResolveInput(ctx, args.InputID)
-	return filepath.Join(prodDir(m), representation(args)+"-manifest.mpd")
-}
-
 func TranscodedRepresentationFilePath(ctx workflow.Context, args EncodeStreamArgs) string {
 	_, m := CallResolveInput(ctx, args.InputID)
 	return filepath.Join(prodDir(m), representation(args)+"-transcoded.mp4")

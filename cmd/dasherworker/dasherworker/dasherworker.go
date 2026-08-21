@@ -1,7 +1,6 @@
 package dasherworker
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -487,39 +486,6 @@ type ManifestStrategy func(ctx workflow.Context, args EncodeStreamArgs) []any
 type DurationDeriverUsec func(ctx workflow.Context, inputID string, inputNo int, stream string) (int64, error)
 type QueueSelector func(args EncodeStreamArgs) string
 
-func MP4BoxDashReadyPrepare(ctx context.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
-	drFilePath := storage.DasherReadyRepresentationFilePath(args)
-	drFname := filepath.Base(drFilePath)
-	drDir := filepath.Dir(drFilePath)
-
-	transcodedFilePath := storage.TranscodedRepresentationFilePath(args)
-	transcodedFname := filepath.Base(transcodedFilePath)
-
-	manifestFilePath := storage.DasherReadyRepresentationManifestFilePath(args)
-	manifestFname := filepath.Base(manifestFilePath)
-
-	boxArgs := []string{
-		"-dash", args.DstProps.DashMs,
-		"-rap",
-		"-profile",
-		"onDemand",
-		"-segment-name", drFname,
-		"-out", manifestFname,
-		transcodedFname}
-
-	return MP4BoxDashReadyArgs{
-		EncodeArgs:         args,
-		TranscodedFilePath: transcodedFilePath,
-		ManifestFilePath:   manifestFilePath,
-		DrFname:            drFname,
-		DrDir:              drDir,
-		DrFilePath:         drFilePath,
-		WorkDir:            storage.ProdDir(args.InputID),
-		DashMs:             args.DstProps.DashMs,
-		MP4BoxArgs:         boxArgs,
-	}, nil
-}
-
 func CallMP4BoxDashReadyPrepare(ctx workflow.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
 	return CallActivityIO[EncodeStreamArgs, MP4BoxDashReadyArgs](ctx, MP4BoxDashReadyPrepare, args)
 }
@@ -675,13 +641,13 @@ func (m TranscodingPipeline) MP4BoxArgs(ctx workflow.Context, args EncodeStreamA
 	return CallMP4BoxDashReadyPrepare(ctx, args)
 }
 
-func (m TranscodingPipeline) NeedsProcessing(t TranscodingOptionsRecord, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) string {
+func (m TranscodingPipeline) NeedsProcessing(t TranscodingOptionsRecord, ffmpegArgsExpanded FFMpegArgs, dashReadyArgs MP4BoxDashReadyArgs) string {
 	//If either of ffmpeg and mp4box cmd lines differ, we need (re)processing.
 	var diffs []string
 	if d := cmp.Diff(t.Ffmpegargs, ffmpegArgsExpanded); d != "" {
 		diffs = append(diffs, d)
 	}
-	if d := cmp.Diff(t.MP4BoxDashReadyArgs, mp4boxargs); d != "" {
+	if d := cmp.Diff(t.MP4BoxDashReadyArgs.MP4BoxArgs, dashReadyArgs.MP4BoxArgs); d != "" {
 		diffs = append(diffs, d)
 	}
 	return strings.Join(diffs, "\n")

@@ -13,16 +13,38 @@ import (
 	"strings"
 )
 
+func MP4BoxDashReadyPrepare(ctx context.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
+	dasherReadyFilePath := storage.DasherReadyRepresentationFilePath(args)
+	manifestFilePath := storage.DasherReadyRepresentationManifestFilePath(args)
+	transcodedFilePath := storage.TranscodedRepresentationFilePath(args)
+
+	boxArgs := []string{
+		"-dash", args.DstProps.DashMs,
+		"-rap",
+		"-profile",
+		"onDemand",
+		"-segment-name", filepath.Base(dasherReadyFilePath),
+		"-out", filepath.Base(manifestFilePath),
+		filepath.Base(transcodedFilePath),
+	}
+
+	return MP4BoxDashReadyArgs{
+		DasherReadyFilePath: dasherReadyFilePath,
+		ManifestFilePath:    manifestFilePath,
+		TranscodedFilePath:  transcodedFilePath,
+		WorkDir:             storage.ProdDir(args.InputID),
+		DashMs:              args.DstProps.DashMs,
+		MP4BoxArgs:          boxArgs,
+	}, nil
+}
+
 type MP4BoxDashReadyArgs struct {
-	EncodeArgs         EncodeStreamArgs
-	TranscodedFilePath string
-	ManifestFilePath   string
-	DrFname            string
-	DrFilePath         string
-	DrDir              string
-	WorkDir            string
-	DashMs             string
-	MP4BoxArgs         []string
+	TranscodedFilePath  string
+	ManifestFilePath    string
+	DasherReadyFilePath string
+	WorkDir             string
+	DashMs              string
+	MP4BoxArgs          []string
 }
 
 type MP4BoxDashReadyResp struct {
@@ -55,12 +77,12 @@ func MP4BoxDashReadyExecute(ctx context.Context, args MP4BoxDashReadyArgs) (MP4B
 		return resp, Fatal("Failed to remove %s: %v", args.ManifestFilePath, err)
 	}
 
-	basename, ok := strings.CutSuffix(args.DrFname, ".mp4")
+	basename, ok := strings.CutSuffix(filepath.Base(args.DasherReadyFilePath), ".mp4")
 	if !ok {
-		return resp, Fatal("drFname MUST end in .mp4")
+		return resp, Fatal("DasherReadyFilePath MUST end in .mp4")
 	}
-	if err := os.Rename(filepath.Join(args.DrDir, basename+".mp4init.mp4"), args.DrFilePath); err != nil {
-		return resp, Fatal("Failed to rename %s %s:%v", filepath.Join(args.DrDir, basename+".mp4init.mp4"), args.DrFilePath, err)
+	if err := os.Rename(filepath.Join(filepath.Dir(args.DasherReadyFilePath), basename+".mp4init.mp4"), args.DasherReadyFilePath); err != nil {
+		return resp, Fatal("Failed to rename %s %s:%v", filepath.Join(filepath.Dir(args.DasherReadyFilePath), basename+".mp4init.mp4"), args.DasherReadyFilePath, err)
 	}
 	return resp, nil
 }
