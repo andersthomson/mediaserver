@@ -485,7 +485,6 @@ type LanguageStrategy func(args EncodeStreamArgs) []any
 type ManifestStrategy func(ctx workflow.Context, args EncodeStreamArgs) []any
 type DurationDeriverUsec func(ctx workflow.Context, inputID string, inputNo int, stream string) (int64, error)
 type QueueSelector func(args EncodeStreamArgs) string
-type PackagingStrategy func(ctx workflow.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error)
 
 func MP4BoxDashReadyStrategy(ctx workflow.Context, args EncodeStreamArgs) MP4BoxDashReadyArgs {
 	drFilePath := DasherReadyRepresentationFilePath(ctx, args)
@@ -649,7 +648,6 @@ func TranscodingPipelineFactory(ctx workflow.Context, args EncodeStreamArgs) Tra
 	}
 	res.durationDeriver = durationDeriverFfmpeg
 	res.encoderQueue = QueueSelectorLocal
-	res.packager = MP4BoxPackager
 	return res
 }
 
@@ -660,7 +658,6 @@ type TranscodingPipeline struct {
 	manifestStrategy ManifestStrategy
 	durationDeriver  DurationDeriverUsec
 	encoderQueue     QueueSelector
-	packager         PackagingStrategy
 }
 
 func (m TranscodingPipeline) FfmpegArgs(ctx workflow.Context, args EncodeStreamArgs, probeRawData ProbeRawData) (FFMpegArgs, error) {
@@ -755,7 +752,7 @@ func (m TranscodingPipeline) Process(ctx workflow.Context, args EncodeStreamArgs
 		FfmpegArgs: ffmpegArgsExpanded,
 	}).Get(ctx2, nil)
 
-	mp4boxresp, err := m.packager(ctx, mp4boxargs)
+	mp4boxresp, err := MP4BoxPackager(ctx, mp4boxargs)
 	if err != nil {
 		return Error("Packager failed", "err", err)
 	}
