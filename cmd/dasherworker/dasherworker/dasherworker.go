@@ -1,7 +1,6 @@
 package dasherworker
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -35,12 +34,6 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	if err := storage.AddMspsFromTree(context.TODO(), "/var/lib/media/"); err != nil {
-		return "", err
-	}
-
-	slog.Info("HERE", "err", err)
 
 	var VprobeRawData ProbeRawData
 	for _, target := range targets {
@@ -117,8 +110,6 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 	if err != nil {
 		slog.Error("MSP read failed", "err", err)
 	}
-
-	storage.Add(args.Dir, M)
 
 	//Find the encoding needs
 	var opts []TranscodeOption
@@ -523,7 +514,7 @@ func MP4BoxDashReadyStrategy(ctx workflow.Context, args EncodeStreamArgs) MP4Box
 		DrFname:            drFname,
 		DrDir:              drDir,
 		DrFilePath:         drFilePath,
-		WorkDir:            storage.ProdDir(args.InputID),
+		WorkDir:            ProdDir(ctx, args.InputID),
 		DashMs:             args.DstProps.DashMs,
 		MP4BoxArgs:         boxArgs,
 	}
@@ -706,7 +697,7 @@ func (m TranscodingPipeline) NeedsProcessing(t TranscodingOptionsRecord, ffmpegA
 
 func (m TranscodingPipeline) Process(ctx workflow.Context, args EncodeStreamArgs, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) error {
 
-	if err := os.MkdirAll(storage.ProdDir(args.InputID), os.ModePerm); err != nil {
+	if err := os.MkdirAll(ProdDir(ctx, args.InputID), os.ModePerm); err != nil {
 		return err
 	}
 

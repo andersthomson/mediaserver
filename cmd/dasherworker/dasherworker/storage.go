@@ -35,7 +35,7 @@ func init() {
 	storage = newStorage()
 }
 
-func (s *Storage) Add(dir string, m scrape.Msp) {
+func (s *Storage) add(dir string, m scrape.Msp) {
 	s.m.Lock()
 	defer s.m.Unlock()
 	old, ok := s.items[m.Id] // Check if it exists
@@ -79,7 +79,7 @@ func (s *Storage) AddMspsFromTree(ctx context.Context, root string) error {
 			if err != nil {
 				return err
 			}
-			s.Add(filepath.Dir(path), M)
+			s.add(filepath.Dir(path), M)
 		}
 		return nil
 	})
@@ -91,17 +91,29 @@ func StorageAddWF(ctx workflow.Context, mspPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	storage.Add(filepath.Dir(mspPath), M)
+	storage.add(filepath.Dir(mspPath), M)
 	return "", nil
 }
 
 // id is the uuid
 func (s *Storage) ResolveInput(id string) (string, scrape.Msp) { //dir,msp
 	s.m.RLock()
-	defer s.m.RUnlock()
 	x, ok := s.items[id]
+	s.m.RUnlock()
 	if !ok {
-		slog.Error("Item does not exist", "id", id)
+		slog.Info("Lazy load of item", "id", id)
+		if err := s.AddMspsFromTree(context.TODO(), "/var/lib/media/"); err != nil {
+			slog.Error("FATAL: Failed to load MSP tree", "err", err)
+		}
+		//Now check again
+		s.m.RLock()
+		x, ok := s.items[id]
+		s.m.RUnlock()
+		if ok {
+			return x.dir, x.m
+		}
+		slog.Error("The freshly fetched tree did not have the item", "id", id)
+		return "", scrape.Msp{}
 	}
 	return x.dir, x.m
 }
@@ -148,6 +160,11 @@ func CallResolveInput(ctx workflow.Context, id string) (string, scrape.Msp) {
 
 func prodDir(m scrape.Msp) string {
 	return "/var/cache/mediacache/" + m.ShortName + "-" + m.Id + "/dash"
+}
+
+func ProdDir(ctx workflow.Context, id string) string {
+	_, m := CallResolveInput(ctx, id)
+	return prodDir(m)
 }
 
 func ResolveInputNumber(ctx workflow.Context, id string, number int) string {
