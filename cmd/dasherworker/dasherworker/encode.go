@@ -3,7 +3,6 @@ package dasherworker
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"path/filepath"
 )
@@ -52,42 +51,37 @@ type FFMpegArgs struct {
 	OutputFname string
 }
 
-func NewFFMpegArgs(s []any) FFMpegArgs {
+func NewFFMpegArgs(s []FFMpegArg) FFMpegArgs {
 	res := FFMpegArgs{}
 	res.Args = make([]string, len(s))
-	for idx, _ := range s {
-		switch x := s[idx].(type) {
-		case FFMpegArg:
-			switch x.Kind {
-			case KindString:
-				var str string
-				if err := json.Unmarshal(x.Payload, &str); err != nil {
-					slog.Error("FATAL", "err", err)
-				}
-				res.Args[idx] = str
-			case KindDirFile:
-				var df DirFile
-				if err := json.Unmarshal(x.Payload, &df); err != nil {
-					slog.Error("FATAL", "err", err)
-				}
-				res.Args[idx] = df.Fname
-
-				if res.InputFname == "" {
-					res.InputFname = df.Fname
-					res.InputDir = df.Dir
-					continue
-				}
-				if res.OutputFname == "" {
-					res.OutputFname = df.Fname
-					res.OutputDir = df.Dir
-					continue
-				}
-				slog.Error("Found more than 2 DirFile:s in the ffmpeg args", "args", s)
-			default:
-				slog.Error("unsupported FFMpegArgKind", "value", x.Kind)
+	for idx, x := range s {
+		switch x.Kind {
+		case KindString:
+			var str string
+			if err := json.Unmarshal(x.Payload, &str); err != nil {
+				slog.Error("FATAL", "err", err)
 			}
+			res.Args[idx] = str
+		case KindDirFile:
+			var df DirFile
+			if err := json.Unmarshal(x.Payload, &df); err != nil {
+				slog.Error("FATAL", "err", err)
+			}
+			res.Args[idx] = df.Fname
+
+			if res.InputFname == "" {
+				res.InputFname = df.Fname
+				res.InputDir = df.Dir
+				continue
+			}
+			if res.OutputFname == "" {
+				res.OutputFname = df.Fname
+				res.OutputDir = df.Dir
+				continue
+			}
+			slog.Error("Found more than 2 DirFile:s in the ffmpeg args", "args", s)
 		default:
-			slog.Error("NewFFMpegArgs/Unsupported type", "type", fmt.Sprintf("%T", x))
+			slog.Error("unsupported FFMpegArgKind", "value", x.Kind)
 		}
 	}
 	//Secure that we have input and output (by checking that output is set)
