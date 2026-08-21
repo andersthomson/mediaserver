@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"path/filepath"
+
+	"go.temporal.io/sdk/workflow"
 )
 
 type DirFile struct {
@@ -51,7 +53,11 @@ type FFMpegArgs struct {
 	OutputFname string
 }
 
-func NewFFMpegArgs(s []FFMpegArg) FFMpegArgs {
+func CallNewFFMpegArgs(ctx workflow.Context, s []FFMpegArg) (FFMpegArgs, error) {
+	return CallActivityIO[[]FFMpegArg, FFMpegArgs](ctx, NewFFMpegArgs, s)
+}
+
+func NewFFMpegArgs(ctx context.Context, s []FFMpegArg) (FFMpegArgs, error) {
 	res := FFMpegArgs{}
 	res.Args = make([]string, len(s))
 	for idx, x := range s {
@@ -59,13 +65,13 @@ func NewFFMpegArgs(s []FFMpegArg) FFMpegArgs {
 		case KindString:
 			var str string
 			if err := json.Unmarshal(x.Payload, &str); err != nil {
-				slog.Error("FATAL", "err", err)
+				return res, Fatal("json unmarshal failed", "err", err)
 			}
 			res.Args[idx] = str
 		case KindDirFile:
 			var df DirFile
 			if err := json.Unmarshal(x.Payload, &df); err != nil {
-				slog.Error("FATAL", "err", err)
+				return res, Fatal("json unmarshal failed", "err", err)
 			}
 			res.Args[idx] = df.Fname
 
@@ -86,9 +92,9 @@ func NewFFMpegArgs(s []FFMpegArg) FFMpegArgs {
 	}
 	//Secure that we have input and output (by checking that output is set)
 	if res.OutputFname == "" {
-		slog.Error("input and output not identified", "args", s)
+		return res, Fatal("input anhd output not identified", "args", s)
 	}
-	return res
+	return res, nil
 }
 
 type EncodePreludeArgs struct {

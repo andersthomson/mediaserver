@@ -138,6 +138,7 @@ func main() {
 	w.RegisterActivity(dasherworker.LoadTranscodingOptions)
 	w.RegisterActivity(dasherworker.GetStreamDimensions)
 	w.RegisterActivity(dasherworker.LinkSrcMedia)
+	w.RegisterActivity(dasherworker.NewFFMpegArgs)
 	w.RegisterActivity(dasherworker.MP4BoxDashReadyPrepare)
 	w.RegisterActivity(dasherworker.MP4BoxDashReadyExecute)
 	w.RegisterActivity(dasherworker.FileExists)

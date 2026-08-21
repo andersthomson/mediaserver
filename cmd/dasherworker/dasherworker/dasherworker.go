@@ -633,8 +633,7 @@ func (m TranscodingPipeline) FfmpegArgs(ctx workflow.Context, args EncodeStreamA
 	ffmpegArgs = append(ffmpegArgs, m.languageStrategy(args)...)
 	ffmpegArgs = append(ffmpegArgs, m.manifestStrategy(ctx, args)...)
 
-	ffmpegArgsExpanded := NewFFMpegArgs(ffmpegArgs)
-	return ffmpegArgsExpanded, nil
+	return CallNewFFMpegArgs(ctx, ffmpegArgs)
 }
 
 func (m TranscodingPipeline) MP4BoxArgs(ctx workflow.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
