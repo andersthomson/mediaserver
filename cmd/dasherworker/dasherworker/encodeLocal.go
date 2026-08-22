@@ -65,13 +65,6 @@ func (l *LocalEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, 
 	slog.Info("Start", "A", "LocalEncode/Encode", "inputFname", args.FfmpegArgs.InputFname)
 	defer slog.Info("Stop ", "A", "LocalEncode/Encode", "inputFname", args.FfmpegArgs.InputFname)
 	slog.Info("local/Encode", "args", args)
-	/*	_, err := FfmpegLocalEncode(ctx, FfmpegEncodeArgs{
-			Ffmpeg:          "/usr/bin/ffmpeg",
-			Args:            args.FfmpegArgs.Args,
-			Workdir:         l.workDir(args.SessionID, args.FfmpegArgs),
-			TotalDurationUs: args.TotalDurationUs,
-		})
-	func FfmpegLocalEncode(ctx context.Context, args FfmpegEncodeArgs) (FfmpegEncodeResp, error) {*/
 	var resp EncodeResp
 
 	// Create an extra pipe for progress only
