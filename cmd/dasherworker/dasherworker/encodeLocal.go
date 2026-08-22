@@ -40,7 +40,7 @@ func (l LocalEncode) makeWorkDir(sessionID string, ESA EncodeStreamArgs) string 
 }
 
 func (l LocalEncode) inputSymlink(sessionID string, ESA EncodeStreamArgs, ffmpegargs FFMpegArgs) string {
-	return filepath.Join(l.workDir(sessionID, ESA), ffmpegargs.InputFname)
+	return filepath.Join(l.workDir(sessionID, ESA), filepath.Base(storage.ResolveInputNumber(ESA.InputID, ESA.InputNo)))
 }
 
 func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error) {
@@ -50,7 +50,8 @@ func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs)
 	slog.Info("local/prelude: symlinking input file")
 	_ = l.makeWorkDir(args.SessionID, args.ESA)
 	newName := l.inputSymlink(args.SessionID, args.ESA, args.FfmpegArgs)
-	oldName := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
+	oldName := storage.ResolveInputNumber(args.ESA.InputID, args.ESA.InputNo)
+	//oldName := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
 
 	if err := os.Symlink(oldName, newName); err != nil {
 		slog.Error("Failed to symlink input file", "oldname", oldName, "newname", newName, "err", err)

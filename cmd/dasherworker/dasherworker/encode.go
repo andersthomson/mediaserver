@@ -6,39 +6,24 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	"github.com/davecgh/go-spew/spew"
 	"go.temporal.io/sdk/workflow"
 )
 
-type DirFile struct {
-	Dir   string
-	Fname string
-}
-
-type InputDirFile DirFile
-type OutputDirFile DirFile
-
-func NewDirFile(dir, fname string) DirFile {
-	return DirFile{
-		Dir:   dir,
-		Fname: fname,
-	}
-}
-
-func (d DirFile) String() string {
-	return filepath.Join(d.Dir, d.Fname)
-}
-
 type TranscodedRepesentationFilePath struct {
 	ESA EncodeStreamArgs
+}
+
+type InputFilePath struct {
+	Id     string
+	Number int
 }
 
 type FFMpegArgKind string
 
 const (
 	KindString                          FFMpegArgKind = "STRING"
-	KindDirFile                         FFMpegArgKind = "DIRFILE"
 	KindTranscodedRepesentationFilePath FFMpegArgKind = "TranscodedRepesentationFilePath"
+	KindInputFilePath                   FFMpegArgKind = "INPUTFILEPATH"
 )
 
 type FFMpegArg struct {
@@ -73,32 +58,19 @@ func NewFFMpegArgs(ctx context.Context, s []FFMpegArg) (FFMpegArgs, error) {
 				return res, Fatal("json unmarshal failed", "err", err)
 			}
 			res.Args[idx] = str
-		case KindDirFile:
-			var df DirFile
-			if err := json.Unmarshal(x.Payload, &df); err != nil {
-				return res, Fatal("json unmarshal failed", "err", err)
-			}
-			res.Args[idx] = df.Fname
-
-			if res.InputFname == "" {
-				res.InputFname = df.Fname
-				res.InputDir = df.Dir
-				continue
-			}
-			if res.OutputFname == "" {
-				res.OutputFname = df.Fname
-				continue
-			}
-			slog.Error("Found more than 2 DirFile:s in the ffmpeg args", "args", s)
 		case KindTranscodedRepesentationFilePath:
 			var v TranscodedRepesentationFilePath
 			if err := json.Unmarshal(x.Payload, &v); err != nil {
 				return res, Fatal("json unmarshal failed", "err", err)
 			}
 			p := storage.TranscodedRepresentationFilePath(v.ESA)
-			spew.Dump(p)
-			spew.Dump(v)
-			spew.Dump(x)
+			res.Args[idx] = filepath.Base(p)
+		case KindInputFilePath:
+			var v InputFilePath
+			if err := json.Unmarshal(x.Payload, &v); err != nil {
+				return res, Fatal("json unmarshal failed", "err", err)
+			}
+			p := storage.ResolveInputNumber(v.Id, v.Number)
 			res.Args[idx] = filepath.Base(p)
 		default:
 			slog.Error("unsupported FFMpegArgKind", "value", x.Kind)

@@ -316,19 +316,15 @@ func inputDirFileStrategy(ctx workflow.Context, args EncodeStreamArgs) []FFMpegA
 	inputArgsStrategy := selectInputFileArgumentsStrategy(ctx, args)
 	return append(
 		inputArgsStrategy.Process(ctx, args),
-		NewFFMpegArg(KindString, "-i"), NewFFMpegArg(KindDirFile, DirFile{
-			Dir:   filepath.Dir(ResolveInputNumber(ctx, args.InputID, args.InputNo)),
-			Fname: filepath.Base(ResolveInputNumber(ctx, args.InputID, args.InputNo)),
-		}))
+		NewFFMpegArg(KindString, "-i"), NewFFMpegArg(KindInputFilePath, InputFilePath{Id: args.InputID, Number: args.InputNo}),
+	)
+
 }
 
 func inputDirFileWithMapStrategy(ctx workflow.Context, args EncodeStreamArgs) []FFMpegArg {
 	return []FFMpegArg{
 		//"-copyts",
-		NewFFMpegArg(KindString, "-i"), NewFFMpegArg(KindDirFile, DirFile{
-			Dir:   filepath.Dir(ResolveInputNumber(ctx, args.InputID, args.InputNo)),
-			Fname: filepath.Base(ResolveInputNumber(ctx, args.InputID, args.InputNo)),
-		}),
+		NewFFMpegArg(KindString, "-i"), NewFFMpegArg(KindInputFilePath, InputFilePath{Id: args.InputID, Number: args.InputNo}),
 		NewFFMpegArg(KindString, "-map"), NewFFMpegArg(KindString, "0:"+args.Stream),
 	}
 }
@@ -473,11 +469,6 @@ func dashManifestStrategy(ctx workflow.Context, args EncodeStreamArgs) []FFMpegA
 		//"-movflags", "frag_keyframe+empty_moov+default_base_moof",
 		NewFFMpegArg(KindString, "-movflags"), NewFFMpegArg(KindString, "faststart"),
 		NewFFMpegArg(KindString, "-y"),
-		/*
-			NewFFMpegArg(KindDirFile, DirFile{
-				Dir:   filepath.Dir(TranscodedRepresentationFilePath(ctx, args)),
-				Fname: filepath.Base(TranscodedRepresentationFilePath(ctx, args)),
-			}),*/
 		NewFFMpegArg(KindTranscodedRepesentationFilePath, TranscodedRepesentationFilePath{ESA: args}),
 	}
 }

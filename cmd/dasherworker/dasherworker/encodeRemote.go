@@ -36,8 +36,9 @@ func (r *RemoteEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs
 	slog.Info("Start", "A", "RemoteEncode/Prelude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
 	defer slog.Info("Stop ", "A", "RemoteEncode/Prelude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
 	//slog.Info("Remote/Prelude", "host", r.Hostname, "username", r.Username, "args", args)
-	localPath := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
-	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), args.FfmpegArgs.InputFname)
+	//localPath := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
+	localPath := storage.ResolveInputNumber(args.ESA.InputID, args.ESA.InputNo)
+	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), filepath.Base(localPath))
 	if err := RsyncActivity(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, true); err != nil {
 		return EncodePreludeResp{}, err
 	}
