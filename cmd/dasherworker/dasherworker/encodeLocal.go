@@ -24,12 +24,13 @@ type LocalEncode struct {
 }
 
 // Gives the workdir for a local ffmpeg encode.
-func (_ LocalEncode) workDir(sessionID string, FfmpegArgs FFMpegArgs) string {
-	return filepath.Join(FfmpegArgs.OutputDir, ".sessionID-"+sessionID)
+func (_ LocalEncode) workDir(sessionID string, ESA EncodeStreamArgs) string {
+	p := storage.ProdDir(ESA.InputID)
+	return filepath.Join(p, ".sessionID-"+sessionID)
 }
 
-func (l LocalEncode) makeWorkDir(sessionID string, FfmpegArgs FFMpegArgs) string {
-	wd := l.workDir(sessionID, FfmpegArgs)
+func (l LocalEncode) makeWorkDir(sessionID string, ESA EncodeStreamArgs) string {
+	wd := l.workDir(sessionID, ESA)
 	if err := os.Mkdir(wd, 0755); err != nil {
 		slog.Error("Failed to create ffmpeg working dir", "err", err)
 	} else {
@@ -38,8 +39,8 @@ func (l LocalEncode) makeWorkDir(sessionID string, FfmpegArgs FFMpegArgs) string
 	return wd
 }
 
-func (l LocalEncode) inputSymlink(sessionID string, ffmpegargs FFMpegArgs) string {
-	return filepath.Join(l.workDir(sessionID, ffmpegargs), ffmpegargs.InputFname)
+func (l LocalEncode) inputSymlink(sessionID string, ESA EncodeStreamArgs, ffmpegargs FFMpegArgs) string {
+	return filepath.Join(l.workDir(sessionID, ESA), ffmpegargs.InputFname)
 }
 
 func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error) {
@@ -47,8 +48,8 @@ func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs)
 	defer slog.Info("Stop ", "A", "LocalEncode/Prelude", "inputFname", args.FfmpegArgs.InputFname)
 	//slog.Info("local/prelude", "args", args)
 	slog.Info("local/prelude: symlinking input file")
-	_ = l.makeWorkDir(args.SessionID, args.FfmpegArgs)
-	newName := l.inputSymlink(args.SessionID, args.FfmpegArgs)
+	_ = l.makeWorkDir(args.SessionID, args.ESA)
+	newName := l.inputSymlink(args.SessionID, args.ESA, args.FfmpegArgs)
 	oldName := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
 
 	if err := os.Symlink(oldName, newName); err != nil {
@@ -88,7 +89,7 @@ func (l *LocalEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, 
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	cmd.ExtraFiles = []*os.File{pw}
-	cmd.Dir = l.workDir(args.SessionID, args.FfmpegArgs)
+	cmd.Dir = l.workDir(args.SessionID, args.ESA)
 
 	// 3. Start progress parser in background
 	if args.TotalDurationUs != 0 {
@@ -104,7 +105,7 @@ func (l *LocalEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, 
 						currentUs, _ := strconv.ParseInt(parts[1], 10, 64)
 						percent := (float64(currentUs) / float64(args.TotalDurationUs)) * 100
 						activity.RecordHeartbeat(ctx, fmt.Sprintf("%4.1f percent complete", percent))
-						tlogger.Info("Progress", "F", "FfmpegLocalEncode", "workdir", l.workDir(args.SessionID, args.FfmpegArgs), "percent", percent)
+						tlogger.Info("Progress", "F", "FfmpegLocalEncode", "workdir", l.workDir(args.SessionID, args.ESA), "percent", percent)
 					}
 				}
 			}
@@ -147,10 +148,10 @@ func (l *LocalEncode) EncodePostlude(ctx context.Context, args EncodePostludeArg
 
 	//slog.Info("local/postlude", "args", args)
 	//slog.Info("local/postlude: removing input symlink")
-	inputSymlink := l.inputSymlink(args.SessionID, args.FfmpegArgs)
-	workDir := l.workDir(args.SessionID, args.FfmpegArgs)
-	outputPath := filepath.Join(workDir, args.FfmpegArgs.OutputFname)
-	targetOutputPath := filepath.Join(args.FfmpegArgs.OutputDir, args.FfmpegArgs.OutputFname)
+	inputSymlink := l.inputSymlink(args.SessionID, args.ESA, args.FfmpegArgs)
+	workDir := l.workDir(args.SessionID, args.ESA)
+	targetOutputPath := storage.TranscodedRepresentationFilePath(args.ESA)
+	outputPath := filepath.Join(workDir, filepath.Base(targetOutputPath))
 	if err := os.Remove(inputSymlink); err != nil {
 		return EncodePostludeResp{}, Error("Failed to remove symlink to input file", "file", inputSymlink, "err", err)
 	}

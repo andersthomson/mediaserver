@@ -124,11 +124,21 @@ func (s *Storage) ResolveInputNumber(id string, number int) string {
 
 func (s *Storage) ProdDir(id string) string {
 	s.m.RLock()
-	defer s.m.RUnlock()
 	x, ok := s.items[id]
+	s.m.RUnlock()
 	//spew.Dump(s)
 	if !ok {
-		slog.Error("Item does not exist", "id", id)
+		if err := s.AddMspsFromTree(context.TODO(), "/var/lib/media/"); err != nil {
+			slog.Error("FATAL: Failed to load MSP tree", "err", err)
+		}
+		s.m.RLock()
+		x, ok := s.items[id]
+		s.m.RUnlock()
+		//spew.Dump(s)
+		if ok {
+			return "/var/cache/mediacache/" + x.m.ShortName + "-" + x.m.Id + "/dash"
+		}
+		return "ERROR IN LOOKUP OF PRODDIR"
 	}
 	return "/var/cache/mediacache/" + x.m.ShortName + "-" + x.m.Id + "/dash"
 }

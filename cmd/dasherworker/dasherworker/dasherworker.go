@@ -473,10 +473,12 @@ func dashManifestStrategy(ctx workflow.Context, args EncodeStreamArgs) []FFMpegA
 		//"-movflags", "frag_keyframe+empty_moov+default_base_moof",
 		NewFFMpegArg(KindString, "-movflags"), NewFFMpegArg(KindString, "faststart"),
 		NewFFMpegArg(KindString, "-y"),
-		NewFFMpegArg(KindDirFile, DirFile{
-			Dir:   filepath.Dir(TranscodedRepresentationFilePath(ctx, args)),
-			Fname: filepath.Base(TranscodedRepresentationFilePath(ctx, args)),
-		}),
+		/*
+			NewFFMpegArg(KindDirFile, DirFile{
+				Dir:   filepath.Dir(TranscodedRepresentationFilePath(ctx, args)),
+				Fname: filepath.Base(TranscodedRepresentationFilePath(ctx, args)),
+			}),*/
+		NewFFMpegArg(KindTranscodedRepesentationFilePath, TranscodedRepesentationFilePath{ESA: args}),
 	}
 }
 
@@ -691,6 +693,7 @@ func (m TranscodingPipeline) Process(ctx workflow.Context, args EncodeStreamArgs
 	err = workflow.ExecuteActivity(ctx2, a.EncodePrelude, EncodePreludeArgs{
 		SessionID:  sessionID,
 		FfmpegArgs: ffmpegArgsExpanded,
+		ESA:        args,
 	}).Get(ctx2, &encodePreludeResp)
 	if err != nil {
 		slog.Error(" FfmpegEncodePreludefailed", "err", err.Error())
@@ -701,6 +704,7 @@ func (m TranscodingPipeline) Process(ctx workflow.Context, args EncodeStreamArgs
 	err = workflow.ExecuteActivity(ctx2, a.Encode, EncodeArgs{
 		SessionID:       sessionID,
 		FfmpegArgs:      ffmpegArgsExpanded,
+		ESA:             args,
 		TotalDurationUs: duration,
 	}).Get(ctx2, &ffmpegEncodeResp)
 	if err != nil {
@@ -711,6 +715,7 @@ func (m TranscodingPipeline) Process(ctx workflow.Context, args EncodeStreamArgs
 	err = workflow.ExecuteActivity(ctx2, a.EncodePostlude, EncodePostludeArgs{
 		SessionID:  sessionID,
 		FfmpegArgs: ffmpegArgsExpanded,
+		ESA:        args,
 	}).Get(ctx2, nil)
 
 	mp4boxresp, err := CallMP4BoxDashReadyExecute(ctx, mp4boxargs)

@@ -151,9 +151,9 @@ func (r *RemoteEncode) EncodePostlude(ctx context.Context, args EncodePostludeAr
 	defer slog.Info("Stop ", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
 
 	//slog.Info("Remote/postlude", "host", r.Hostname, "args", args)
-	localPath := filepath.Join(args.FfmpegArgs.OutputDir, args.FfmpegArgs.OutputFname)
-	localTmpPath := filepath.Join(args.FfmpegArgs.OutputDir, "."+args.FfmpegArgs.OutputFname+"-"+args.SessionID)
-	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), args.FfmpegArgs.OutputFname)
+	localPath := storage.TranscodedRepresentationFilePath(args.ESA)
+	localTmpPath := filepath.Join(filepath.Dir(localPath), "."+filepath.Base(localPath)+"-"+args.SessionID)
+	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), filepath.Base(localPath))
 	if err := RsyncActivity(ctx, localTmpPath, remotePath, r.Username, r.Hostname, r.Port, false); err != nil {
 		return EncodePostludeResp{}, fmt.Errorf("Rsync to remote failed: %+v", err)
 	}

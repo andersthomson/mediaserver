@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 
+	"github.com/davecgh/go-spew/spew"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -28,11 +29,16 @@ func (d DirFile) String() string {
 	return filepath.Join(d.Dir, d.Fname)
 }
 
+type TranscodedRepesentationFilePath struct {
+	ESA EncodeStreamArgs
+}
+
 type FFMpegArgKind string
 
 const (
-	KindString  FFMpegArgKind = "STRING"
-	KindDirFile FFMpegArgKind = "DIRFILE"
+	KindString                          FFMpegArgKind = "STRING"
+	KindDirFile                         FFMpegArgKind = "DIRFILE"
+	KindTranscodedRepesentationFilePath FFMpegArgKind = "TranscodedRepesentationFilePath"
 )
 
 type FFMpegArg struct {
@@ -49,7 +55,6 @@ type FFMpegArgs struct {
 	InputDir    string
 	InputFname  string
 	Args        []string
-	OutputDir   string
 	OutputFname string
 }
 
@@ -82,17 +87,22 @@ func NewFFMpegArgs(ctx context.Context, s []FFMpegArg) (FFMpegArgs, error) {
 			}
 			if res.OutputFname == "" {
 				res.OutputFname = df.Fname
-				res.OutputDir = df.Dir
 				continue
 			}
 			slog.Error("Found more than 2 DirFile:s in the ffmpeg args", "args", s)
+		case KindTranscodedRepesentationFilePath:
+			var v TranscodedRepesentationFilePath
+			if err := json.Unmarshal(x.Payload, &v); err != nil {
+				return res, Fatal("json unmarshal failed", "err", err)
+			}
+			p := storage.TranscodedRepresentationFilePath(v.ESA)
+			spew.Dump(p)
+			spew.Dump(v)
+			spew.Dump(x)
+			res.Args[idx] = filepath.Base(p)
 		default:
 			slog.Error("unsupported FFMpegArgKind", "value", x.Kind)
 		}
-	}
-	//Secure that we have input and output (by checking that output is set)
-	if res.OutputFname == "" {
-		return res, Fatal("input anhd output not identified", "args", s)
 	}
 	return res, nil
 }
@@ -100,6 +110,7 @@ func NewFFMpegArgs(ctx context.Context, s []FFMpegArg) (FFMpegArgs, error) {
 type EncodePreludeArgs struct {
 	SessionID  string
 	FfmpegArgs FFMpegArgs
+	ESA        EncodeStreamArgs
 }
 
 type EncodePreludeResp struct {
@@ -109,6 +120,7 @@ type EncodePreludeResp struct {
 type EncodeArgs struct {
 	SessionID       string
 	FfmpegArgs      FFMpegArgs
+	ESA             EncodeStreamArgs
 	TotalDurationUs int64
 }
 
@@ -120,6 +132,7 @@ type EncodeResp struct {
 type EncodePostludeArgs struct {
 	SessionID  string
 	FfmpegArgs FFMpegArgs
+	ESA        EncodeStreamArgs
 }
 
 type EncodePostludeResp struct {
