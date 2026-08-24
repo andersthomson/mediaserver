@@ -1,4 +1,4 @@
-package dasherworker
+package throttledLogger
 
 import (
 	"context"
@@ -14,7 +14,7 @@ type ThrottledLogger struct {
 }
 
 // NewThrottledLogger sets the allowed logs per second (r) and burst size (b).
-func NewThrottledLogger(r rate.Limit, b int) *ThrottledLogger {
+func New(r rate.Limit, b int) *ThrottledLogger {
 	return &ThrottledLogger{
 		limiter: rate.NewLimiter(r, b),
 	}

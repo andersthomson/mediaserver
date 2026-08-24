@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared/throttledLogger"
 	"go.temporal.io/sdk/activity"
 	"golang.org/x/time/rate"
 )
@@ -58,7 +59,7 @@ func MP4Box(ctx context.Context, dir string, args []string) (bytes.Buffer, bytes
 	}()
 
 	re := regexp.MustCompile(`MPD\s+[\d\.]+\s*s\s+(\d+)\s*%`)
-	logger := NewThrottledLogger(rate.Every(3*time.Second), 1)
+	logger := throttledLogger.New(rate.Every(3*time.Second), 1)
 	fname := filepath.Base(args[len(args)-1])
 
 	// 2. Read, log, and parse Stderr in background goroutine

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared/throttledLogger"
 	"github.com/kballard/go-shellquote"
 	"go.temporal.io/sdk/activity"
 	"golang.org/x/time/rate"
@@ -99,7 +100,7 @@ func (r *RemoteEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp,
 	// 3. Progress Parser (Reading from SSH Stdout)
 	go func() {
 		scanner := bufio.NewScanner(stdoutPipe)
-		tlogger := NewThrottledLogger(rate.Every(5*time.Second), 3)
+		tlogger := throttledLogger.New(rate.Every(5*time.Second), 3)
 
 		// Track rolling processing performance safely across lines inside the loop matrix
 		var currentFPS float64 = 0.0

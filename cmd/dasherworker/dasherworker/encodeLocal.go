@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared/throttledLogger"
 	"github.com/davecgh/go-spew/spew"
 	"go.temporal.io/sdk/activity"
 	"golang.org/x/time/rate"
@@ -90,7 +91,7 @@ func (l *LocalEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, 
 	if args.TotalDurationUs != 0 {
 		go func() {
 			defer pw.Close() // Ensure the write-end closes so scanner finishes
-			tlogger := NewThrottledLogger(rate.Every(5*time.Second), 3)
+			tlogger := throttledLogger.New(rate.Every(5*time.Second), 3)
 			scanner := bufio.NewScanner(pr)
 			for scanner.Scan() {
 				line := scanner.Text()

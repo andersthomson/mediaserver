@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared/throttledLogger"
 	"github.com/creack/pty"
 	"go.temporal.io/sdk/activity"
 	"golang.org/x/time/rate"
@@ -24,7 +25,7 @@ type progressParser struct {
 	hostname string
 	port     int
 	fname    string
-	logger   *ThrottledLogger
+	logger   *throttledLogger.ThrottledLogger
 }
 
 func (p *progressParser) parseLine(line string, forceLogger bool) {
@@ -105,7 +106,7 @@ func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remot
 		fname:    filepath.Base(localPath),
 		hostname: remoteHost,
 		port:     port,
-		logger:   NewThrottledLogger(rate.Every(5*time.Second), 3),
+		logger:   throttledLogger.New(rate.Every(5*time.Second), 3),
 	}
 
 	// Initialize the scanner using the pseudo-terminal file descriptor
