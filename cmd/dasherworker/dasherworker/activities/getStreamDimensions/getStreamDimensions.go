@@ -1,4 +1,4 @@
-package dasherworker
+package getStreamDimensions
 
 import (
 	"context"
@@ -8,13 +8,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
 	"github.com/pkg/errors"
-	"go.temporal.io/sdk/workflow"
 )
 
-func CallGetStreamDimensions(ctx workflow.Context, inputID string, inputNo int, stream string) (int, int, float64, error) {
-	sDim, err := CallActivityIO[any, StreamDimensions](ctx, GetStreamDimensions, GetStreamDimensionsArgs{InputID: inputID, InputNo: inputNo, Stream: stream})
-	return sDim.Width, sDim.Height, sDim.SAR, err
+type GSD struct {
+	Storage *storage.Storage
 }
 
 // MediaDimensions contains clean, pre-parsed float numeric values ready for calculation
@@ -31,7 +30,7 @@ type GetStreamDimensionsArgs struct {
 }
 
 // ExtractMediaDimensions calls ffprobe natively and parses the video matrix parameters
-func GetStreamDimensions(ctx context.Context, args GetStreamDimensionsArgs) (StreamDimensions, error) {
+func (g *GSD) GetStreamDimensions(ctx context.Context, args GetStreamDimensionsArgs) (StreamDimensions, error) {
 	// FFprobeOutput maps only the specific JSON fields we care about from the stream metadata
 	type FFprobeOutput struct {
 		Streams []struct {
@@ -41,7 +40,7 @@ func GetStreamDimensions(ctx context.Context, args GetStreamDimensionsArgs) (Str
 		} `json:"streams"`
 	}
 
-	dir, msp := storage.ResolveInput(args.InputID)
+	dir, msp := g.Storage.ResolveInput(args.InputID)
 	fullPath := filepath.Join(dir, msp.Inputs[args.InputNo].Filename)
 
 	// Execute ffprobe requesting standard JSON layout arrays for the first video stream

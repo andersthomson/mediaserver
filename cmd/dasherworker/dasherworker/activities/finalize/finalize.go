@@ -1,32 +1,22 @@
-package dasherworker
+package finalize
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
-	"go.temporal.io/sdk/workflow"
 )
-
-func FinalizeWF(ctx workflow.Context, args FinalizeArgs) (FinalizeResp, error) {
-	return CallActivityIO[FinalizeArgs, FinalizeResp](ctx, Finalize, args)
-}
-
-func CallFinalize(ctx workflow.Context, inputID string, ensure bool) (FinalizeResp, error) {
-	resp, err := CallActivityIO[FinalizeArgs, FinalizeResp](ctx, Finalize, FinalizeArgs{InputID: inputID, Ensure: ensure})
-	if err != nil {
-		return resp, shared.Error("CallFinalize failed", "err", err)
-	}
-	return resp, nil
-}
 
 type FinalizeArgs struct {
 	Ensure  bool
@@ -39,14 +29,17 @@ type FinalizeResp struct {
 	MP4BoxStderr string
 }
 
-func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
+type Finalize struct {
+	Storage *storage.Storage
+}
+
+func (f *Finalize) Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	slog.Info("Start", "A", "Finalize", "InputID", args.InputID)
 	defer slog.Info("Stop ", "A", "Finalize", "InputID)", args.InputID)
 	spew.Dump(args)
 
-	targetDir := storage.ProdDir(args.InputID)
-	//dir, msp := storage.ResolveInput(args.InputID)
-	vStart, aStart := getVideoAndAudioStartTimes(ctx, args.InputID)
+	targetDir := f.Storage.ProdDir(args.InputID)
+	vStart, aStart := getVideoAndAudioStartTimes(ctx, f.Storage, args.InputID)
 
 	pattern := "*.mp4"
 	matches, err := filepath.Glob(targetDir + "/" + pattern)
@@ -101,7 +94,7 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	if gopFrames == 0 {
 		return FinalizeResp{}, shared.Error("Failed to find a file with video", "matches", matches)
 	}
-	fpsI, err := FloatToInt(fps)
+	fpsI, err := floatToInt(fps)
 	if err != nil {
 		return FinalizeResp{}, shared.Error("File to put into mpd manifest has fractional fps", "fps", fps, "matches", matches)
 	}
@@ -133,9 +126,9 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	}
 proceed:
 	//args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
-	boxArgs := []string{"-dash", dashMs2(gopFrames, fpsI), "-rap", "-flat", "-profile", "onDemand", "-out", "manifest.mpd"}
+	boxArgs := []string{"-dash", shared.DashMs2(gopFrames, fpsI), "-rap", "-flat", "-profile", "onDemand", "-out", "manifest.mpd"}
 	boxArgs = append(boxArgs, mp4BoxInputs...)
-	stdoutBuf, stderrBuf, err := MP4Box(ctx, targetDir, boxArgs)
+	stdoutBuf, stderrBuf, err := common.MP4Box(ctx, targetDir, boxArgs)
 	if err != nil {
 		return FinalizeResp{
 			DidExecute:   true,
@@ -228,13 +221,13 @@ func dashName(fname string) (string, error) {
 	return base + "_dashinit.mp4", nil
 }
 
-func getVideoAndAudioStartTimes(ctx context.Context, inputID string) (float64, float64) {
+func getVideoAndAudioStartTimes(ctx context.Context, storage *storage.Storage, inputID string) (float64, float64) {
 	dir, msp := storage.ResolveInput(inputID)
-	videoSourceIdx := getFirstInputStreamWithPrefix(msp.Inputs, "v")
+	videoSourceIdx := shared.GetFirstInputStreamWithPrefix(msp.Inputs, "v")
 	vInput := msp.Inputs[videoSourceIdx]
 	vStart, _ := GetStremStartTime(filepath.Join(dir, vInput.Filename), vInput.Stream)
 
-	audioSourceIdx := getFirstInputStreamWithPrefix(msp.Inputs, "a")
+	audioSourceIdx := shared.GetFirstInputStreamWithPrefix(msp.Inputs, "a")
 	aInput := msp.Inputs[audioSourceIdx]
 	aStart, _ := GetStremStartTime(filepath.Join(dir, aInput.Filename), aInput.Stream)
 
@@ -249,4 +242,31 @@ func replaceWithSymlink(src, target string) error {
 		return errors.WithStack(err)
 	}
 	return nil
+}
+
+// FloatToInt converts a whole number float64 to int.
+func floatToInt(f float64) (int, error) {
+	// 1. Check for NaN or Infinities (unusable float states)
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, errors.New("cannot convert NaN or Infinity to int")
+	}
+
+	// 2. Prevent Int Overflow / Underflow
+	// On 64-bit systems, math.MaxInt is MaxInt64. On 32-bit, it is MaxInt32.
+	if f > float64(math.MaxInt) || f < float64(math.MinInt) {
+		return 0, fmt.Errorf("float value %f overflows integer boundaries", f)
+	}
+
+	// 3. Counteract Floating-Point Precision Drift
+	// math.Round ensures 5.00000000001 or 4.99999999999 both snap cleanly to 5
+	rounded := math.Round(f)
+
+	// 4. Verify it was actually a whole number (Tolerance Check)
+	// We check if the difference between the original and rounded value is negligible
+	const epsilon = 1e-9
+	if math.Abs(f-rounded) > epsilon {
+		return 0, fmt.Errorf("float value %f contains fractional data and is not a whole number", f)
+	}
+
+	return int(rounded), nil
 }

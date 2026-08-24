@@ -1,4 +1,4 @@
-package dasherworker
+package finalize
 
 import (
 	"fmt"

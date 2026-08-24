@@ -1,4 +1,4 @@
-package dasherworker
+package isBroken
 
 import (
 	"bytes"
@@ -8,16 +8,16 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
-	"go.temporal.io/sdk/workflow"
 )
 
-func CallIsMpeg2VideoWithBrokenDTS(ctx workflow.Context, inputID string, inputNo int, stream string) (bool, error) {
-	return CallActivityIO[any, bool](ctx, IsMpeg2VideoWithBrokenDTS, inputID, inputNo, stream)
+type IsBroken struct {
+	Storage *storage.Storage
 }
 
-func IsMpeg2VideoWithBrokenDTS(ctx context.Context, inputID string, inputNo int, stream string) (bool, error) {
-	dir, msp := storage.ResolveInput(inputID)
+func (i *IsBroken) IsMpeg2VideoWithBrokenDTS(ctx context.Context, inputID string, inputNo int, stream string) (bool, error) {
+	dir, msp := i.Storage.ResolveInput(inputID)
 	inputFile := filepath.Join(dir, msp.Inputs[inputNo].Filename)
 
 	// FFprobeStream models the stream metadata structure from ffprobe JSON

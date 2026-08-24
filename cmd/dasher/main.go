@@ -3,12 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
-	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker"
@@ -31,14 +28,16 @@ func main() {
 	if len(os.Args) > 0 {
 		switch os.Args[1] {
 		case "properties":
-			p, err := dasherworker.GetSourceProperties(context.Background(), dasherworker.ProbeParams{
-				Dir:      filepath.Dir(os.Args[2]),
-				Filename: filepath.Base(os.Args[2]),
-			})
-			if err != nil {
-				fmt.Println(err)
-			}
-			spew.Dump(p)
+			/*
+				p, err := dasherworker.GetSourceProperties(context.Background(), dasherworker.ProbeParams{
+					Dir:      filepath.Dir(os.Args[2]),
+					Filename: filepath.Base(os.Args[2]),
+				})
+				if err != nil {
+					fmt.Println(err)
+				}
+				spew.Dump(p)
+			*/
 			/*
 
 				var srcProperties dasherworker.SrcProperties
@@ -74,17 +73,17 @@ func main() {
 			}
 			fmt.Printf("Success\n")
 			return
-
-		case "keyframeHistogram":
-			h, err := dasherworker.KeyframeHistogramFile(os.Args[2], os.Args[3])
-			if err != nil {
-				log.Fatalf("Error: %v\n", err)
-			}
-			fmt.Print("Keyframes  Occurences\n")
-			for _, key := range slices.Sorted(maps.Keys(h)) {
-				fmt.Printf("%d %d\n", key, h[key])
-			}
-			return
+			/*
+				case "keyframeHistogram":
+					h, err := dasherworker.KeyframeHistogramFile(os.Args[2], os.Args[3])
+					if err != nil {
+						log.Fatalf("Error: %v\n", err)
+					}
+					fmt.Print("Keyframes  Occurences\n")
+					for _, key := range slices.Sorted(maps.Keys(h)) {
+						fmt.Printf("%d %d\n", key, h[key])
+					}
+					return*/
 		case "HLSlinkSources":
 			msp, err := scrape.ReadMspFromFile(os.Args[2])
 			if err != nil {
@@ -157,28 +156,29 @@ func main() {
 			}
 			run.Get(context.Background(), nil)
 			return
-		case "finalize":
-			msp, err := scrape.ReadMspFromFile(os.Args[2])
-			if err != nil {
-				fmt.Printf("Fail: %v\n", err)
-				return
-			}
+			/*
+				case "finalize":
+					msp, err := scrape.ReadMspFromFile(os.Args[2])
+					if err != nil {
+						fmt.Printf("Fail: %v\n", err)
+						return
+					}
 
-			run, err := c.ExecuteWorkflow(context.Background(),
-				client.StartWorkflowOptions{
-					ID:        uuid.New().String(), // Unique ID for business logic
-					TaskQueue: "dasherQueue",       // Which worker group should handle this
-				},
-				"FinalizeWF",
-				dasherworker.FinalizeArgs{
-					InputID: msp.Id,
-				})
-			if err != nil {
-				slog.Info("Couldn't start workflow", "err", err)
-				return
-			}
-			run.Get(context.Background(), nil)
-			return
+					run, err := c.ExecuteWorkflow(context.Background(),
+						client.StartWorkflowOptions{
+							ID:        uuid.New().String(), // Unique ID for business logic
+							TaskQueue: "dasherQueue",       // Which worker group should handle this
+						},
+						"FinalizeWF",
+						dasherworker.FinalizeArgs{
+							InputID: msp.Id,
+						})
+					if err != nil {
+						slog.Info("Couldn't start workflow", "err", err)
+						return
+					}
+					run.Get(context.Background(), nil)
+					return*/
 		case "keyframes":
 			// Local dry-run demonstration
 			m3u8Input := os.Args[2]

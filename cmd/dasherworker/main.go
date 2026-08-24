@@ -6,6 +6,19 @@ import (
 	"os"
 
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/deinterlacer"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/durationDeriver"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/ffmpegArgs"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/finalize"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/getStreamDimensions"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/isBroken"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/keyframeHistogram"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/localEncode"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mp4boxDashReady"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mspreader"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/remoteEncode"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/transcodingOptionsRecorder"
 	"go.temporal.io/sdk/client"
 	tworker "go.temporal.io/sdk/worker"
 )
@@ -17,7 +30,7 @@ func (l *silentLogger) Info(msg string, kv ...interface{})  {}
 func (l *silentLogger) Warn(msg string, kv ...interface{})  {}
 func (l *silentLogger) Error(msg string, kv ...interface{}) {}
 
-func createRemoteWorker(c client.Client, rw remoteworker) tworker.Worker {
+func createRemoteWorker(c client.Client, rw remoteworker, storage *storage.Storage) tworker.Worker {
 	execSize := 1
 	if rw.Concurrency > 0 {
 		execSize = rw.Concurrency
@@ -29,7 +42,7 @@ func createRemoteWorker(c client.Client, rw remoteworker) tworker.Worker {
 		MaxConcurrentActivityExecutionSize: execSize + 1,
 	})
 
-	re := &dasherworker.RemoteEncode{}
+	re := &remoteEncode.RemoteEncode{Storage: storage}
 	if rw.Hostname == "" {
 		panic(fmt.Sprintf("Hostname must be set: %+v", rw))
 	} else {
@@ -73,10 +86,11 @@ func main() {
 	}
 	defer c.Close()
 
+	storage := storage.New()
 	if len(os.Args) > 1 {
 		for _, rw := range conf.Remotes {
 			if rw.Name == os.Args[1] {
-				remoteEncodeWorker := createRemoteWorker(c, rw)
+				remoteEncodeWorker := createRemoteWorker(c, rw, storage)
 				fmt.Printf("Starting remote worker for %s\n", rw.Name)
 				if err := remoteEncodeWorker.Run(tworker.InterruptCh()); err != nil {
 					panic(fmt.Sprintf("remoteEncoding worker failed: %+v\n", err))
@@ -88,7 +102,7 @@ func main() {
 
 	for _, rw := range conf.Remotes {
 		if rw.Start {
-			remoteEncodeWorker := createRemoteWorker(c, rw)
+			remoteEncodeWorker := createRemoteWorker(c, rw, storage)
 			fmt.Printf("Starting remote worker for %s\n", rw.Name)
 			go func() {
 				if err := remoteEncodeWorker.Run(tworker.InterruptCh()); err != nil {
@@ -104,7 +118,7 @@ func main() {
 			MaxConcurrentSessionExecutionSize:  1,
 			MaxConcurrentActivityExecutionSize: 1 + 1,
 		})
-		we.RegisterActivity(&dasherworker.LocalEncode{})
+		we.RegisterActivity(&localEncode.LocalEncode{Storage: storage})
 		fmt.Printf("Starting local worker\n")
 		go func() {
 			if err := we.Run(tworker.InterruptCh()); err != nil {
@@ -122,35 +136,25 @@ func main() {
 	})
 
 	w.RegisterWorkflow(dasherworker.EnsureDashWF)
-	w.RegisterWorkflow(dasherworker.GetSourcePropertiesWF)
-	w.RegisterWorkflow(dasherworker.LinkHLSSourcesWF)
-	w.RegisterWorkflow(dasherworker.StorageAddWF)
-	w.RegisterWorkflow(dasherworker.FinalizeWF)
+	//w.RegisterWorkflow(dasherworker.GetSourcePropertiesWF)
+	//w.RegisterWorkflow(dasherworker.LinkHLSSourcesWF)
+	//w.RegisterWorkflow(dasherworker.StorageAddWF)
+	//w.RegisterWorkflow(dasherworker.FinalizeWF)
 	w.RegisterWorkflow(dasherworker.HLSRenderMasterWF)
 
 	w.RegisterWorkflow(dasherworker.CreateRepresentation)
 
-	w.RegisterActivity(&dasherworker.LocalEncode{})
-	w.RegisterActivity(dasherworker.ReadMspFile)
-	w.RegisterActivity(dasherworker.ResolveInput)
-	w.RegisterActivity(dasherworker.GetMediaDurationUsec)
-	w.RegisterActivity(dasherworker.GetSourcePropertiesActivity)
-	w.RegisterActivity(dasherworker.LoadTranscodingOptions)
-	w.RegisterActivity(dasherworker.GetStreamDimensions)
-	w.RegisterActivity(dasherworker.LinkSrcMedia)
-	w.RegisterActivity(dasherworker.NewFFMpegArgs)
-	w.RegisterActivity(dasherworker.MP4BoxDashReadyPrepare)
-	w.RegisterActivity(dasherworker.MP4BoxDashReadyExecute)
-	w.RegisterActivity(dasherworker.FileExists)
-	w.RegisterActivity(dasherworker.GetOneTargetsProperties)
-	w.RegisterActivity(dasherworker.KeyframeHistogram)
-	w.RegisterActivity(dasherworker.Finalize)
-	w.RegisterActivity(dasherworker.RecordTranscodingOptions)
-	w.RegisterActivity(dasherworker.ExecuteProbes)
-
-	w.RegisterActivity(dasherworker.HLSRenderMaster)
-	w.RegisterActivity(dasherworker.GenerateHLSLanguageFileActivity)
-	w.RegisterActivity(dasherworker.IsMpeg2VideoWithBrokenDTS)
+	w.RegisterActivity(mspreader.Read)
+	w.RegisterActivity(&localEncode.LocalEncode{Storage: storage})
+	w.RegisterActivity(&deinterlacer.Deinterlacer{Storage: storage})
+	w.RegisterActivity(&ffmpegArgs.FFMpegArgsPocessor{Storage: storage})
+	w.RegisterActivity(&durationDeriver.DurationDeriver{Storage: storage})
+	w.RegisterActivity(&finalize.Finalize{Storage: storage})
+	w.RegisterActivity(&getStreamDimensions.GSD{Storage: storage})
+	w.RegisterActivity(&isBroken.IsBroken{Storage: storage})
+	w.RegisterActivity(&keyframeHistogram.KeyframeHistogram{Storage: storage})
+	w.RegisterActivity(&mp4boxDashReady.MP4BoxDashReady{Storage: storage})
+	w.RegisterActivity(&transcodingOptionsRecorder.TranscodingOptionsRecorder{Storage: storage})
 	// Run the worker (blocks until interrupted)
 	err = w.Run(tworker.InterruptCh())
 	if err != nil {

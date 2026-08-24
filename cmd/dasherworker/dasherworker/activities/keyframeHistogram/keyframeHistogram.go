@@ -1,4 +1,4 @@
-package dasherworker
+package keyframeHistogram
 
 import (
 	"bytes"
@@ -7,18 +7,9 @@ import (
 	"log"
 	"os/exec"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
-	"go.temporal.io/sdk/workflow"
 )
-
-func CallKeyFrameHistogram(ctx workflow.Context, inputID string, inputNo int, stream string) (map[int]int, error) {
-	res, err := CallActivityIO[KeyframeHistogramArgs, KeyframeHistogramResp](ctx, KeyframeHistogram, KeyframeHistogramArgs{
-		InputID: inputID,
-		InputNo: inputNo,
-		Stream:  stream,
-	})
-	return res, err
-}
 
 type KeyframeHistogramArgs struct {
 	InputID string
@@ -28,10 +19,14 @@ type KeyframeHistogramArgs struct {
 
 type KeyframeHistogramResp map[int]int
 
-// FFprobeOutput maps the exact JSON structure returned by the ffprobe command
-func KeyframeHistogram(ctx context.Context, args KeyframeHistogramArgs) (KeyframeHistogramResp, error) {
+type KeyframeHistogram struct {
+	Storage *storage.Storage
+}
 
-	videoPath := storage.ResolveInputNumber(args.InputID, args.InputNo)
+// FFprobeOutput maps the exact JSON structure returned by the ffprobe command
+func (k *KeyframeHistogram) KeyframeHistogram(ctx context.Context, args KeyframeHistogramArgs) (KeyframeHistogramResp, error) {
+
+	videoPath := k.Storage.ResolveInputNumber(args.InputID, args.InputNo)
 
 	return KeyframeHistogramFile(videoPath, args.Stream)
 }

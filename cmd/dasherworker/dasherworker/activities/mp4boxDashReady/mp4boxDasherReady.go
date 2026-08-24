@@ -1,4 +1,4 @@
-package dasherworker
+package mp4boxDashReady
 
 import (
 	"bufio"
@@ -12,13 +12,28 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 )
 
-func MP4BoxDashReadyPrepare(ctx context.Context, args shared.EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
-	dasherReadyFilePath := storage.DasherReadyRepresentationFilePath(args)
-	manifestFilePath := storage.DasherReadyRepresentationManifestFilePath(args)
-	transcodedFilePath := storage.TranscodedRepresentationFilePath(args)
+type MP4BoxDashReady struct {
+	Storage *storage.Storage
+}
+
+type MP4BoxDashReadyArgs struct {
+	TranscodedFilePath  string
+	ManifestFilePath    string
+	DasherReadyFilePath string
+	WorkDir             string
+	DashMs              string
+	MP4BoxArgs          []string
+}
+
+func (m *MP4BoxDashReady) MP4BoxDashReadyPrepare(ctx context.Context, args shared.EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
+	dasherReadyFilePath := m.Storage.DasherReadyRepresentationFilePath(args)
+	manifestFilePath := m.Storage.DasherReadyRepresentationManifestFilePath(args)
+	transcodedFilePath := m.Storage.TranscodedRepresentationFilePath(args)
 
 	boxArgs := []string{
 		"-dash", args.DstProps.DashMs,
@@ -34,19 +49,10 @@ func MP4BoxDashReadyPrepare(ctx context.Context, args shared.EncodeStreamArgs) (
 		DasherReadyFilePath: dasherReadyFilePath,
 		ManifestFilePath:    manifestFilePath,
 		TranscodedFilePath:  transcodedFilePath,
-		WorkDir:             storage.ProdDir(args.InputID),
+		WorkDir:             m.Storage.ProdDir(args.InputID),
 		DashMs:              args.DstProps.DashMs,
 		MP4BoxArgs:          boxArgs,
 	}, nil
-}
-
-type MP4BoxDashReadyArgs struct {
-	TranscodedFilePath  string
-	ManifestFilePath    string
-	DasherReadyFilePath string
-	WorkDir             string
-	DashMs              string
-	MP4BoxArgs          []string
 }
 
 type MP4BoxDashReadyResp struct {
@@ -55,10 +61,10 @@ type MP4BoxDashReadyResp struct {
 	Stderr string
 }
 
-func MP4BoxDashReadyExecute(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
+func (_ *MP4BoxDashReady) MP4BoxDashReadyExecute(ctx context.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
 
 	slog.Info("MP4Box dashing stream", "filePath", args.TranscodedFilePath)
-	stdoutBuf, stderrBuf, err := MP4Box(ctx, args.WorkDir, args.MP4BoxArgs)
+	stdoutBuf, stderrBuf, err := common.MP4Box(ctx, args.WorkDir, args.MP4BoxArgs)
 	if err != nil {
 		return MP4BoxDashReadyResp{}, err
 	}

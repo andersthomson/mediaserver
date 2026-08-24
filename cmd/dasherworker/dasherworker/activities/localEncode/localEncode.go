@@ -1,4 +1,4 @@
-package dasherworker
+package localEncode
 
 import (
 	"bufio"
@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared/throttledLogger"
 	"github.com/davecgh/go-spew/spew"
@@ -20,14 +21,15 @@ import (
 	"golang.org/x/time/rate"
 )
 
-var _ Encoder = &LocalEncode{}
+var _ shared.Encoder = &LocalEncode{}
 
 type LocalEncode struct {
+	Storage *storage.Storage
 }
 
 // Gives the workdir for a local ffmpeg encode.
-func (_ LocalEncode) workDir(sessionID string, ESA shared.EncodeStreamArgs) string {
-	p := storage.ProdDir(ESA.InputID)
+func (l *LocalEncode) workDir(sessionID string, ESA shared.EncodeStreamArgs) string {
+	p := l.Storage.ProdDir(ESA.InputID)
 	return filepath.Join(p, ".sessionID-"+sessionID)
 }
 
@@ -41,33 +43,40 @@ func (l LocalEncode) makeWorkDir(sessionID string, ESA shared.EncodeStreamArgs) 
 	return wd
 }
 
-func (l LocalEncode) inputSymlink(sessionID string, ESA shared.EncodeStreamArgs, ffmpegargs FFMpegArgs) string {
-	return filepath.Join(l.workDir(sessionID, ESA), filepath.Base(storage.ResolveInputNumber(ESA.InputID, ESA.InputNo)))
+func (l *LocalEncode) inputSymlink(sessionID string, ESA shared.EncodeStreamArgs, ffmpegargs shared.FFMpegArgs) string {
+	return filepath.Join(l.workDir(sessionID, ESA), filepath.Base(l.Storage.ResolveInputNumber(ESA.InputID, ESA.InputNo)))
 }
 
-func (l *LocalEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs) (EncodePreludeResp, error) {
-	slog.Info("Start", "A", "LocalEncode/Prelude", "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "LocalEncode/Prelude", "inputFname", args.FfmpegArgs.InputFname)
+func (l *LocalEncode) EncodePrelude(ctx context.Context, args shared.EncodePreludeArgs) (shared.EncodePreludeResp, error) {
+	_, m := l.Storage.ResolveInput(args.ESA.InputID)
+	inputFname := m.Inputs[args.ESA.InputNo].Filename
+	slog.Info("Start", "A", "LocalEncode/Prelude", "inputFname", inputFname)
+	defer slog.Info("Stop ", "A", "LocalEncode/Prelude", "inputFname", inputFname)
 	//slog.Info("local/prelude", "args", args)
+	if err := os.MkdirAll(l.Storage.ProdDir(args.ESA.InputID), os.ModePerm); err != nil {
+		return shared.EncodePreludeResp{}, err
+	}
 	slog.Info("local/prelude: symlinking input file")
 	_ = l.makeWorkDir(args.SessionID, args.ESA)
 	newName := l.inputSymlink(args.SessionID, args.ESA, args.FfmpegArgs)
-	oldName := storage.ResolveInputNumber(args.ESA.InputID, args.ESA.InputNo)
+	oldName := l.Storage.ResolveInputNumber(args.ESA.InputID, args.ESA.InputNo)
 	//oldName := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
 
 	if err := os.Symlink(oldName, newName); err != nil {
 		slog.Error("Failed to symlink input file", "oldname", oldName, "newname", newName, "err", err)
-		return EncodePreludeResp{}, fmt.Errorf("Failed to symlink input file (%s): %s", args.FfmpegArgs.InputFname, err)
+		return shared.EncodePreludeResp{}, fmt.Errorf("Failed to symlink input file (%s): %s", args.FfmpegArgs.InputFname, err)
 	}
-	return EncodePreludeResp{
+	return shared.EncodePreludeResp{
 		FfmpegArgs: args.FfmpegArgs,
 	}, nil
 }
-func (l *LocalEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, error) {
-	slog.Info("Start", "A", "LocalEncode/Encode", "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "LocalEncode/Encode", "inputFname", args.FfmpegArgs.InputFname)
+func (l *LocalEncode) Encode(ctx context.Context, args shared.EncodeArgs) (shared.EncodeResp, error) {
+	_, m := l.Storage.ResolveInput(args.ESA.InputID)
+	inputFname := m.Inputs[args.ESA.InputNo].Filename
+	slog.Info("Start", "A", "LocalEncode/Prelude", "inputFname", inputFname)
+	defer slog.Info("Stop ", "A", "LocalEncode/Prelude", "inputFname", inputFname)
 	slog.Info("local/Encode", "args", args)
-	var resp EncodeResp
+	var resp shared.EncodeResp
 
 	// Create an extra pipe for progress only
 	pr, pw, _ := os.Pipe()
@@ -136,28 +145,30 @@ func (l *LocalEncode) Encode(ctx context.Context, args EncodeArgs) (EncodeResp, 
 		exitCode = cmd.ProcessState.ExitCode()
 	}
 	resp.Exitcode = exitCode
-	return EncodeResp{}, err
+	return shared.EncodeResp{}, err
 }
-func (l *LocalEncode) EncodePostlude(ctx context.Context, args EncodePostludeArgs) (EncodePostludeResp, error) {
-	slog.Info("Start", "A", "LocalEncode/Postlude", "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "LocalEncode/Postlude", "inputFname", args.FfmpegArgs.InputFname)
+func (l *LocalEncode) EncodePostlude(ctx context.Context, args shared.EncodePostludeArgs) (shared.EncodePostludeResp, error) {
+	_, m := l.Storage.ResolveInput(args.ESA.InputID)
+	inputFname := m.Inputs[args.ESA.InputNo].Filename
+	slog.Info("Start", "A", "LocalEncode/Prelude", "inputFname", inputFname)
+	defer slog.Info("Stop ", "A", "LocalEncode/Prelude", "inputFname", inputFname)
 
 	//slog.Info("local/postlude", "args", args)
 	//slog.Info("local/postlude: removing input symlink")
 	inputSymlink := l.inputSymlink(args.SessionID, args.ESA, args.FfmpegArgs)
 	workDir := l.workDir(args.SessionID, args.ESA)
-	targetOutputPath := storage.TranscodedRepresentationFilePath(args.ESA)
+	targetOutputPath := l.Storage.TranscodedRepresentationFilePath(args.ESA)
 	outputPath := filepath.Join(workDir, filepath.Base(targetOutputPath))
 	if err := os.Remove(inputSymlink); err != nil {
-		return EncodePostludeResp{}, shared.Error("Failed to remove symlink to input file", "file", inputSymlink, "err", err)
+		return shared.EncodePostludeResp{}, shared.Error("Failed to remove symlink to input file", "file", inputSymlink, "err", err)
 	}
 	if err := os.Rename(outputPath, targetOutputPath); err != nil {
-		return EncodePostludeResp{}, shared.Error("Failed to rename ffmpeg result file into place", "outputPath", outputPath, "targetOutputPath", targetOutputPath, "err", err)
+		return shared.EncodePostludeResp{}, shared.Error("Failed to rename ffmpeg result file into place", "outputPath", outputPath, "targetOutputPath", targetOutputPath, "err", err)
 	}
 	if err := os.Remove(workDir); err != nil {
-		return EncodePostludeResp{}, shared.Error("Failed to remove ffmpeg workdir", "workdir", workDir, "err", err)
+		return shared.EncodePostludeResp{}, shared.Error("Failed to remove ffmpeg workdir", "workdir", workDir, "err", err)
 	}
-	return EncodePostludeResp{
+	return shared.EncodePostludeResp{
 		FfmpegArgs: args.FfmpegArgs,
 	}, nil
 }

@@ -1,4 +1,4 @@
-package dasherworker
+package durationDeriver
 
 import (
 	"context"
@@ -8,21 +8,21 @@ import (
 	"os/exec"
 	"strconv"
 
-	"go.temporal.io/sdk/workflow"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
 )
 
-func durationDeriverFfmpeg(ctx workflow.Context, inputID string, inputNo int, stream string) (int64, error) {
-	return CallActivityIO[any, int64](ctx, GetMediaDurationUsec, inputID, inputNo, stream)
+type DurationDeriver struct {
+	Storage *storage.Storage
 }
 
-func GetMediaDurationUsec(ctx context.Context, inputID string, inputNo int, stream string) (int64, error) {
+func (d *DurationDeriver) GetMediaDurationUsec(ctx context.Context, inputID string, inputNo int, stream string) (int64, error) {
 	type ProbeOutput struct {
 		Format struct {
 			Duration string `json:"duration"`
 		} `json:"format"`
 	}
 
-	mediaPath := storage.ResolveInputNumber(inputID, inputNo)
+	mediaPath := d.Storage.ResolveInputNumber(inputID, inputNo)
 	slog.Info("GetMediaDurationUsec", "mediaPath", mediaPath, "stream", stream)
 
 	args := []string{"-v", "quiet",
@@ -51,17 +51,4 @@ func GetMediaDurationUsec(ctx context.Context, inputID string, inputNo int, stre
 		return int64(duration * 1000000), nil
 	}
 	return 0, fmt.Errorf("Failed to find Duration for %s, stream %s. Got: %v", mediaPath, stream, string(out))
-	/*
-		// Check if a stream was successfully captured
-		if len(data.Streams) > 0 {
-			duration, err := data.Streams[0].GetDuration()
-			if err != nil {
-				slog.Error("Invalid duration format", "err", err)
-				return 0, err
-			}
-			return int64(duration * 1000000), nil
-		} else {
-			return 0, errors.New("No matching stream found.")
-		}*/
-
 }

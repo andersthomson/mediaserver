@@ -1,4 +1,4 @@
-package dasherworker
+package storage
 
 import (
 	"context"
@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mspreader"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/andersthomson/mediaserver/scrape"
-	"go.temporal.io/sdk/workflow"
 )
 
 type Storage struct {
@@ -23,18 +23,13 @@ type Storage struct {
 	}
 }
 
-var storage *Storage
-
-func newStorage() *Storage {
+func New() *Storage {
 	s := &Storage{}
 	s.items = make(map[string]struct {
 		m   scrape.Msp
 		dir string
 	})
 	return s
-}
-func init() {
-	storage = newStorage()
 }
 
 func (s *Storage) add(dir string, m scrape.Msp) {
@@ -77,7 +72,7 @@ func (s *Storage) AddMspsFromTree(ctx context.Context, root string) error {
 
 		// 2. Filter for files matching the suffix
 		if !d.IsDir() && strings.HasSuffix(d.Name(), suffix) {
-			M, err := ReadMspFile(ctx, filepath.Dir(path), d.Name())
+			M, err := mspreader.Read(ctx, filepath.Dir(path), d.Name())
 			if err != nil {
 				return err
 			}
@@ -86,15 +81,6 @@ func (s *Storage) AddMspsFromTree(ctx context.Context, root string) error {
 		return nil
 	})
 	return err
-}
-
-func StorageAddWF(ctx workflow.Context, mspPath string) (string, error) {
-	M, err := CallReadMspFile(ctx, mspPath)
-	if err != nil {
-		return "", err
-	}
-	storage.add(filepath.Dir(mspPath), M)
-	return "", nil
 }
 
 // id is the uuid
@@ -166,14 +152,6 @@ type ResolveInputResp struct {
 	M   scrape.Msp
 }
 
-func ResolveInput(ctx context.Context, id string) (ResolveInputResp, error) {
-	dir, m := storage.ResolveInput(id)
-	return ResolveInputResp{
-		Dir: dir,
-		M:   m,
-	}, nil
-}
-
 // Return an string uniquely representing this representation
 func representation(args shared.EncodeStreamArgs) string {
 	if shared.IsVideoCodec(args.Codec) {
@@ -181,33 +159,4 @@ func representation(args shared.EncodeStreamArgs) string {
 	} else {
 		return fmt.Sprintf("%s", args.Codec)
 	}
-}
-
-// Convinience funcs for WFs
-func CallResolveInput(ctx workflow.Context, id string) (string, scrape.Msp) {
-	resp, _ := CallActivityFast[string, ResolveInputResp](ctx, ResolveInput, id)
-	return resp.Dir, resp.M
-}
-
-func prodDir(m scrape.Msp) string {
-	return "/var/cache/mediacache/" + m.ShortName + "-" + m.Id + "/dash"
-}
-
-func ProdDir(ctx workflow.Context, id string) string {
-	_, m := CallResolveInput(ctx, id)
-	return prodDir(m)
-}
-
-func ResolveInputNumber(ctx workflow.Context, id string, number int) string {
-	dir, m := CallResolveInput(ctx, id)
-	return filepath.Join(dir, m.Inputs[number].Filename)
-}
-
-func DasherReadyRepresentationFilePath(ctx workflow.Context, args shared.EncodeStreamArgs) string {
-	_, m := CallResolveInput(ctx, args.InputID)
-	return filepath.Join(prodDir(m), representation(args)+".mp4")
-}
-func TranscodedRepresentationFilePath(ctx workflow.Context, args shared.EncodeStreamArgs) string {
-	_, m := CallResolveInput(ctx, args.InputID)
-	return filepath.Join(prodDir(m), representation(args)+"-transcoded.mp4")
 }

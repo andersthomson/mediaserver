@@ -1,4 +1,4 @@
-package dasherworker
+package deinterlacer
 
 import (
 	"bytes"
@@ -11,9 +11,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
-	"go.temporal.io/sdk/workflow"
 )
+
+type Deinterlacer struct {
+	Storage *storage.Storage
+}
 
 type FilterRecommendation struct {
 	FilterRecommendation string `json:"filter_recommendation"`
@@ -38,12 +42,8 @@ type ProbeRawData struct {
 	GOPSize     int
 }
 
-func CallExecuteProbes(ctx workflow.Context, inputID string, inputNo int, stream string) (ProbeRawData, error) {
-	return CallActivityIO[any, ProbeRawData](ctx, ExecuteProbes, inputID, inputNo, stream)
-}
-
-func ExecuteProbes(ctx context.Context, inputID string, inputNo int, stream string) (ProbeRawData, error) {
-	fullPath := storage.ResolveInputNumber(inputID, inputNo)
+func (d *Deinterlacer) ExecuteProbes(ctx context.Context, inputID string, inputNo int, stream string) (ProbeRawData, error) {
+	fullPath := d.Storage.ResolveInputNumber(inputID, inputNo)
 	return ExecuteProbesFile(ctx, fullPath, stream)
 }
 

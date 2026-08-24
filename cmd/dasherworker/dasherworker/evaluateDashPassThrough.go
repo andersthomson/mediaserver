@@ -2,6 +2,8 @@ package dasherworker
 
 import (
 	"strings"
+
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/deinterlacer"
 )
 
 // TranscodeReason maps explicit engineering flags to explain why pass-through failed.
@@ -17,7 +19,7 @@ const (
 )
 
 // EvaluateDashPassThrough evaluates the raw probe data to decide if an asset is instantly DASH-ready.
-func EvaluateDashPassThrough(data ProbeRawData) (bool, []TranscodeReason) {
+func EvaluateDashPassThrough(data deinterlacer.ProbeRawData) (bool, []TranscodeReason) {
 	var reasons []TranscodeReason
 
 	// 1. Validate Codec (Must be standard browser/MSE-friendly web formats)
