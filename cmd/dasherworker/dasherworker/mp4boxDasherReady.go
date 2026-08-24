@@ -11,9 +11,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 )
 
-func MP4BoxDashReadyPrepare(ctx context.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
+func MP4BoxDashReadyPrepare(ctx context.Context, args shared.EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
 	dasherReadyFilePath := storage.DasherReadyRepresentationFilePath(args)
 	manifestFilePath := storage.DasherReadyRepresentationManifestFilePath(args)
 	transcodedFilePath := storage.TranscodedRepresentationFilePath(args)

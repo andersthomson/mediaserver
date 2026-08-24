@@ -2,6 +2,7 @@ package dasherworker
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/andersthomson/mediaserver/scrape"
 	"go.temporal.io/sdk/workflow"
 )
@@ -143,18 +145,18 @@ func (s *Storage) ProdDir(id string) string {
 	return "/var/cache/mediacache/" + x.m.ShortName + "-" + x.m.Id + "/dash"
 }
 
-func (s *Storage) DasherReadyRepresentationTranscodingLogFilePath(args EncodeStreamArgs) string {
+func (s *Storage) DasherReadyRepresentationTranscodingLogFilePath(args shared.EncodeStreamArgs) string {
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+".mp4.transcodinglog")
 }
 
-func (s *Storage) DasherReadyRepresentationFilePath(args EncodeStreamArgs) string {
+func (s *Storage) DasherReadyRepresentationFilePath(args shared.EncodeStreamArgs) string {
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+".mp4")
 }
-func (s *Storage) TranscodedRepresentationFilePath(args EncodeStreamArgs) string {
+func (s *Storage) TranscodedRepresentationFilePath(args shared.EncodeStreamArgs) string {
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+"-transcoded.mp4")
 }
 
-func (s *Storage) DasherReadyRepresentationManifestFilePath(args EncodeStreamArgs) string {
+func (s *Storage) DasherReadyRepresentationManifestFilePath(args shared.EncodeStreamArgs) string {
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+"-manifest.mpd")
 }
 
@@ -170,6 +172,15 @@ func ResolveInput(ctx context.Context, id string) (ResolveInputResp, error) {
 		Dir: dir,
 		M:   m,
 	}, nil
+}
+
+// Return an string uniquely representing this representation
+func representation(args shared.EncodeStreamArgs) string {
+	if shared.IsVideoCodec(args.Codec) {
+		return fmt.Sprintf("%s-%s-%s", args.Codec, args.VideoFilters.MaxResolution, args.Profile)
+	} else {
+		return fmt.Sprintf("%s", args.Codec)
+	}
 }
 
 // Convinience funcs for WFs
@@ -192,11 +203,11 @@ func ResolveInputNumber(ctx workflow.Context, id string, number int) string {
 	return filepath.Join(dir, m.Inputs[number].Filename)
 }
 
-func DasherReadyRepresentationFilePath(ctx workflow.Context, args EncodeStreamArgs) string {
+func DasherReadyRepresentationFilePath(ctx workflow.Context, args shared.EncodeStreamArgs) string {
 	_, m := CallResolveInput(ctx, args.InputID)
 	return filepath.Join(prodDir(m), representation(args)+".mp4")
 }
-func TranscodedRepresentationFilePath(ctx workflow.Context, args EncodeStreamArgs) string {
+func TranscodedRepresentationFilePath(ctx workflow.Context, args shared.EncodeStreamArgs) string {
 	_, m := CallResolveInput(ctx, args.InputID)
 	return filepath.Join(prodDir(m), representation(args)+"-transcoded.mp4")
 }

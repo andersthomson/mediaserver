@@ -2,9 +2,11 @@ package dasherworker
 
 import (
 	"fmt"
+
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 )
 
-func scalingFilter(fromRel Resolution, fromSar float64, toRel Resolution) string {
+func scalingFilter(fromRel shared.Resolution, fromSar float64, toRel shared.Resolution) string {
 	srcWidth := float64(fromRel.Width)
 	srcHeight := float64(fromRel.Height)
 	sar := fromSar

@@ -6,11 +6,12 @@ import (
 	"log/slog"
 	"path/filepath"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"go.temporal.io/sdk/workflow"
 )
 
 type TranscodedRepesentationFilePath struct {
-	ESA EncodeStreamArgs
+	ESA shared.EncodeStreamArgs
 }
 
 type InputFilePath struct {
@@ -82,7 +83,7 @@ func NewFFMpegArgs(ctx context.Context, s []FFMpegArg) (FFMpegArgs, error) {
 type EncodePreludeArgs struct {
 	SessionID  string
 	FfmpegArgs FFMpegArgs
-	ESA        EncodeStreamArgs
+	ESA        shared.EncodeStreamArgs
 }
 
 type EncodePreludeResp struct {
@@ -92,7 +93,7 @@ type EncodePreludeResp struct {
 type EncodeArgs struct {
 	SessionID       string
 	FfmpegArgs      FFMpegArgs
-	ESA             EncodeStreamArgs
+	ESA             shared.EncodeStreamArgs
 	TotalDurationUs int64
 }
 
@@ -104,7 +105,7 @@ type EncodeResp struct {
 type EncodePostludeArgs struct {
 	SessionID  string
 	FfmpegArgs FFMpegArgs
-	ESA        EncodeStreamArgs
+	ESA        shared.EncodeStreamArgs
 }
 
 type EncodePostludeResp struct {

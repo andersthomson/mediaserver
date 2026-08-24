@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/andersthomson/mediaserver/scrape"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-cmp/cmp"
@@ -38,7 +39,7 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 	var VprobeRawData ProbeRawData
 	for _, target := range targets {
 		//if a target calls for video, probe the input source
-		if isVideoCodec(target.Codec) {
+		if shared.IsVideoCodec(target.Codec) {
 			idx := getFirstInputStreamWithPrefix(M.Inputs, "v")
 			if idx == -1 {
 				return "", Error("Found no video stream source specified", "input", M)
@@ -115,7 +116,7 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 	var opts []TranscodeOption
 
 	var idx int
-	if isVideoCodec(args.Target.Codec) {
+	if shared.IsVideoCodec(args.Target.Codec) {
 		idx = getFirstInputStreamWithPrefix(M.Inputs, "v")
 		if idx == -1 {
 			return CreateRepresentationResp{}, Error("Found no video stream source specified", "input", M)
@@ -123,9 +124,9 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 		var maxRes TranscodeOption
 		switch args.Target.Profile {
 		case "high":
-			maxRes = WithMaxResolution(Max1080p)
+			maxRes = WithMaxResolution(shared.Max1080p)
 		case "low":
-			maxRes = WithMaxResolution(Max720p)
+			maxRes = WithMaxResolution(shared.Max720p)
 		}
 		opts = append(opts, maxRes)
 		opts = append(opts, WithPreset(preset(args.Fast)))
@@ -136,7 +137,7 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 		}
 	}
 
-	Eargs := NewEncodeStreamArgs(ctx, &EncodeStreamArgs{
+	Eargs := NewEncodeStreamArgs(ctx, &shared.EncodeStreamArgs{
 		InputID:  M.Id,
 		InputNo:  idx,
 		Stream:   M.Inputs[idx].Stream,
@@ -202,7 +203,7 @@ func scaleIfNeeded(in, out string, filter string) string {
 	return fmt.Sprintf("[%s]%s[%s]", in, filter, out)
 }
 
-func scaleFilter(ctx workflow.Context, args EncodeStreamArgs) string {
+func scaleFilter(ctx workflow.Context, args shared.EncodeStreamArgs) string {
 	if args.VideoFilters.MaxResolution.Width > 0 {
 		//return "scale='if(gt(iw,ih),min(" + strconv.Itoa(args.VideoFilters.MaxResolution.Width) + ",iw),-2)':'if(gt(iw,ih),-2,min(" + strconv.Itoa(args.VideoFilters.MaxResolution.Height) + ",ih))'"
 		width, height, SAR, err := CallGetStreamDimensions(ctx, args.InputID, args.InputNo, args.Stream)
@@ -211,7 +212,7 @@ func scaleFilter(ctx workflow.Context, args EncodeStreamArgs) string {
 			slog.Error("Failed to get Stream dimensions", "err", err)
 			return ""
 		}
-		return scalingFilter(Resolution{Width: width, Height: height}, SAR, args.VideoFilters.MaxResolution)
+		return scalingFilter(shared.Resolution{Width: width, Height: height}, SAR, args.VideoFilters.MaxResolution)
 
 	}
 	return ""
@@ -255,7 +256,7 @@ func (p Preset) String() string {
 	return string(p)
 }
 
-func preset(fast bool) Preset {
+func preset(fast bool) shared.Preset {
 	if fast {
 		return "ultrafast"
 	} else {
@@ -264,8 +265,8 @@ func preset(fast bool) Preset {
 }
 
 type inputFileArgumentsStrategy interface {
-	CanHandle(ctx workflow.Context, args EncodeStreamArgs) bool
-	Process(ctx workflow.Context, args EncodeStreamArgs) []FFMpegArg
+	CanHandle(ctx workflow.Context, args shared.EncodeStreamArgs) bool
+	Process(ctx workflow.Context, args shared.EncodeStreamArgs) []FFMpegArg
 }
 
 var inputFileArgumentsStrategies = []inputFileArgumentsStrategy{
@@ -275,18 +276,18 @@ var inputFileArgumentsStrategies = []inputFileArgumentsStrategy{
 type DefaultInputFileArgumentsStategy struct {
 }
 
-func (_ DefaultInputFileArgumentsStategy) CanHandle(ctx workflow.Context, args EncodeStreamArgs) bool {
+func (_ DefaultInputFileArgumentsStategy) CanHandle(ctx workflow.Context, args shared.EncodeStreamArgs) bool {
 	return true
 }
 
-func (_ DefaultInputFileArgumentsStategy) Process(ctx workflow.Context, args EncodeStreamArgs) []FFMpegArg {
+func (_ DefaultInputFileArgumentsStategy) Process(ctx workflow.Context, args shared.EncodeStreamArgs) []FFMpegArg {
 	return []FFMpegArg{}
 }
 
 type mpeg2videoWithBrokenPTS struct {
 }
 
-func (m mpeg2videoWithBrokenPTS) CanHandle(ctx workflow.Context, args EncodeStreamArgs) bool {
+func (m mpeg2videoWithBrokenPTS) CanHandle(ctx workflow.Context, args shared.EncodeStreamArgs) bool {
 	isBroken, err := CallIsMpeg2VideoWithBrokenDTS(ctx, args.InputID, args.InputNo, args.Stream)
 	if err != nil {
 		slog.Error("Failed to parse file", "err", err)
@@ -294,7 +295,7 @@ func (m mpeg2videoWithBrokenPTS) CanHandle(ctx workflow.Context, args EncodeStre
 	}
 	return isBroken
 }
-func (m mpeg2videoWithBrokenPTS) Process(ctx workflow.Context, args EncodeStreamArgs) []FFMpegArg {
+func (m mpeg2videoWithBrokenPTS) Process(ctx workflow.Context, args shared.EncodeStreamArgs) []FFMpegArg {
 	return []FFMpegArg{
 		NewFFMpegArg(KindString, "-fflags"),
 		NewFFMpegArg(KindString, "+genpts+igndts"),
@@ -303,7 +304,7 @@ func (m mpeg2videoWithBrokenPTS) Process(ctx workflow.Context, args EncodeStream
 	}
 }
 
-func selectInputFileArgumentsStrategy(ctx workflow.Context, args EncodeStreamArgs) inputFileArgumentsStrategy {
+func selectInputFileArgumentsStrategy(ctx workflow.Context, args shared.EncodeStreamArgs) inputFileArgumentsStrategy {
 	for _, strategy := range inputFileArgumentsStrategies {
 		if strategy.CanHandle(ctx, args) {
 			return strategy
@@ -312,7 +313,7 @@ func selectInputFileArgumentsStrategy(ctx workflow.Context, args EncodeStreamArg
 	return DefaultInputFileArgumentsStategy{}
 }
 
-func inputDirFileStrategy(ctx workflow.Context, args EncodeStreamArgs) []FFMpegArg {
+func inputDirFileStrategy(ctx workflow.Context, args shared.EncodeStreamArgs) []FFMpegArg {
 	inputArgsStrategy := selectInputFileArgumentsStrategy(ctx, args)
 	return append(
 		inputArgsStrategy.Process(ctx, args),
@@ -321,7 +322,7 @@ func inputDirFileStrategy(ctx workflow.Context, args EncodeStreamArgs) []FFMpegA
 
 }
 
-func inputDirFileWithMapStrategy(ctx workflow.Context, args EncodeStreamArgs) []FFMpegArg {
+func inputDirFileWithMapStrategy(ctx workflow.Context, args shared.EncodeStreamArgs) []FFMpegArg {
 	return []FFMpegArg{
 		//"-copyts",
 		NewFFMpegArg(KindString, "-i"), NewFFMpegArg(KindInputFilePath, InputFilePath{Id: args.InputID, Number: args.InputNo}),
@@ -329,7 +330,7 @@ func inputDirFileWithMapStrategy(ctx workflow.Context, args EncodeStreamArgs) []
 	}
 }
 
-func videoFilterStrategy(ctx workflow.Context, args EncodeStreamArgs, deinterlaceFilter string) []FFMpegArg {
+func videoFilterStrategy(ctx workflow.Context, args shared.EncodeStreamArgs, deinterlaceFilter string) []FFMpegArg {
 	scaleFilter := scaleFilter(ctx, args)
 	return []FFMpegArg{NewFFMpegArg(KindString, "-filter_complex"),
 		NewFFMpegArg(KindString, strings.Join([]string{
@@ -375,7 +376,7 @@ func gopFrames(ctx workflow.Context, inputId string) int {
 	return DefaultGopFrames
 }
 
-func languageFromArgs(args EncodeStreamArgs) []FFMpegArg {
+func languageFromArgs(args shared.EncodeStreamArgs) []FFMpegArg {
 	if args.Language != "" {
 		slog.Info("setting lang", "to", args.Language)
 		return []FFMpegArg{
@@ -386,12 +387,12 @@ func languageFromArgs(args EncodeStreamArgs) []FFMpegArg {
 	slog.Info("NO language")
 	return []FFMpegArg{}
 }
-func XnullStrategy(_ EncodeStreamArgs) []FFMpegArg {
+func XnullStrategy(_ shared.EncodeStreamArgs) []FFMpegArg {
 	return []FFMpegArg{}
 }
-func x264EncodingStrategy(gopFrames int, crf string, bitrate string) func(args EncodeStreamArgs) []FFMpegArg {
+func x264EncodingStrategy(gopFrames int, crf string, bitrate string) func(args shared.EncodeStreamArgs) []FFMpegArg {
 	gopFramesStr := fmt.Sprintf("%d", gopFrames)
-	return func(args EncodeStreamArgs) []FFMpegArg {
+	return func(args shared.EncodeStreamArgs) []FFMpegArg {
 		ffmpegArgs := []FFMpegArg{
 			NewFFMpegArg(KindString, "-c:v"), NewFFMpegArg(KindString, "libx264"),
 			NewFFMpegArg(KindString, "-profile:v"), NewFFMpegArg(KindString, "high"),
@@ -407,9 +408,9 @@ func x264EncodingStrategy(gopFrames int, crf string, bitrate string) func(args E
 		return ffmpegArgs
 	}
 }
-func x265EncodingStrategy(gopFrames int, crf string, bitrate string) func(args EncodeStreamArgs) []FFMpegArg {
+func x265EncodingStrategy(gopFrames int, crf string, bitrate string) func(args shared.EncodeStreamArgs) []FFMpegArg {
 	gopFramesStr := fmt.Sprintf("%d", gopFrames)
-	return func(args EncodeStreamArgs) []FFMpegArg {
+	return func(args shared.EncodeStreamArgs) []FFMpegArg {
 		ffmpegArgs := []FFMpegArg{
 			NewFFMpegArg(KindString, "-c:v"), NewFFMpegArg(KindString, "libx265"),
 			NewFFMpegArg(KindString, "-profile:v"), NewFFMpegArg(KindString, "main10"),
@@ -426,7 +427,7 @@ func x265EncodingStrategy(gopFrames int, crf string, bitrate string) func(args E
 		return ffmpegArgs
 	}
 }
-func aac2cEncodingStrategy(args EncodeStreamArgs) []FFMpegArg {
+func aac2cEncodingStrategy(args shared.EncodeStreamArgs) []FFMpegArg {
 	return []FFMpegArg{
 		NewFFMpegArg(KindString, "-vn"),
 		NewFFMpegArg(KindString, "-c"), NewFFMpegArg(KindString, "aac"),
@@ -441,14 +442,14 @@ func aac2cEncodingStrategy(args EncodeStreamArgs) []FFMpegArg {
 	}
 }
 
-func copyStreamStrategy(args EncodeStreamArgs) []FFMpegArg {
+func copyStreamStrategy(args shared.EncodeStreamArgs) []FFMpegArg {
 	return []FFMpegArg{
 		NewFFMpegArg(KindString, "-c"), NewFFMpegArg(KindString, "copy"),
 	}
 }
 
 /*
-	func HLSManifestStrategy(args EncodeStreamArgs) []FFMpegArg {
+	func HLSManifestStrategy(args shared.EncodeStreamArgs) []FFMpegArg {
 		return []FFMpegArg{
 			"-map_chapters", "-1",
 			"-map_metadata", "-1",
@@ -461,7 +462,7 @@ func copyStreamStrategy(args EncodeStreamArgs) []FFMpegArg {
 		}
 	}
 */
-func dashManifestStrategy(ctx workflow.Context, args EncodeStreamArgs) []FFMpegArg {
+func dashManifestStrategy(ctx workflow.Context, args shared.EncodeStreamArgs) []FFMpegArg {
 	return []FFMpegArg{
 		NewFFMpegArg(KindString, "-map_chapters"), NewFFMpegArg(KindString, "-1"),
 		NewFFMpegArg(KindString, "-map_metadata"), NewFFMpegArg(KindString, "-1"),
@@ -473,33 +474,24 @@ func dashManifestStrategy(ctx workflow.Context, args EncodeStreamArgs) []FFMpegA
 	}
 }
 
-type InputStrategy func(ctx workflow.Context, args EncodeStreamArgs) []FFMpegArg
-type EncodingStrategy func(args EncodeStreamArgs) []FFMpegArg
-type LanguageStrategy func(args EncodeStreamArgs) []FFMpegArg
-type ManifestStrategy func(ctx workflow.Context, args EncodeStreamArgs) []FFMpegArg
+type InputStrategy func(ctx workflow.Context, args shared.EncodeStreamArgs) []FFMpegArg
+type EncodingStrategy func(args shared.EncodeStreamArgs) []FFMpegArg
+type LanguageStrategy func(args shared.EncodeStreamArgs) []FFMpegArg
+type ManifestStrategy func(ctx workflow.Context, args shared.EncodeStreamArgs) []FFMpegArg
 type DurationDeriverUsec func(ctx workflow.Context, inputID string, inputNo int, stream string) (int64, error)
-type QueueSelector func(args EncodeStreamArgs) string
+type QueueSelector func(args shared.EncodeStreamArgs) string
 
-func CallMP4BoxDashReadyPrepare(ctx workflow.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
-	return CallActivityIO[EncodeStreamArgs, MP4BoxDashReadyArgs](ctx, MP4BoxDashReadyPrepare, args)
+func CallMP4BoxDashReadyPrepare(ctx workflow.Context, args shared.EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
+	return CallActivityIO[shared.EncodeStreamArgs, MP4BoxDashReadyArgs](ctx, MP4BoxDashReadyPrepare, args)
 }
 
 func CallMP4BoxDashReadyExecute(ctx workflow.Context, args MP4BoxDashReadyArgs) (MP4BoxDashReadyResp, error) {
 	return CallActivityIO[MP4BoxDashReadyArgs, MP4BoxDashReadyResp](ctx, MP4BoxDashReadyExecute, args)
 }
 
-func isVideoCodec(codec string) bool {
-	switch codec {
-	case "x264", "h264":
-		return true
-	case "x265", "h265", "hevc":
-		return true
-	}
-	return false
-}
-func QueueSelectorLocal(args EncodeStreamArgs) string {
+func QueueSelectorLocal(args shared.EncodeStreamArgs) string {
 	var queue string
-	if isVideoCodec(args.Codec) {
+	if shared.IsVideoCodec(args.Codec) {
 		queue = "encodingQueue"
 	} else {
 		queue = "dasherQueue"
@@ -507,56 +499,7 @@ func QueueSelectorLocal(args EncodeStreamArgs) string {
 	return queue
 }
 
-type Resolution struct {
-	Width  int
-	Height int
-}
-
-func (r Resolution) String() string {
-	return strconv.Itoa(r.Width) + "x" + strconv.Itoa(r.Height)
-}
-
-// Common industry standard clamps
-var (
-	Max720p  = Resolution{Width: 1280, Height: 720}
-	Max1080p = Resolution{Width: 1920, Height: 1080}
-	Max4K    = Resolution{Width: 3840, Height: 2160}
-)
-
-type VideoFilterSettings struct {
-	MaxResolution Resolution
-}
-
-// Return an string uniquely representing this representation
-func representation(args EncodeStreamArgs) string {
-	if isVideoCodec(args.Codec) {
-		return fmt.Sprintf("%s-%s-%s", args.Codec, args.VideoFilters.MaxResolution, args.Profile)
-	} else {
-		return fmt.Sprintf("%s", args.Codec)
-	}
-}
-
-type CommonProperties struct {
-	GopFrames int
-	DashMs    string
-}
-
-type EncodeStreamArgs struct {
-	InputID  string
-	InputNo  int
-	Stream   string //ffprobe y:z string
-	Kind     string
-	Language string
-
-	Preset       Preset
-	Profile      string
-	Codec        string
-	VideoFilters VideoFilterSettings
-
-	DstProps CommonProperties
-}
-
-func NewEncodeStreamArgs(ctx workflow.Context, base *EncodeStreamArgs, opts ...TranscodeOption) *EncodeStreamArgs {
+func NewEncodeStreamArgs(ctx workflow.Context, base *shared.EncodeStreamArgs, opts ...TranscodeOption) *shared.EncodeStreamArgs {
 	//Apply provided functions
 	for _, opt := range opts {
 		opt(base)
@@ -565,21 +508,21 @@ func NewEncodeStreamArgs(ctx workflow.Context, base *EncodeStreamArgs, opts ...T
 	return base
 }
 
-type TranscodeOption func(*EncodeStreamArgs)
+type TranscodeOption func(*shared.EncodeStreamArgs)
 
-func WithMaxResolution(maxx Resolution) TranscodeOption {
-	return func(j *EncodeStreamArgs) {
+func WithMaxResolution(maxx shared.Resolution) TranscodeOption {
+	return func(j *shared.EncodeStreamArgs) {
 		j.VideoFilters.MaxResolution = maxx
 	}
 }
 
-func WithPreset(p Preset) TranscodeOption {
-	return func(j *EncodeStreamArgs) {
+func WithPreset(p shared.Preset) TranscodeOption {
+	return func(j *shared.EncodeStreamArgs) {
 		j.Preset = p
 	}
 }
 
-func TranscodingPipelineFactory(ctx workflow.Context, args EncodeStreamArgs) TranscodingPipeline {
+func TranscodingPipelineFactory(ctx workflow.Context, args shared.EncodeStreamArgs) TranscodingPipeline {
 	res := TranscodingPipeline{}
 	switch args.Codec {
 	case "x264":
@@ -615,10 +558,10 @@ type TranscodingPipeline struct {
 	encoderQueue     QueueSelector
 }
 
-func (m TranscodingPipeline) FfmpegArgs(ctx workflow.Context, args EncodeStreamArgs, probeRawData ProbeRawData) (FFMpegArgs, error) {
+func (m TranscodingPipeline) FfmpegArgs(ctx workflow.Context, args shared.EncodeStreamArgs, probeRawData ProbeRawData) (FFMpegArgs, error) {
 	var ffmpegArgs []FFMpegArg
 	ffmpegArgs = append(ffmpegArgs, m.inputStrategy(ctx, args)...)
-	if isVideoCodec(args.Codec) {
+	if shared.IsVideoCodec(args.Codec) {
 		filterRec := DeriveFilterRecommendation(probeRawData)
 		ffmpegArgs = append(ffmpegArgs, videoFilterStrategy(ctx, args, filterRec.FilterRecommendation)...)
 	}
@@ -629,7 +572,7 @@ func (m TranscodingPipeline) FfmpegArgs(ctx workflow.Context, args EncodeStreamA
 	return CallNewFFMpegArgs(ctx, ffmpegArgs)
 }
 
-func (m TranscodingPipeline) MP4BoxArgs(ctx workflow.Context, args EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
+func (m TranscodingPipeline) MP4BoxArgs(ctx workflow.Context, args shared.EncodeStreamArgs) (MP4BoxDashReadyArgs, error) {
 	args.DstProps.DashMs = dashMs2(gopFrames(ctx, args.InputID), 25)
 	return CallMP4BoxDashReadyPrepare(ctx, args)
 }
@@ -646,7 +589,7 @@ func (m TranscodingPipeline) NeedsProcessing(t TranscodingOptionsRecord, ffmpegA
 	return strings.Join(diffs, "\n")
 }
 
-func (m TranscodingPipeline) Process(ctx workflow.Context, args EncodeStreamArgs, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) error {
+func (m TranscodingPipeline) Process(ctx workflow.Context, args shared.EncodeStreamArgs, ffmpegArgsExpanded FFMpegArgs, mp4boxargs MP4BoxDashReadyArgs) error {
 
 	if err := os.MkdirAll(ProdDir(ctx, args.InputID), os.ModePerm); err != nil {
 		return err

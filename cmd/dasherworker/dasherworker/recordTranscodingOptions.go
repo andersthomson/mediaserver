@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/pkg/errors"
 	"go.temporal.io/sdk/workflow"
 )
@@ -18,7 +19,7 @@ type Invocation struct {
 	ExitCode int
 }
 type TranscodingOptionsRecord struct {
-	EncodeStream        EncodeStreamArgs
+	EncodeStream        shared.EncodeStreamArgs
 	Ffmpegargs          FFMpegArgs
 	Stderr              string
 	MP4BoxDashReadyArgs MP4BoxDashReadyArgs
@@ -48,11 +49,11 @@ func RecordTranscodingOptions(_ context.Context, t TranscodingOptionsRecord) (st
 	return "", nil
 }
 
-func CallLoadTranscodingOptions(ctx workflow.Context, e EncodeStreamArgs) (*TranscodingOptionsRecord, error) {
-	return CallActivityFast[EncodeStreamArgs, *TranscodingOptionsRecord](ctx, LoadTranscodingOptions, e)
+func CallLoadTranscodingOptions(ctx workflow.Context, e shared.EncodeStreamArgs) (*TranscodingOptionsRecord, error) {
+	return CallActivityFast[shared.EncodeStreamArgs, *TranscodingOptionsRecord](ctx, LoadTranscodingOptions, e)
 }
 
-func LoadTranscodingOptions(_ context.Context, e EncodeStreamArgs) (*TranscodingOptionsRecord, error) {
+func LoadTranscodingOptions(_ context.Context, e shared.EncodeStreamArgs) (*TranscodingOptionsRecord, error) {
 	var t TranscodingOptionsRecord
 	err := LoadJSONToStruct(storage.DasherReadyRepresentationTranscodingLogFilePath(e), &t)
 	if err != nil {

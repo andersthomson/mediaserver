@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 	"go.temporal.io/sdk/workflow"
@@ -70,7 +71,7 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 		}
 		spew.Dump(codec)
 		switch {
-		case isVideoCodec(codec):
+		case shared.IsVideoCodec(codec):
 			props, err := GetSourceProperties(ctx, ProbeParams{
 				Dir:      filepath.Dir(match),
 				Filename: filepath.Base(match),
@@ -89,7 +90,7 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 			codecs = append(codecs, codec)
 		}
 		codecIdx := slices.Index(codecs, codec)
-		if isVideoCodec(codec) {
+		if shared.IsVideoCodec(codec) {
 			mp4BoxInputs = append(mp4BoxInputs, filepath.Base(match)+"#video"+":lang="+lang+":asID="+strconv.Itoa(codecIdx+1)+":delay="+fmt.Sprintf("%d", int(vStart*1000)))
 		} else {
 			mp4BoxInputs = append(mp4BoxInputs, filepath.Base(match)+"#audio"+":lang="+lang+":asID="+strconv.Itoa(codecIdx+1)+":delay="+fmt.Sprintf("%d", int(aStart*1000)))
@@ -183,7 +184,7 @@ func GetOneTargetsProperties(ctx context.Context, targetDir string) (GetOneTarge
 		if err != nil {
 			return GetOneTargetsPropertiesResp{}, Error("Failed to find codec", "filePath", match, "err", err)
 		}
-		if isVideoCodec(codec) {
+		if shared.IsVideoCodec(codec) {
 			props, err := GetSourceProperties(ctx, ProbeParams{
 				Dir:      filepath.Dir(match),
 				Filename: filepath.Base(match),

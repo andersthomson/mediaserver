@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/davecgh/go-spew/spew"
 	"go.temporal.io/sdk/activity"
 	"golang.org/x/time/rate"
@@ -24,12 +25,12 @@ type LocalEncode struct {
 }
 
 // Gives the workdir for a local ffmpeg encode.
-func (_ LocalEncode) workDir(sessionID string, ESA EncodeStreamArgs) string {
+func (_ LocalEncode) workDir(sessionID string, ESA shared.EncodeStreamArgs) string {
 	p := storage.ProdDir(ESA.InputID)
 	return filepath.Join(p, ".sessionID-"+sessionID)
 }
 
-func (l LocalEncode) makeWorkDir(sessionID string, ESA EncodeStreamArgs) string {
+func (l LocalEncode) makeWorkDir(sessionID string, ESA shared.EncodeStreamArgs) string {
 	wd := l.workDir(sessionID, ESA)
 	if err := os.Mkdir(wd, 0755); err != nil {
 		slog.Error("Failed to create ffmpeg working dir", "err", err)
@@ -39,7 +40,7 @@ func (l LocalEncode) makeWorkDir(sessionID string, ESA EncodeStreamArgs) string 
 	return wd
 }
 
-func (l LocalEncode) inputSymlink(sessionID string, ESA EncodeStreamArgs, ffmpegargs FFMpegArgs) string {
+func (l LocalEncode) inputSymlink(sessionID string, ESA shared.EncodeStreamArgs, ffmpegargs FFMpegArgs) string {
 	return filepath.Join(l.workDir(sessionID, ESA), filepath.Base(storage.ResolveInputNumber(ESA.InputID, ESA.InputNo)))
 }
 
