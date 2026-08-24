@@ -56,20 +56,20 @@ func NewFFMpegArgs(ctx context.Context, s []FFMpegArg) (FFMpegArgs, error) {
 		case KindString:
 			var str string
 			if err := json.Unmarshal(x.Payload, &str); err != nil {
-				return res, Fatal("json unmarshal failed", "err", err)
+				return res, shared.Fatal("json unmarshal failed", "err", err)
 			}
 			res.Args[idx] = str
 		case KindTranscodedRepesentationFilePath:
 			var v TranscodedRepesentationFilePath
 			if err := json.Unmarshal(x.Payload, &v); err != nil {
-				return res, Fatal("json unmarshal failed", "err", err)
+				return res, shared.Fatal("json unmarshal failed", "err", err)
 			}
 			p := storage.TranscodedRepresentationFilePath(v.ESA)
 			res.Args[idx] = filepath.Base(p)
 		case KindInputFilePath:
 			var v InputFilePath
 			if err := json.Unmarshal(x.Payload, &v); err != nil {
-				return res, Fatal("json unmarshal failed", "err", err)
+				return res, shared.Fatal("json unmarshal failed", "err", err)
 			}
 			p := storage.ResolveInputNumber(v.Id, v.Number)
 			res.Args[idx] = filepath.Base(p)

@@ -7,6 +7,7 @@ import (
 	"log"
 	"os/exec"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -61,19 +62,19 @@ func KeyframeHistogramFile(videoPath string, stream string) (KeyframeHistogramRe
 	// 2. Establish a direct read pipe to the command's stdout
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, Fatal("Failed to create stdout pipe", "err", err)
+		return nil, shared.Fatal("Failed to create stdout pipe", "err", err)
 	}
 
 	// 3. Start the process asynchronously
 	if err := cmd.Start(); err != nil {
-		return nil, Fatal("Failed to start ffprobe", "err", err)
+		return nil, shared.Fatal("Failed to start ffprobe", "err", err)
 	}
 
 	// 4. Stream and parse the JSON directly from the pipe
 	var metadata FFprobeOutput
 	decoder := json.NewDecoder(stdoutPipe)
 	if err := decoder.Decode(&metadata); err != nil {
-		return nil, Fatal("Failed to decode JSON stream", "err", err)
+		return nil, shared.Fatal("Failed to decode JSON stream", "err", err)
 	}
 
 	// 5. Wait for the command to clean up and exit

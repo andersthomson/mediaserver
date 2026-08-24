@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -53,13 +54,13 @@ func IsMpeg2VideoWithBrokenDTS(ctx context.Context, inputID string, inputNo int,
 
 	// Execute command safely
 	if err := cmd.Run(); err != nil {
-		return false, Error("Metadata analysis failed", "filename", inputFile, "err", err)
+		return false, shared.Error("Metadata analysis failed", "filename", inputFile, "err", err)
 	}
 
 	// Unmarshal the raw JSON bytes straight into our native Go structs
 	var meta FFprobeResult
 	if err := json.Unmarshal(out.Bytes(), &meta); err != nil {
-		return false, Error("JSON parsing failed", "filename", inputFile, "err", err)
+		return false, shared.Error("JSON parsing failed", "filename", inputFile, "err", err)
 	}
 
 	// Evaluate the structural conditions cleanly

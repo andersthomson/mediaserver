@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -126,7 +127,7 @@ func ExecuteProbesFile(ctx context.Context, fullPath string, stream string) (Pro
 	var idetStderr bytes.Buffer
 	idetCmd.Stderr = &idetStderr
 	if err := idetCmd.Run(); err != nil {
-		return raw, Fatal("ffmpeg idet analysis failed", "err", err, "stderr", idetStderr.String())
+		return raw, shared.Fatal("ffmpeg idet analysis failed", "err", err, "stderr", idetStderr.String())
 	}
 
 	slog.Info("HERE 2.5")

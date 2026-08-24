@@ -23,7 +23,7 @@ func FinalizeWF(ctx workflow.Context, args FinalizeArgs) (FinalizeResp, error) {
 func CallFinalize(ctx workflow.Context, inputID string, ensure bool) (FinalizeResp, error) {
 	resp, err := CallActivityIO[FinalizeArgs, FinalizeResp](ctx, Finalize, FinalizeArgs{InputID: inputID, Ensure: ensure})
 	if err != nil {
-		return resp, Error("CallFinalize failed", "err", err)
+		return resp, shared.Error("CallFinalize failed", "err", err)
 	}
 	return resp, nil
 }
@@ -51,7 +51,7 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	pattern := "*.mp4"
 	matches, err := filepath.Glob(targetDir + "/" + pattern)
 	if err != nil {
-		return FinalizeResp{}, Error("Failed to glob", "err", err)
+		return FinalizeResp{}, shared.Error("Failed to glob", "err", err)
 	}
 
 	var mp4BoxInputs []string
@@ -63,11 +63,11 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	for _, match := range matches {
 		lang, err := GetStreamZeroLanguage(match)
 		if err != nil {
-			return FinalizeResp{}, Fatal("Failed to find language", "match", match, "err", err)
+			return FinalizeResp{}, shared.Fatal("Failed to find language", "match", match, "err", err)
 		}
 		codec, err := GetStreamZeroCodec(match)
 		if err != nil {
-			return FinalizeResp{}, Fatal("Failed to find codec", "match", match, "err", err)
+			return FinalizeResp{}, shared.Fatal("Failed to find codec", "match", match, "err", err)
 		}
 		spew.Dump(codec)
 		switch {
@@ -77,10 +77,10 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 				Filename: filepath.Base(match),
 			})
 			if err != nil {
-				return FinalizeResp{}, Fatal("Failed to get properties", "file", match, "err", err)
+				return FinalizeResp{}, shared.Fatal("Failed to get properties", "file", match, "err", err)
 			}
 			if gopFrames != 0 && gopFrames != props.GopFrames {
-				return FinalizeResp{}, Fatal("Got different gopFrames", "previous", gopFrames, "new", props.GopFrames)
+				return FinalizeResp{}, shared.Fatal("Got different gopFrames", "previous", gopFrames, "new", props.GopFrames)
 			}
 			gopFrames = props.GopFrames
 			fps = props.Fps
@@ -99,11 +99,11 @@ func Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 		inputFiles = append(inputFiles, filepath.Base(match))
 	}
 	if gopFrames == 0 {
-		return FinalizeResp{}, Error("Failed to find a file with video", "matches", matches)
+		return FinalizeResp{}, shared.Error("Failed to find a file with video", "matches", matches)
 	}
 	fpsI, err := FloatToInt(fps)
 	if err != nil {
-		return FinalizeResp{}, Error("File to put into mpd manifest has fractional fps", "fps", fps, "matches", matches)
+		return FinalizeResp{}, shared.Error("File to put into mpd manifest has fractional fps", "fps", fps, "matches", matches)
 	}
 	spew.Dump(gopFrames)
 
@@ -154,10 +154,10 @@ proceed:
 			return FinalizeResp{}, err
 		}
 		if !equal {
-			return FinalizeResp{}, Error("Generated dash file not equal", "orig", in, "dash", dName)
+			return FinalizeResp{}, shared.Error("Generated dash file not equal", "orig", in, "dash", dName)
 		}
 		if err := os.Remove(filepath.Join(targetDir, dName)); err != nil {
-			return FinalizeResp{}, Error("os.Remove failed", "filename", filepath.Join(targetDir, dName), "err", err)
+			return FinalizeResp{}, shared.Error("os.Remove failed", "filename", filepath.Join(targetDir, dName), "err", err)
 		}
 	}
 	return FinalizeResp{
@@ -176,13 +176,13 @@ func GetOneTargetsProperties(ctx context.Context, targetDir string) (GetOneTarge
 	pattern := "*.mp4"
 	matches, err := filepath.Glob(targetDir + "/" + pattern)
 	if err != nil {
-		return GetOneTargetsPropertiesResp{}, Error("Failed to glob", "pattern", targetDir+"/"+pattern, "err", err)
+		return GetOneTargetsPropertiesResp{}, shared.Error("Failed to glob", "pattern", targetDir+"/"+pattern, "err", err)
 	}
 	slog.Info("MATCHES", "found", matches)
 	for _, match := range matches {
 		codec, err := GetStreamZeroCodec(match)
 		if err != nil {
-			return GetOneTargetsPropertiesResp{}, Error("Failed to find codec", "filePath", match, "err", err)
+			return GetOneTargetsPropertiesResp{}, shared.Error("Failed to find codec", "filePath", match, "err", err)
 		}
 		if shared.IsVideoCodec(codec) {
 			props, err := GetSourceProperties(ctx, ProbeParams{
@@ -190,7 +190,7 @@ func GetOneTargetsProperties(ctx context.Context, targetDir string) (GetOneTarge
 				Filename: filepath.Base(match),
 			})
 			if err != nil {
-				return GetOneTargetsPropertiesResp{}, Error("Failed to get properties", "filePath", match, "err", err)
+				return GetOneTargetsPropertiesResp{}, shared.Error("Failed to get properties", "filePath", match, "err", err)
 			}
 			return GetOneTargetsPropertiesResp{
 				Found: true,
@@ -208,14 +208,14 @@ func GetOneTargetsProperties(ctx context.Context, targetDir string) (GetOneTarge
 func fileSizesAreEqualAndNonZero(filePath1, filePath2 string) (bool, error) {
 	f1, err := os.Stat(filePath1)
 	if err != nil {
-		return false, Error("Stat failed", "err", err)
+		return false, shared.Error("Stat failed", "err", err)
 	}
 	f2, err := os.Stat(filePath2)
 	if err != nil {
-		return false, Error("Stat failed", "err", err)
+		return false, shared.Error("Stat failed", "err", err)
 	}
 	if f1.Size() == 0 || f2.Size() == 0 {
-		return false, Error("At lease one file is zero size", "file1", filePath1, "file2", filePath2)
+		return false, shared.Error("At lease one file is zero size", "file1", filePath1, "file2", filePath2)
 	}
 	return f1.Size() == f2.Size(), nil
 }
@@ -223,7 +223,7 @@ func fileSizesAreEqualAndNonZero(filePath1, filePath2 string) (bool, error) {
 func dashName(fname string) (string, error) {
 	base, ok := strings.CutSuffix(fname, ".mp4")
 	if !ok {
-		return "", Error("InputFilename does not end in .mp4", "fname", fname)
+		return "", shared.Error("InputFilename does not end in .mp4", "fname", fname)
 	}
 	return base + "_dashinit.mp4", nil
 }

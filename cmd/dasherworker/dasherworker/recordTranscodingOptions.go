@@ -38,13 +38,13 @@ func RecordTranscodingOptions(_ context.Context, t TranscodingOptionsRecord) (st
 
 	err := SaveStructToJSON(fname, t)
 	if err != nil {
-		return "", FatalError(err)
+		return "", shared.FatalError(err)
 	}
 	// Intentional: OK if the name does not exist.
 	_ = os.Rename(base, base+".old")
 
 	if err := os.Symlink(filepath.Base(fname), base); err != nil {
-		return "", FatalError(err)
+		return "", shared.FatalError(err)
 	}
 	return "", nil
 }
@@ -60,7 +60,7 @@ func LoadTranscodingOptions(_ context.Context, e shared.EncodeStreamArgs) (*Tran
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, Fatal(err.Error())
+		return nil, shared.Fatal(err.Error())
 	}
 	return &t, err
 }

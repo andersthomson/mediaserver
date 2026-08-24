@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/andersthomson/mediaserver/scrape"
 	"go.temporal.io/sdk/workflow"
 )
@@ -14,7 +15,7 @@ func CallReadMspFile(ctx workflow.Context, mspPath string) (scrape.Msp, error) {
 func ReadMspFile(ctx context.Context, dir string, mspFile string) (scrape.Msp, error) {
 	M, err := scrape.ReadMspFromFile(filepath.Join(dir, mspFile))
 	if err != nil {
-		return M, FatalError(err)
+		return M, shared.FatalError(err)
 	}
 	return M, nil
 }

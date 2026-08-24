@@ -149,13 +149,13 @@ func (l *LocalEncode) EncodePostlude(ctx context.Context, args EncodePostludeArg
 	targetOutputPath := storage.TranscodedRepresentationFilePath(args.ESA)
 	outputPath := filepath.Join(workDir, filepath.Base(targetOutputPath))
 	if err := os.Remove(inputSymlink); err != nil {
-		return EncodePostludeResp{}, Error("Failed to remove symlink to input file", "file", inputSymlink, "err", err)
+		return EncodePostludeResp{}, shared.Error("Failed to remove symlink to input file", "file", inputSymlink, "err", err)
 	}
 	if err := os.Rename(outputPath, targetOutputPath); err != nil {
-		return EncodePostludeResp{}, Error("Failed to rename ffmpeg result file into place", "outputPath", outputPath, "targetOutputPath", targetOutputPath, "err", err)
+		return EncodePostludeResp{}, shared.Error("Failed to rename ffmpeg result file into place", "outputPath", outputPath, "targetOutputPath", targetOutputPath, "err", err)
 	}
 	if err := os.Remove(workDir); err != nil {
-		return EncodePostludeResp{}, Error("Failed to remove ffmpeg workdir", "workdir", workDir, "err", err)
+		return EncodePostludeResp{}, shared.Error("Failed to remove ffmpeg workdir", "workdir", workDir, "err", err)
 	}
 	return EncodePostludeResp{
 		FfmpegArgs: args.FfmpegArgs,

@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared/throttledLogger"
 	"go.temporal.io/sdk/activity"
 	"golang.org/x/time/rate"
@@ -33,15 +34,15 @@ func MP4Box(ctx context.Context, dir string, args []string) (bytes.Buffer, bytes
 	// 🔗 Create distinct, independent pipes
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return bytes.Buffer{}, bytes.Buffer{}, Fatal("stdout pipe allocation failure", "err", err)
+		return bytes.Buffer{}, bytes.Buffer{}, shared.Fatal("stdout pipe allocation failure", "err", err)
 	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		return bytes.Buffer{}, bytes.Buffer{}, Fatal("stderr pipe allocation failure", "err", err)
+		return bytes.Buffer{}, bytes.Buffer{}, shared.Fatal("stderr pipe allocation failure", "err", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		return bytes.Buffer{}, bytes.Buffer{}, Fatal("failed to start MP4Box", "args", args, "err", err)
+		return bytes.Buffer{}, bytes.Buffer{}, shared.Fatal("failed to start MP4Box", "args", args, "err", err)
 	}
 
 	// 🗄️ Buffers to securely capture independent data streams
@@ -104,7 +105,7 @@ func MP4Box(ctx context.Context, dir string, args []string) (bytes.Buffer, bytes
 
 	// 4. Reap the final system process status code
 	if err := cmd.Wait(); err != nil {
-		return stdoutBuffer, stderrBuffer, Error("MP4Box process failed execution", "args", args, "error", err,
+		return stdoutBuffer, stderrBuffer, shared.Error("MP4Box process failed execution", "args", args, "error", err,
 			"stdout", stdoutBuffer.String(),
 			"stderr", stderrBuffer.String(),
 		)

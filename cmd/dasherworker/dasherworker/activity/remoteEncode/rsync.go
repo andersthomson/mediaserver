@@ -1,4 +1,4 @@
-package dasherworker
+package remoteEncode
 
 import (
 	"bufio"
@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared/throttledLogger"
 	"github.com/creack/pty"
 	"go.temporal.io/sdk/activity"
@@ -70,7 +71,7 @@ func dropCRLF(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	return 0, nil, nil
 }
 
-func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remoteHost string, port int, toRemote bool) error {
+func Rsync(ctx context.Context, localPath, remotePath, remoteUser, remoteHost string, port int, toRemote bool) error {
 	var src, dst string
 	var remoteAddr string
 	if remoteUser != "" {
@@ -122,7 +123,7 @@ func RsyncActivity(ctx context.Context, localPath, remotePath, remoteUser, remot
 
 	err = cmd.Wait()
 	if err != nil {
-		return Error("rsync execution failed", "err", err)
+		return shared.Error("rsync execution failed", "err", err)
 	}
 	pp.parseLine("100%", true)
 	return nil

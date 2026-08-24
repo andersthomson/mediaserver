@@ -64,7 +64,7 @@ func MP4BoxDashReadyExecute(ctx context.Context, args MP4BoxDashReadyArgs) (MP4B
 	}
 	dashMsI, _ := strconv.Atoi(args.DashMs)
 	if err := VerifySegmentAlignment(stderrBuf.String(), dashMsI); err != nil {
-		return MP4BoxDashReadyResp{}, FatalError(err)
+		return MP4BoxDashReadyResp{}, shared.FatalError(err)
 	}
 	resp := MP4BoxDashReadyResp{
 		Dir:    args.WorkDir,
@@ -73,18 +73,18 @@ func MP4BoxDashReadyExecute(ctx context.Context, args MP4BoxDashReadyArgs) (MP4B
 	}
 	//remove unneded files
 	if err := os.Remove(args.TranscodedFilePath); err != nil {
-		return resp, Fatal("Failed to remove %s: %v", args.TranscodedFilePath, err)
+		return resp, shared.Fatal("Failed to remove %s: %v", args.TranscodedFilePath, err)
 	}
 	if err := os.Remove(args.ManifestFilePath); err != nil {
-		return resp, Fatal("Failed to remove %s: %v", args.ManifestFilePath, err)
+		return resp, shared.Fatal("Failed to remove %s: %v", args.ManifestFilePath, err)
 	}
 
 	basename, ok := strings.CutSuffix(filepath.Base(args.DasherReadyFilePath), ".mp4")
 	if !ok {
-		return resp, Fatal("DasherReadyFilePath MUST end in .mp4")
+		return resp, shared.Fatal("DasherReadyFilePath MUST end in .mp4")
 	}
 	if err := os.Rename(filepath.Join(filepath.Dir(args.DasherReadyFilePath), basename+".mp4init.mp4"), args.DasherReadyFilePath); err != nil {
-		return resp, Fatal("Failed to rename %s %s:%v", filepath.Join(filepath.Dir(args.DasherReadyFilePath), basename+".mp4init.mp4"), args.DasherReadyFilePath, err)
+		return resp, shared.Fatal("Failed to rename %s %s:%v", filepath.Join(filepath.Dir(args.DasherReadyFilePath), basename+".mp4init.mp4"), args.DasherReadyFilePath, err)
 	}
 	return resp, nil
 }

@@ -42,7 +42,7 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 		if shared.IsVideoCodec(target.Codec) {
 			idx := getFirstInputStreamWithPrefix(M.Inputs, "v")
 			if idx == -1 {
-				return "", Error("Found no video stream source specified", "input", M)
+				return "", shared.Error("Found no video stream source specified", "input", M)
 			}
 			VprobeRawData, err = CallExecuteProbes(ctx, M.Id, idx, M.Inputs[idx].Stream)
 			if err != nil {
@@ -69,7 +69,7 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 	}
 	for _, future := range futures {
 		if err := future.Get(ctx, nil); err != nil {
-			return "", Error("Child WF execution failed", "err", err)
+			return "", shared.Error("Child WF execution failed", "err", err)
 		}
 	}
 
@@ -119,7 +119,7 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 	if shared.IsVideoCodec(args.Target.Codec) {
 		idx = getFirstInputStreamWithPrefix(M.Inputs, "v")
 		if idx == -1 {
-			return CreateRepresentationResp{}, Error("Found no video stream source specified", "input", M)
+			return CreateRepresentationResp{}, shared.Error("Found no video stream source specified", "input", M)
 		}
 		var maxRes TranscodeOption
 		switch args.Target.Profile {
@@ -133,7 +133,7 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 	} else {
 		idx = getFirstInputStreamWithPrefix(M.Inputs, "a")
 		if idx == -1 {
-			return CreateRepresentationResp{}, Error("Found no audio stream source specified", "input", M)
+			return CreateRepresentationResp{}, shared.Error("Found no audio stream source specified", "input", M)
 		}
 	}
 
@@ -654,7 +654,7 @@ func (m TranscodingPipeline) Process(ctx workflow.Context, args shared.EncodeStr
 
 	mp4boxresp, err := CallMP4BoxDashReadyExecute(ctx, mp4boxargs)
 	if err != nil {
-		return Error("Packager failed", "err", err)
+		return shared.Error("Packager failed", "err", err)
 	}
 
 	t := TranscodingOptionsRecord{

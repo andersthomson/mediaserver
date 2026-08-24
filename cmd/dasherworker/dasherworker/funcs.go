@@ -8,28 +8,10 @@ import (
 	"os"
 
 	"github.com/pkg/errors"
-	"go.temporal.io/sdk/temporal"
 )
 
 func DasherReadyFilename2(basename, streamIdx string) string {
 	return basename + "-encoded-" + streamIdx + ".mp4"
-}
-
-func Error(msg string, args ...any) error {
-	slog.Error(msg, args...)
-	return fmt.Errorf("ERROR: %s ; %v", msg, args)
-}
-
-func Fatal(msg string, args ...any) error {
-	slog.Error(msg, args...)
-	return temporal.NewNonRetryableApplicationError(
-		fmt.Sprintf("ERROR: %s ; %v", msg, args),
-		"",
-		nil,
-	)
-}
-func FatalError(err error) error {
-	return Fatal(err.Error())
 }
 
 // FloatToInt converts a whole number float64 to int.

@@ -1,4 +1,4 @@
-package dasherworker
+package remoteEncode
 
 import (
 	"bufio"
@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activity"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared/throttledLogger"
 	"github.com/kballard/go-shellquote"
 	"go.temporal.io/sdk/activity"
@@ -40,7 +41,7 @@ func (r *RemoteEncode) EncodePrelude(ctx context.Context, args EncodePreludeArgs
 	//localPath := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
 	localPath := storage.ResolveInputNumber(args.ESA.InputID, args.ESA.InputNo)
 	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), filepath.Base(localPath))
-	if err := RsyncActivity(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, true); err != nil {
+	if err := activity.Rsync(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, true); err != nil {
 		return EncodePreludeResp{}, err
 	}
 	return EncodePreludeResp{
@@ -156,7 +157,7 @@ func (r *RemoteEncode) EncodePostlude(ctx context.Context, args EncodePostludeAr
 	localPath := storage.TranscodedRepresentationFilePath(args.ESA)
 	localTmpPath := filepath.Join(filepath.Dir(localPath), "."+filepath.Base(localPath)+"-"+args.SessionID)
 	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), filepath.Base(localPath))
-	if err := RsyncActivity(ctx, localTmpPath, remotePath, r.Username, r.Hostname, r.Port, false); err != nil {
+	if err := activity.Rsync(ctx, localTmpPath, remotePath, r.Username, r.Hostname, r.Port, false); err != nil {
 		return EncodePostludeResp{}, fmt.Errorf("Rsync to remote failed: %+v", err)
 	}
 	if err := os.Rename(localTmpPath, localPath); err != nil {
