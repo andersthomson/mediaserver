@@ -5,10 +5,8 @@ import (
 )
 
 type FFMpegArgs struct {
-	InputDir    string
-	InputFname  string
-	Args        []string
-	OutputFname string
+	InputFname string
+	Args       []string
 }
 
 type EncodePreludeArgs struct {
