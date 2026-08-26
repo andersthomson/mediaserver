@@ -37,6 +37,8 @@ func (f *Finalize) Finalize(ctx context.Context, args FinalizeArgs) (FinalizeRes
 	slog.Info("Start", "A", "Finalize", "InputID", args.InputID)
 	defer slog.Info("Stop ", "A", "Finalize", "InputID)", args.InputID)
 	spew.Dump(args)
+	manifestPath := f.Storage.AudioVideoManifestFilePath(args.InputID)
+	manifestFname := filepath.Base(manifestPath)
 
 	targetDir := f.Storage.ProdDir(args.InputID)
 	vStart, aStart := getVideoAndAudioStartTimes(ctx, f.Storage, args.InputID)
@@ -102,7 +104,7 @@ func (f *Finalize) Finalize(ctx context.Context, args FinalizeArgs) (FinalizeRes
 
 	if args.Ensure {
 		//If manifest newer than all referenced files, skip creating it
-		mfinfo, err := os.Stat(filepath.Join(targetDir, "manifest.mpd"))
+		mfinfo, err := os.Stat(filepath.Join(targetDir, manifestFname))
 		if errors.Is(err, os.ErrNotExist) {
 			goto proceed
 		}
@@ -125,8 +127,8 @@ func (f *Finalize) Finalize(ctx context.Context, args FinalizeArgs) (FinalizeRes
 		return FinalizeResp{}, nil
 	}
 proceed:
-	//args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", "manifest.mpd"}
-	boxArgs := []string{"-dash", shared.DashMs2(gopFrames, fpsI), "-rap", "-flat", "-profile", "onDemand", "-out", "manifest.mpd"}
+	//args := []string{"-dash", strconv.FormatFloat(gopMs, 'f', 0, 64), "-rap", "-profile", "onDemand", "-out", manifestFname}
+	boxArgs := []string{"-dash", shared.DashMs2(gopFrames, fpsI), "-rap", "-flat", "-profile", "onDemand", "-out", manifestFname}
 	boxArgs = append(boxArgs, mp4BoxInputs...)
 	stdoutBuf, stderrBuf, err := common.MP4Box(ctx, targetDir, boxArgs)
 	if err != nil {
@@ -136,7 +138,7 @@ proceed:
 			MP4BoxStderr: stderrBuf.String(),
 		}, err
 	}
-	fixManifestBaseURLs(filepath.Join(targetDir, "manifest.mpd"))
+	fixManifestBaseURLs(filepath.Join(targetDir, manifestFname))
 	for _, in := range inputFiles {
 		dName, err := dashName(in)
 		if err != nil {

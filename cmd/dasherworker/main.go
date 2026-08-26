@@ -19,6 +19,8 @@ import (
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mspreader"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/remoteEncode"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/transcodingOptionsRecorder"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/vttextract"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/vttstitch"
 	"go.temporal.io/sdk/client"
 	tworker "go.temporal.io/sdk/worker"
 )
@@ -146,6 +148,8 @@ func main() {
 
 	w.RegisterActivity(mspreader.Read)
 	w.RegisterActivity(&localEncode.LocalEncode{Storage: storage})
+	w.RegisterActivity(&vttstitch.VttStitcher{Storage: storage})
+	w.RegisterActivity(&vttextract.VttExtractor{Storage: storage})
 	w.RegisterActivity(&deinterlacer.Deinterlacer{Storage: storage})
 	w.RegisterActivity(&ffmpegArgs.FFMpegArgsPocessor{Storage: storage})
 	w.RegisterActivity(&durationDeriver.DurationDeriver{Storage: storage})

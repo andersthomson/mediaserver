@@ -146,6 +146,18 @@ func (s *Storage) DasherReadyRepresentationManifestFilePath(args shared.EncodeSt
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+"-manifest.mpd")
 }
 
+func (s *Storage) AudioVideoManifestFilePath(inputID string) string {
+	return filepath.Join(s.ProdDir(inputID), "manifest-audioVideo.mpd")
+}
+
+func (s *Storage) ManifestFilePath(inputID string) string {
+	return filepath.Join(s.ProdDir(inputID), "manifest.mpd")
+}
+
+func (s *Storage) SubtitlesRepresentationFilePath(inputID string, lang string) string {
+	return filepath.Join(s.ProdDir(inputID), "subtitles_"+lang+".vtt")
+}
+
 // Interface to WFs
 type ResolveInputResp struct {
 	Dir string

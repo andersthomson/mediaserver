@@ -19,11 +19,12 @@ import (
 )
 
 var targets = []Target{
-	//	{"x264", "high"},
-	{"x264", "low"},
-	//	{"x265", "high"},
-	{"x265", "low"},
-	{"aac", ""},
+	//{"x264", "high"},
+	//{"x264", "low"},
+	//{"x265", "high"},
+	//{"x265", "low"},
+	//{"aac", ""},
+	{"vtt", ""},
 }
 
 type EnsureDashWFArgs struct {
@@ -68,14 +69,32 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 			ProbeRawData: VprobeRawData, //Ok even if target is not video. it is input used for video flows
 		}))
 	}
-	for _, future := range futures {
-		if err := future.Get(ctx, nil); err != nil {
-			return "", shared.Error("Child WF execution failed", "err", err)
+	var languages []string
+	for idx, future := range futures {
+		switch {
+		case shared.IsSubtitlesCodec(targets[idx].Codec):
+			var resp CreateRepresentationResp
+			if err := future.Get(ctx, &resp); err != nil {
+				return "", shared.Error("Child WF execution failed", "err", err)
+			}
+			spew.Dump(resp)
+			languages = append(languages, resp.Language)
+		default:
+			if err := future.Get(ctx, nil); err != nil {
+				return "", shared.Error("Child WF execution failed", "err", err)
+			}
 		}
 	}
 
-	_, err = CallFinalize(ctx, M.Id, true)
-	return "", err
+	if _, err = CallFinalize(ctx, M.Id, true); err != nil {
+		return "", err
+	}
+	if _, err := CallVttStitch(ctx, M.Id, languages); err != nil {
+		return "", err
+	}
+	slog.Info("Sitched in languages", "languages", languages)
+	return "", nil
+
 }
 
 type Target struct {
@@ -96,11 +115,12 @@ type CreateRepresentationArgs struct {
 }
 
 type CreateRepresentationResp struct {
+	Language string //Returned by VttEx
 }
 
 func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (CreateRepresentationResp, error) {
-	slog.Info("Start", "W", "CreateRepresentation", "msp", args.MspFile)
-	defer slog.Info("Stop ", "W", "CreateRepresentation", "msp", args.MspFile)
+	slog.Info("Start", "W", "CreateRepresentation", "msp", args.MspFile, "target", args.Target)
+	defer slog.Info("Stop ", "W", "CreateRepresentation", "msp", args.MspFile, "target", args.Target)
 
 	M, err := CallReadMspFile(ctx, filepath.Join(args.Dir, args.MspFile))
 	if err != nil {
@@ -111,7 +131,8 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 	var opts []TranscodeOption
 
 	var idx int
-	if shared.IsVideoCodec(args.Target.Codec) {
+	switch {
+	case shared.IsVideoCodec(args.Target.Codec):
 		idx = shared.GetFirstInputStreamWithPrefix(M.Inputs, "v")
 		if idx == -1 {
 			return CreateRepresentationResp{}, shared.Error("Found no video stream source specified", "input", M)
@@ -125,11 +146,25 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 		}
 		opts = append(opts, maxRes)
 		opts = append(opts, WithPreset(preset(args.Fast)))
-	} else {
+	case shared.IsAudioCodec(args.Target.Codec):
 		idx = shared.GetFirstInputStreamWithPrefix(M.Inputs, "a")
 		if idx == -1 {
 			return CreateRepresentationResp{}, shared.Error("Found no audio stream source specified", "input", M)
 		}
+	case shared.IsSubtitlesCodec(args.Target.Codec):
+		idx = shared.GetFirstInputStreamWithPrefix(M.Inputs, "s")
+		if idx == -1 {
+			return CreateRepresentationResp{}, shared.Error("Found no subtitles stream source specified", "input", M)
+		}
+		if lang, err := CallExtractVtt(ctx, M.Id, idx, M.Inputs[idx].Stream); err != nil {
+			return CreateRepresentationResp{}, err
+		} else {
+			return CreateRepresentationResp{Language: lang}, nil
+		}
+
+		return CreateRepresentationResp{}, err
+	default:
+		return CreateRepresentationResp{}, shared.Fatal("Unsupported target codec", "codec", args.Target.Codec)
 	}
 
 	Eargs := NewEncodeStreamArgs(ctx, &shared.EncodeStreamArgs{
@@ -318,7 +353,6 @@ func inputDirFileStrategy(ctx workflow.Context, args shared.EncodeStreamArgs) []
 
 func inputDirFileWithMapStrategy(ctx workflow.Context, args shared.EncodeStreamArgs) []shared.FFMpegArg {
 	return []shared.FFMpegArg{
-		//"-copyts",
 		shared.NewFFMpegArg(shared.KindString, "-i"), shared.NewFFMpegArg(shared.KindInputFilePath, shared.InputFilePath{Id: args.InputID, Number: args.InputNo}),
 		shared.NewFFMpegArg(shared.KindString, "-map"), shared.NewFFMpegArg(shared.KindString, "0:"+args.Stream),
 	}
@@ -360,9 +394,12 @@ func languageFromArgs(args shared.EncodeStreamArgs) []shared.FFMpegArg {
 	slog.Info("NO language")
 	return []shared.FFMpegArg{}
 }
-func XnullStrategy(_ shared.EncodeStreamArgs) []shared.FFMpegArg {
-	return []shared.FFMpegArg{}
+func vttEncodingStrategy() func(args shared.EncodeStreamArgs) []shared.FFMpegArg {
+	return func(args shared.EncodeStreamArgs) []shared.FFMpegArg {
+		return nil
+	}
 }
+
 func x264EncodingStrategy(gopFrames int, crf string, bitrate string) func(args shared.EncodeStreamArgs) []shared.FFMpegArg {
 	gopFramesStr := fmt.Sprintf("%d", gopFrames)
 	return func(args shared.EncodeStreamArgs) []shared.FFMpegArg {
@@ -447,6 +484,13 @@ func dashManifestStrategy(ctx workflow.Context, args shared.EncodeStreamArgs) []
 	}
 }
 
+func sidecarStrategy(ctx workflow.Context, args shared.EncodeStreamArgs) []shared.FFMpegArg {
+	return []shared.FFMpegArg{
+		shared.NewFFMpegArg(shared.KindString, "-y"),
+		shared.NewFFMpegArg(shared.KindSubtitlesRepresentationFilePath, shared.SubtitlesRepresentationFilePath{ESA: args}),
+	}
+}
+
 type InputStrategy func(ctx workflow.Context, args shared.EncodeStreamArgs) []shared.FFMpegArg
 type EncodingStrategy func(args shared.EncodeStreamArgs) []shared.FFMpegArg
 type LanguageStrategy func(args shared.EncodeStreamArgs) []shared.FFMpegArg
@@ -505,6 +549,11 @@ func TranscodingPipelineFactory(ctx workflow.Context, args shared.EncodeStreamAr
 		res.encodingStrategy = aac2cEncodingStrategy
 		res.languageStrategy = languageFromArgs
 		res.manifestStrategy = dashManifestStrategy
+	case "vtt":
+		res.inputStrategy = inputDirFileWithMapStrategy
+		res.encodingStrategy = vttEncodingStrategy()
+		res.languageStrategy = languageFromArgs
+		res.manifestStrategy = sidecarStrategy
 	default:
 		slog.Error("UNSUPPORTED CODEC", "codec", args.Codec)
 		return TranscodingPipeline{}
@@ -591,7 +640,7 @@ func (m TranscodingPipeline) Process(ctx workflow.Context, args shared.EncodeStr
 
 	ctx2 := workflow.WithActivityOptions(sessionCtx, workflow.ActivityOptions{
 		StartToCloseTimeout: 24 * time.Hour,
-		HeartbeatTimeout:    20 * time.Second,
+		HeartbeatTimeout:    10 * time.Minute,
 	})
 
 	var encodePreludeResp shared.EncodePreludeResp

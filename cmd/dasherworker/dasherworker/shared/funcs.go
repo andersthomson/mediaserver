@@ -37,6 +37,22 @@ func IsVideoCodec(codec string) bool {
 	return false
 }
 
+func IsAudioCodec(codec string) bool {
+	switch codec {
+	case "aac", "ac3", "mp2":
+		return true
+	}
+	return false
+}
+
+func IsSubtitlesCodec(codec string) bool {
+	switch codec {
+	case "srt", "vtt", "ass":
+		return true
+	}
+	return false
+}
+
 func GetFirstInputStreamWithPrefix(inputs []scrape.InputT, prefix string) int {
 	return slices.IndexFunc(inputs, func(i scrape.InputT) bool {
 		return strings.HasPrefix(i.Stream, prefix)

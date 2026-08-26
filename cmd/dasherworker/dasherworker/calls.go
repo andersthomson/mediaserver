@@ -13,6 +13,8 @@ import (
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mp4boxDashReady"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mspreader"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/transcodingOptionsRecorder"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/vttextract"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/vttstitch"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/andersthomson/mediaserver/scrape"
 	"go.temporal.io/sdk/workflow"
@@ -84,4 +86,14 @@ func CallGetStreamDimensions(ctx workflow.Context, inputID string, inputNo int, 
 func CallExecuteProbes(ctx workflow.Context, inputID string, inputNo int, stream string) (deinterlacer.ProbeRawData, error) {
 	var a *deinterlacer.Deinterlacer
 	return CallActivityIO[any, deinterlacer.ProbeRawData](ctx, a.ExecuteProbes, inputID, inputNo, stream)
+}
+
+func CallExtractVtt(ctx workflow.Context, inputID string, inputNo int, stream string) (string, error) {
+	var a *vttextract.VttExtractor
+	return CallActivityIO[any, string](ctx, a.ExtractVtt, inputID, inputNo, stream)
+}
+
+func CallVttStitch(ctx workflow.Context, inputID string, languages []string) (string, error) {
+	var a *vttstitch.VttStitcher
+	return CallActivityIO[any, string](ctx, a.Stitch, inputID, languages)
 }

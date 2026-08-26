@@ -11,12 +11,17 @@ type InputFilePath struct {
 	Number int
 }
 
+type SubtitlesRepresentationFilePath struct {
+	ESA EncodeStreamArgs
+}
+
 type FFMpegArgKind string
 
 const (
 	KindString                          FFMpegArgKind = "STRING"
 	KindTranscodedRepesentationFilePath FFMpegArgKind = "TranscodedRepesentationFilePath"
 	KindInputFilePath                   FFMpegArgKind = "INPUTFILEPATH"
+	KindSubtitlesRepresentationFilePath FFMpegArgKind = "SubtitlesRepresentationFilePath"
 )
 
 type FFMpegArg struct {

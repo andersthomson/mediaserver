@@ -39,6 +39,13 @@ func (f *FFMpegArgsPocessor) Process(ctx context.Context, s []shared.FFMpegArg) 
 			}
 			p := f.Storage.ResolveInputNumber(v.Id, v.Number)
 			res.Args[idx] = filepath.Base(p)
+		case shared.KindSubtitlesRepresentationFilePath:
+			var v shared.SubtitlesRepresentationFilePath
+			if err := json.Unmarshal(x.Payload, &v); err != nil {
+				return res, shared.Fatal("json unmarshal failed", "err", err)
+			}
+			p := f.Storage.SubtitlesRepresentationFilePath(v.ESA.InputID, v.ESA.Language)
+			res.Args[idx] = filepath.Base(p)
 		default:
 			slog.Error("unsupported FFMpegArgKind", "value", x.Kind)
 		}
