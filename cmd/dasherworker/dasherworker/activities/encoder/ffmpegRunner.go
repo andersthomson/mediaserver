@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared/throttledLogger"
-	"github.com/davecgh/go-spew/spew"
 	"go.temporal.io/sdk/activity"
 	"golang.org/x/time/rate"
 )
@@ -74,35 +73,36 @@ func RunPreStartedFFmpegCmd(
 			key := parts[0]
 			value := strings.TrimSpace(parts[1])
 
-			spew.Dump(parts)
+			//spew.Dump(parts)
 			switch key {
 			case "speed":
 				currentSpeed = value
 			case "out_time_ms":
+				percent := 0.0
 				if meta.TotalDurationUs != 0 {
 					currentUs, _ := strconv.ParseInt(value, 10, 64)
-					percent := (float64(currentUs) / float64(meta.TotalDurationUs)) * 100
-
-					activity.RecordHeartbeat(ctx, fmt.Sprintf("%4.1f%% completed", percent))
-
-					// Conditionally log FPS only if it's a video stream (currentFPS > 0)
-					if currentFPS > 0 {
-						tlogger.Info("Progress",
-							"F", meta.LogIdentifier,
-							"idOrWorkdir", meta.TargetID,
-							"percent", percent,
-							"fps", currentFPS,
-							"speed", currentSpeed,
-						)
-					} else {
-						tlogger.Info("Progress",
-							"F", meta.LogIdentifier,
-							"idOrWorkdir", meta.TargetID,
-							"percent", percent,
-							"speed", currentSpeed,
-						)
-					}
+					percent = (float64(currentUs) / float64(meta.TotalDurationUs)) * 100
 				}
+				activity.RecordHeartbeat(ctx, fmt.Sprintf("%4.1f%% completed", percent))
+
+				// Conditionally log FPS only if it's a video stream (currentFPS > 0)
+				if currentFPS > 0 {
+					tlogger.Info("Progress",
+						"F", meta.LogIdentifier,
+						"idOrWorkdir", meta.TargetID,
+						"percent", percent,
+						"fps", currentFPS,
+						"speed", currentSpeed,
+					)
+				} else {
+					tlogger.Info("Progress",
+						"F", meta.LogIdentifier,
+						"idOrWorkdir", meta.TargetID,
+						"percent", percent,
+						"speed", currentSpeed,
+					)
+				}
+
 			}
 		}
 	}()

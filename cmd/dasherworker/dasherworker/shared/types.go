@@ -36,6 +36,7 @@ func (r Resolution) String() string {
 
 // Common industry standard clamps
 var (
+	Max480p  = Resolution{Width: 854, Height: 480}
 	Max720p  = Resolution{Width: 1280, Height: 720}
 	Max1080p = Resolution{Width: 1920, Height: 1080}
 	Max4K    = Resolution{Width: 3840, Height: 2160}

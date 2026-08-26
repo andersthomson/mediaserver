@@ -23,7 +23,7 @@ var targets = []Target{
 	{"x264", "low"},
 	//{"x265", "high"},
 	//{"x265", "low"},
-	{"aac", ""},
+	//{"aac", ""},
 	{"vtt", ""},
 }
 
@@ -142,7 +142,7 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 		case "high":
 			maxRes = WithMaxResolution(shared.Max1080p)
 		case "low":
-			maxRes = WithMaxResolution(shared.Max720p)
+			maxRes = WithMaxResolution(shared.Max480p)
 		}
 		opts = append(opts, maxRes)
 		opts = append(opts, WithPreset(preset(args.Fast)))
@@ -412,7 +412,7 @@ func x264EncodingStrategy(gopFrames int, crf string, bitrate string) func(args s
 			shared.NewFFMpegArg(shared.KindString, "-preset:v"), shared.NewFFMpegArg(shared.KindString, args.Preset)}
 		ffmpegArgs = append(ffmpegArgs, tune("x264", args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs,
-			shared.NewFFMpegArg(shared.KindString, "-x264-params:v"), shared.NewFFMpegArg(shared.KindString, "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:strict-gop=1:b-pyramid=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1"))
+			shared.NewFFMpegArg(shared.KindString, "-x264-params:v"), shared.NewFFMpegArg(shared.KindString, "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:b-pyramid=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1"))
 
 		ffmpegArgs = append(ffmpegArgs, []shared.FFMpegArg{shared.NewFFMpegArg(shared.KindString, "-fps_mode"), shared.NewFFMpegArg(shared.KindString, "cfr")}...)
 		return ffmpegArgs
