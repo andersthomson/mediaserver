@@ -20,10 +20,10 @@ import (
 
 var targets = []Target{
 	//{"x264", "high"},
-	//{"x264", "low"},
+	{"x264", "low"},
 	//{"x265", "high"},
 	//{"x265", "low"},
-	//{"aac", ""},
+	{"aac", ""},
 	{"vtt", ""},
 }
 
@@ -154,7 +154,7 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 	case shared.IsSubtitlesCodec(args.Target.Codec):
 		idx = shared.GetFirstInputStreamWithPrefix(M.Inputs, "s")
 		if idx == -1 {
-			return CreateRepresentationResp{}, shared.Error("Found no subtitles stream source specified", "input", M)
+			return CreateRepresentationResp{}, nil
 		}
 		if lang, err := CallExtractVtt(ctx, M.Id, idx, M.Inputs[idx].Stream); err != nil {
 			return CreateRepresentationResp{}, err

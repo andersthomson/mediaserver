@@ -1,7 +1,6 @@
 package localEncode
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -9,16 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/encoder"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
-	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared/throttledLogger"
-	"github.com/davecgh/go-spew/spew"
-	"go.temporal.io/sdk/activity"
-	"golang.org/x/time/rate"
 )
 
 var _ shared.Encoder = &LocalEncode{}
@@ -73,80 +66,58 @@ func (l *LocalEncode) EncodePrelude(ctx context.Context, args shared.EncodePrelu
 func (l *LocalEncode) Encode(ctx context.Context, args shared.EncodeArgs) (shared.EncodeResp, error) {
 	_, m := l.Storage.ResolveInput(args.ESA.InputID)
 	inputFname := m.Inputs[args.ESA.InputNo].Filename
+
 	slog.Info("Start", "A", "LocalEncode/Prelude", "inputFname", inputFname)
 	defer slog.Info("Stop ", "A", "LocalEncode/Prelude", "inputFname", inputFname)
 	slog.Info("local/Encode", "args", args)
-	var resp shared.EncodeResp
 
-	// Create an extra pipe for progress only
-	pr, pw, _ := os.Pipe()
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return shared.EncodeResp{}, err
+	}
 	defer pr.Close()
 
-	var newArgs []string
+	var finalArgs []string
 	if args.TotalDurationUs != 0 {
-		newArgs = append(args.FfmpegArgs.Args, []string{"-progress", "pipe:3"}...)
+		finalArgs = append(args.FfmpegArgs.Args, "-progress", "pipe:3")
 	} else {
-		newArgs = args.FfmpegArgs.Args
+		finalArgs = args.FfmpegArgs.Args
 	}
-	spew.Dump(newArgs)
-	cmd := exec.CommandContext(ctx, "/usr/bin/ffmpeg", newArgs...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+
+	cmd := exec.CommandContext(ctx, "/usr/bin/ffmpeg", finalArgs...)
 	cmd.ExtraFiles = []*os.File{pw}
 	cmd.Dir = l.workDir(args.SessionID, args.ESA)
 
-	// 3. Start progress parser in background
-	if args.TotalDurationUs != 0 {
-		go func() {
-			defer pw.Close() // Ensure the write-end closes so scanner finishes
-			tlogger := throttledLogger.New(rate.Every(5*time.Second), 3)
-			scanner := bufio.NewScanner(pr)
-			for scanner.Scan() {
-				line := scanner.Text()
-				if strings.HasPrefix(line, "out_time_ms=") {
-					parts := strings.Split(line, "=")
-					if len(parts) == 2 {
-						currentUs, _ := strconv.ParseInt(parts[1], 10, 64)
-						percent := (float64(currentUs) / float64(args.TotalDurationUs)) * 100
-						activity.RecordHeartbeat(ctx, fmt.Sprintf("%4.1f percent complete", percent))
-						tlogger.Info("Progress", "F", "FfmpegLocalEncode", "workdir", l.workDir(args.SessionID, args.ESA), "percent", percent)
-					}
-				}
-			}
-		}()
+	// Prepare data preservation matrices
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	meta := encoder.ExecutionMetadata{
+		LogIdentifier:   "FfmpegLocalEncode",
+		TargetID:        l.workDir(args.SessionID, args.ESA),
+		TotalDurationUs: args.TotalDurationUs,
 	}
 
-	// Run() starts the command and waits for it to finish
-	err := cmd.Run()
-
-	// 5. Handle Early Closure / Cancellation
-	if ctx.Err() != nil {
-		// Temporal canceled the context. cmd.Run() usually returns an error here.
-		return resp, ctx.Err()
+	// Trigger command context allocation execution
+	if err := cmd.Start(); err != nil {
+		pw.Close()
+		return shared.EncodeResp{}, err
 	}
 
-	// Capture outputs
-	resp.Stderr = stderr.String()
-	if resp.Stderr != "" {
-		slog.Error("LocalFFmpeg error", "stderr", resp.Stderr)
-	}
+	// CRITICAL: Close parent reference immediately so reader loop can cleanly parse EOF on execution end
+	pw.Close()
 
-	// Get Exit Code
-	exitCode := 0
-	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			exitCode = exitError.ExitCode()
-		} else {
-			// This happens if the command couldn't start at all (e.g., binary not found)
-			exitCode = -1
-		}
-	} else {
-		exitCode = cmd.ProcessState.ExitCode()
+	// Delegate processing logic down to the unified engine
+	res, err := encoder.RunPreStartedFFmpegCmd(ctx, cmd, pr, meta, &stdoutBuf, &stderrBuf)
+
+	resp := shared.EncodeResp{
+		Exitcode: res.ExitCode,
+		Stderr:   res.Stderr,
 	}
-	resp.Exitcode = exitCode
-	return shared.EncodeResp{}, err
+	return resp, err
 }
+
 func (l *LocalEncode) EncodePostlude(ctx context.Context, args shared.EncodePostludeArgs) (shared.EncodePostludeResp, error) {
 	_, m := l.Storage.ResolveInput(args.ESA.InputID)
 	inputFname := m.Inputs[args.ESA.InputNo].Filename
