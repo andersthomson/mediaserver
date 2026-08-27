@@ -35,15 +35,13 @@ func (r RemoteEncode) remoteDir(ctx context.Context, fname string) string {
 }
 
 func (r *RemoteEncode) EncodePrelude(ctx context.Context, args shared.EncodePreludeArgs) (shared.EncodePreludeResp, error) {
-	slog.Info("Start", "A", "RemoteEncode/Prelude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "RemoteEncode/Prelude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
+	slog.Info("Start", "A", "RemoteEncode/Prelude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port))
+	defer slog.Info("Stop ", "A", "RemoteEncode/Prelude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port))
 	if err := os.MkdirAll(r.Storage.ProdDir(args.ESA.InputID), os.ModePerm); err != nil {
 		return shared.EncodePreludeResp{}, err
 	}
-	//slog.Info("Remote/Prelude", "host", r.Hostname, "username", r.Username, "args", args)
-	//localPath := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
 	localPath := r.Storage.ResolveInputNumber(args.ESA.InputID, args.ESA.InputNo)
-	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), filepath.Base(localPath))
+	remotePath := filepath.Join(r.remoteDir(ctx, filepath.Base(localPath)), filepath.Base(localPath))
 	if err := Rsync(ctx, localPath, remotePath, r.Username, r.Hostname, r.Port, true); err != nil {
 		return shared.EncodePreludeResp{}, err
 	}
@@ -54,12 +52,13 @@ func (r *RemoteEncode) EncodePrelude(ctx context.Context, args shared.EncodePrel
 
 func (r *RemoteEncode) Encode(ctx context.Context, args shared.EncodeArgs) (shared.EncodeResp, error) {
 	sshTarget := fmt.Sprintf("%s@%s#%d", r.Username, r.Hostname, r.Port)
-	slog.Info("Start", "A", "RemoteEncode/Encode", "id", sshTarget, "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "RemoteEncode/Encode", "id", sshTarget, "inputFname", args.FfmpegArgs.InputFname)
+	slog.Info("Start", "A", "RemoteEncode/Encode", "id", sshTarget)
+	defer slog.Info("Stop ", "A", "RemoteEncode/Encode", "id", sshTarget)
 
+	localPath := r.Storage.ResolveInputNumber(args.ESA.InputID, args.ESA.InputNo)
 	// Force nostats to prevent terminal graph corruption on the stdout line stream
 	remoteCmd := fmt.Sprintf("cd '%s' && %s %s -progress - -nostats",
-		r.remoteDir(ctx, args.FfmpegArgs.InputFname),
+		r.remoteDir(ctx, filepath.Base(localPath)),
 		r.Ffmpeg,
 		shellquote.Join(args.FfmpegArgs.Args...),
 	)
@@ -90,7 +89,7 @@ func (r *RemoteEncode) Encode(ctx context.Context, args shared.EncodeArgs) (shar
 		TotalDurationUs: args.TotalDurationUs,
 	}
 
-	// Trigger command context allocation execution over network wire topology
+	//Trigger command context allocation execution over network wire topology
 	if err := cmd.Start(); err != nil {
 		return shared.EncodeResp{}, err
 	}
@@ -105,13 +104,14 @@ func (r *RemoteEncode) Encode(ctx context.Context, args shared.EncodeArgs) (shar
 	return resp, err
 }
 func (r *RemoteEncode) EncodePostlude(ctx context.Context, args shared.EncodePostludeArgs) (shared.EncodePostludeResp, error) {
-	slog.Info("Start", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
-	defer slog.Info("Stop ", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port), "inputFname", args.FfmpegArgs.InputFname)
+	slog.Info("Start", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port))
+	defer slog.Info("Stop ", "A", "RemoteEncode/Postlude", "id", r.Username+"@"+r.Hostname+"#"+strconv.Itoa(r.Port))
 
 	//slog.Info("Remote/postlude", "host", r.Hostname, "args", args)
 	localPath := r.Storage.TranscodedRepresentationFilePath(args.ESA)
 	localTmpPath := filepath.Join(filepath.Dir(localPath), "."+filepath.Base(localPath)+"-"+args.SessionID)
-	remotePath := filepath.Join(r.remoteDir(ctx, args.FfmpegArgs.InputFname), filepath.Base(localPath))
+	localSrcPath := r.Storage.ResolveInputNumber(args.ESA.InputID, args.ESA.InputNo)
+	remotePath := filepath.Join(r.remoteDir(ctx, filepath.Base(localSrcPath)), filepath.Base(localPath))
 	if err := Rsync(ctx, localTmpPath, remotePath, r.Username, r.Hostname, r.Port, false); err != nil {
 		return shared.EncodePostludeResp{}, fmt.Errorf("Rsync to remote failed: %+v", err)
 	}

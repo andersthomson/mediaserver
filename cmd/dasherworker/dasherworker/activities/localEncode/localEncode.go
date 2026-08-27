@@ -3,7 +3,6 @@ package localEncode
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -56,8 +55,7 @@ func (l *LocalEncode) EncodePrelude(ctx context.Context, args shared.EncodePrelu
 	//oldName := filepath.Join(args.FfmpegArgs.InputDir, args.FfmpegArgs.InputFname)
 
 	if err := os.Symlink(oldName, newName); err != nil {
-		slog.Error("Failed to symlink input file", "oldname", oldName, "newname", newName, "err", err)
-		return shared.EncodePreludeResp{}, fmt.Errorf("Failed to symlink input file (%s): %s", args.FfmpegArgs.InputFname, err)
+		return shared.EncodePreludeResp{}, shared.Error("Failed to symlink input file", "oldname", oldName, "newname", newName, "err", err)
 	}
 	return shared.EncodePreludeResp{
 		FfmpegArgs: args.FfmpegArgs,
