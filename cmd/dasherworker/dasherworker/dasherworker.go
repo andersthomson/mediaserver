@@ -594,7 +594,7 @@ func (m TranscodingPipeline) MP4BoxArgs(ctx workflow.Context, args shared.Encode
 func (m TranscodingPipeline) NeedsProcessing(t transcodingOptionsRecorder.TranscodingOptionsRecord, ffmpegArgsExpanded shared.FFMpegArgs, dashReadyArgs mp4boxDashReady.MP4BoxDashReadyArgs) string {
 	//If either of ffmpeg and mp4box cmd lines differ, we need (re)processing.
 	var diffs []string
-	if d := cmp.Diff(t.Ffmpegargs, ffmpegArgsExpanded); d != "" {
+	if d := cmp.Diff(t.Ffmpeg.Args, ffmpegArgsExpanded); d != "" {
 		diffs = append(diffs, d)
 	}
 	if d := cmp.Diff(t.MP4BoxDashReadyArgs.MP4BoxArgs, dashReadyArgs.MP4BoxArgs); d != "" {
@@ -681,7 +681,6 @@ func (m TranscodingPipeline) Process(ctx workflow.Context, args shared.EncodeStr
 
 	t := transcodingOptionsRecorder.TranscodingOptionsRecord{
 		EncodeStream:        args,
-		Ffmpegargs:          ffmpegArgsExpanded,
 		MP4BoxDashReadyArgs: mp4boxargs,
 		Ffmpeg: transcodingOptionsRecorder.Invocation{
 			Dir:    "",

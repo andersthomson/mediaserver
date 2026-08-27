@@ -24,7 +24,6 @@ type Invocation struct {
 }
 type TranscodingOptionsRecord struct {
 	EncodeStream        shared.EncodeStreamArgs
-	Ffmpegargs          shared.FFMpegArgs
 	MP4BoxDashReadyArgs mp4boxDashReady.MP4BoxDashReadyArgs
 	Ffmpeg              Invocation
 	MP4Box              Invocation
