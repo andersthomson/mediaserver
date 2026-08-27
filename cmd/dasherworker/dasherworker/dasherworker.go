@@ -432,7 +432,7 @@ func x265EncodingStrategy(gopFrames int, crf string, bitrate string) func(args s
 		ffmpegArgs = append(ffmpegArgs, tune("x265", args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs,
 			shared.NewFFMpegArg(shared.KindString, "-tag:v"), shared.NewFFMpegArg(shared.KindString, "hvc1"),
-			shared.NewFFMpegArg(shared.KindString, "-x265-params:v"), shared.NewFFMpegArg(shared.KindString, "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)))
+			shared.NewFFMpegArg(shared.KindString, "-x265-params:v"), shared.NewFFMpegArg(shared.KindString, "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":no-scenecut=1:scenecut-intra=1:open-gop=1:b-intra=1:bframes=4:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)))
 		ffmpegArgs = append(ffmpegArgs, []shared.FFMpegArg{shared.NewFFMpegArg(shared.KindString, "-fps_mode"), shared.NewFFMpegArg(shared.KindString, "cfr")}...)
 		return ffmpegArgs
 	}
