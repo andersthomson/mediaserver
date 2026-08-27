@@ -15,11 +15,13 @@ type VttExtractor struct {
 // Returns language tag
 func (v *VttExtractor) ExtractVtt(ctx context.Context, inputID string, number int, stream string) (string, error) {
 	videoPath := v.Storage.ResolveInputNumber(inputID, number)
+	_, m := v.Storage.ResolveInput(inputID)
+	configuredLanguage := m.Inputs[number].Language
 
 	// Step 1: Extract the text stream via FFmpeg
 	vtt, err := extractSubtitlesFromContainer(ctx, videoPath, stream)
 	if err != nil {
-		return "AAAAAAA", err
+		return "", err
 	}
 	slog.Info("Subs eextracted")
 	// Step 2: Check if the file exhibits broken OTA broadcast timelines
@@ -28,12 +30,16 @@ func (v *VttExtractor) ExtractVtt(ctx context.Context, inputID string, number in
 		vtt = fixOtaWebVTT(vtt)
 		slog.Info("subs fixed")
 	}
-
-	lang, err := getSubtitleLanguage(ctx, videoPath, stream)
-	slog.Info("lang fetched")
-	if err != nil {
-		return "BBBBB", err
+	var lang string
+	if configuredLanguage != "" {
+		lang = configuredLanguage
+	} else {
+		lang, err = getSubtitleLanguage(ctx, videoPath, stream)
+		slog.Info("lang fetched")
+		if err != nil {
+			return "", err
+		}
 	}
-	slog.Info("Returning successfully")
+	slog.Info("Derived language", "shortname", m.ShortName, "id", m.Id, "inputNumber", number, "language", lang)
 	return lang, os.WriteFile(v.Storage.SubtitlesRepresentationFilePath(inputID, lang), []byte(vtt), 0644)
 }
