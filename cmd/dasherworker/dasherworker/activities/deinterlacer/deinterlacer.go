@@ -166,7 +166,7 @@ func getVideoDuration(ctx context.Context, fullPath string) (float64, error) {
 	return strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
 }
 
-func DeriveFilterRecommendation(raw ProbeRawData) FilterRecommendation {
+func DeriveFilterRecommendation(raw ProbeRawData, esa shared.EncodeStreamArgs) FilterRecommendation {
 	analysis := FilterRecommendation{
 		FilterRecommendation: "null",
 	}
@@ -201,9 +201,9 @@ func DeriveFilterRecommendation(raw ProbeRawData) FilterRecommendation {
 
 			// Branch filter optimization based on pixel reality thresholds
 			if progressiveRatio > 0.90 {
-				analysis.FilterRecommendation = "fieldmatch=order=" + parity + ":combmatch=full,yadif=mode=send_frame:deint=interlaced,format=yuv420p10le"
+				analysis.FilterRecommendation = "fieldmatch=order=" + parity + ":combmatch=full,yadif=mode=send_frame:deint=interlaced,format=" + codec2Format(esa.Codec)
 			} else {
-				analysis.FilterRecommendation = "bwdif=mode=0:parity=" + parity + ":deint=all,format=yuv420p10le"
+				analysis.FilterRecommendation = "bwdif=mode=0:parity=" + parity + ":deint=all,format=" + codec2Format(esa.Codec)
 			}
 		}
 	}
@@ -234,4 +234,16 @@ func DeriveFilterRecommendation(raw ProbeRawData) FilterRecommendation {
 	}
 
 	return analysis
+}
+
+func codec2Format(codec string) string {
+	switch codec {
+	case "x264":
+		return "yuv420p"
+	case "x265":
+		return "yuv420p10le"
+	default:
+		slog.Error("UNKNOWN CODEC in codec2Format()", "codec", codec)
+		return "yuv420p"
+	}
 }

@@ -576,7 +576,7 @@ func (m TranscodingPipeline) FfmpegArgs(ctx workflow.Context, args shared.Encode
 	var ffmpegArgs []shared.FFMpegArg
 	ffmpegArgs = append(ffmpegArgs, m.inputStrategy(ctx, args)...)
 	if shared.IsVideoCodec(args.Codec) {
-		filterRec := deinterlacer.DeriveFilterRecommendation(probeRawData)
+		filterRec := deinterlacer.DeriveFilterRecommendation(probeRawData, args)
 		ffmpegArgs = append(ffmpegArgs, videoFilterStrategy(ctx, args, filterRec.FilterRecommendation)...)
 	}
 	ffmpegArgs = append(ffmpegArgs, m.encodingStrategy(args)...)
