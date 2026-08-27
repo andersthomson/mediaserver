@@ -54,7 +54,7 @@ func RunPreStartedFFmpegCmd(
 		// Use a fixed max buffer size limit to prevent memory exhaustion if noise bleeds in
 		scanner := bufio.NewScanner(progressReader)
 		tlogger := throttledLogger.New(rate.Every(5*time.Second), 3)
-		var currentFPS float64
+		var currentFPS string
 		var currentSpeed string = "0.00x"
 
 		for scanner.Scan() {
@@ -77,6 +77,8 @@ func RunPreStartedFFmpegCmd(
 			switch key {
 			case "speed":
 				currentSpeed = value
+			case "fps":
+				currentFPS = value
 			case "out_time_ms":
 				percent := 0.0
 				if meta.TotalDurationUs != 0 {
@@ -86,7 +88,7 @@ func RunPreStartedFFmpegCmd(
 				activity.RecordHeartbeat(ctx, fmt.Sprintf("%4.1f%% completed", percent))
 
 				// Conditionally log FPS only if it's a video stream (currentFPS > 0)
-				if currentFPS > 0 {
+				if currentFPS != "" {
 					tlogger.Info("Progress",
 						"F", meta.LogIdentifier,
 						"idOrWorkdir", meta.TargetID,
