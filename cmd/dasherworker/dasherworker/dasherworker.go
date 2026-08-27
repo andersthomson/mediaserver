@@ -682,8 +682,13 @@ func (m TranscodingPipeline) Process(ctx workflow.Context, args shared.EncodeStr
 	t := transcodingOptionsRecorder.TranscodingOptionsRecord{
 		EncodeStream:        args,
 		Ffmpegargs:          ffmpegArgsExpanded,
-		Stderr:              ffmpegEncodeResp.Stderr,
 		MP4BoxDashReadyArgs: mp4boxargs,
+		Ffmpeg: transcodingOptionsRecorder.Invocation{
+			Dir:    "",
+			Args:   ffmpegArgsExpanded.Args,
+			Stdout: "",
+			Stderr: ffmpegEncodeResp.Stderr,
+		},
 		MP4Box: transcodingOptionsRecorder.Invocation{
 			Dir:    mp4boxresp.Dir,
 			Args:   mp4boxargs.MP4BoxArgs,
