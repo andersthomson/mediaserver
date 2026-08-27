@@ -412,7 +412,7 @@ func x264EncodingStrategy(gopFrames int, crf string, bitrate string) func(args s
 			shared.NewFFMpegArg(shared.KindString, "-preset:v"), shared.NewFFMpegArg(shared.KindString, args.Preset)}
 		ffmpegArgs = append(ffmpegArgs, tune("x264", args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs,
-			shared.NewFFMpegArg(shared.KindString, "-x264-params:v"), shared.NewFFMpegArg(shared.KindString, "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=0:open-gop=0:b-pyramid=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1"))
+			shared.NewFFMpegArg(shared.KindString, "-x264-params:v"), shared.NewFFMpegArg(shared.KindString, "keyint="+gopFramesStr+":min-keyint=1"+":scenecut=40:open-gop=0:b-pyramid=0:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)+":crf-max="+crfMax(crf)+":no-deblock=0:cabac=1:8x8dct=1"))
 
 		ffmpegArgs = append(ffmpegArgs, []shared.FFMpegArg{shared.NewFFMpegArg(shared.KindString, "-fps_mode"), shared.NewFFMpegArg(shared.KindString, "cfr")}...)
 		return ffmpegArgs
