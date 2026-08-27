@@ -12,7 +12,7 @@ import (
 
 // ExtractSubtitlesFromContainer calls the local ffmpeg binary to extract the
 // first subtitle track as a WebVTT data stream completely in memory.
-func extractSubtitlesFromContainer(ctx context.Context, videoPath string, stream string) (string, error) {
+func extractSubtitlesFromContainer(ctx context.Context, videoPath string, stream string, durationUs int64) (string, error) {
 	// Set a 30-second processing deadline safety context so a stuck file can't stall your backend
 
 	execCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
@@ -41,7 +41,7 @@ func extractSubtitlesFromContainer(ctx context.Context, videoPath string, stream
 	meta := encoder.ExecutionMetadata{
 		LogIdentifier:   "FfmpegSubtitleExtract",
 		TargetID:        videoPath,
-		TotalDurationUs: 0, // Pass if known to get heartbeats
+		TotalDurationUs: durationUs,
 	}
 
 	if err := cmd.Start(); err != nil {

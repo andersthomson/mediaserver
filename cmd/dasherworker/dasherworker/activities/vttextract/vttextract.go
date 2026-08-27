@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/durationDeriver"
 )
 
 type VttExtractor struct {
@@ -18,8 +19,13 @@ func (v *VttExtractor) ExtractVtt(ctx context.Context, inputID string, number in
 	_, m := v.Storage.ResolveInput(inputID)
 	configuredLanguage := m.Inputs[number].Language
 
+	deriver := durationDeriver.DurationDeriver{Storage: v.Storage}
+	var durationUs int64
+	if d, err := deriver.GetMediaDurationUsec(ctx, inputID, number, stream); err != nil {
+		durationUs = d
+	}
 	// Step 1: Extract the text stream via FFmpeg
-	vtt, err := extractSubtitlesFromContainer(ctx, videoPath, stream)
+	vtt, err := extractSubtitlesFromContainer(ctx, videoPath, stream, durationUs)
 	if err != nil {
 		return "", err
 	}
