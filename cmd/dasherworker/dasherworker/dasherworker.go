@@ -92,7 +92,7 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 	if _, err := CallVttStitch(ctx, M.Id, languages); err != nil {
 		return "", err
 	}
-	slog.Info("Sitched in languages", "languages", languages)
+	slog.Info("Stitched in languages", "languages", languages)
 	return "", nil
 
 }
