@@ -29,18 +29,18 @@ func (v *VttExtractor) ExtractVtt(ctx context.Context, inputID string, number in
 	if err != nil {
 		return "", err
 	}
-	slog.Info("Subs eextracted")
+	//slog.Info("Subtitles extracted")
 	// Step 2: Check if the file exhibits broken OTA broadcast timelines
 	if needsOtaFix(vtt) {
 		// Step 3: Run the forward-filling repair transformation logic in memory
 		vtt = fixOtaWebVTT(vtt)
-		slog.Info("subs fixed")
+		slog.Info("Applied OTA VTT fixup", "id", inputID, "number", number, "stream", stream)
 	}
 	var lang string
 	if configuredLanguage != "" {
 		lang = configuredLanguage
 	} else {
-		lang, err = getSubtitleLanguage(ctx, videoPath, stream)
+		lang, err = getSubtitlesLanguage(ctx, videoPath, stream)
 		slog.Info("lang fetched")
 		if err != nil {
 			return "", err

@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"os/exec"
 	"time"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
 // GetSubtitleLanguage connects to ffprobe to fetch the ISO language code
-// of the first subtitle track (s:0) inside the target video container.
-func getSubtitleLanguage(ctx context.Context, videoPath string, stream string) (string, error) {
+// of a subtitle track inside the target video container.
+func getSubtitlesLanguage(ctx context.Context, videoPath string, stream string) (string, error) {
 	// SubtitleMetadata holds the parsed stream language tags from ffprobe
 	type SubtitleMetadata struct {
 		Streams []struct {
@@ -32,7 +30,7 @@ func getSubtitleLanguage(ctx context.Context, videoPath string, stream string) (
 		"-of", "json",
 		videoPath,
 	}
-	spew.Dump(args)
+	//spew.Dump(args)
 	cmd := exec.CommandContext(probeCtx, "ffprobe", args...)
 
 	output, err := cmd.Output()
@@ -48,7 +46,7 @@ func getSubtitleLanguage(ctx context.Context, videoPath string, stream string) (
 	if err := json.Unmarshal(output, &metadata); err != nil {
 		return "", fmt.Errorf("failed to decode ffprobe metadata JSON: %w", err)
 	}
-	spew.Dump(metadata)
+	//spew.Dump(metadata)
 	// Fallback to "und" (Undetermined) if no subtitle track exists or language tags are blank
 	if len(metadata.Streams) == 0 || metadata.Streams[0].Tags.Language == "" {
 		return "und", nil
