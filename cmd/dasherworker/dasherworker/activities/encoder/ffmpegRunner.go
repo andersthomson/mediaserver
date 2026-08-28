@@ -123,7 +123,7 @@ func RunPreStartedFFmpegCmd(
 	}
 
 	if result.Stderr != "" {
-		slog.Error(fmt.Sprintf("%s diagnostic payload", meta.LogIdentifier), "stderr", result.Stderr)
+		slog.Error("stderr content", "F", meta.LogIdentifier, "stderr", result.Stderr)
 	}
 
 	// Structural interpretation of system exit states

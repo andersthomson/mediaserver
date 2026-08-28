@@ -13,7 +13,6 @@ import (
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mp4boxDashReady"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/transcodingOptionsRecorder"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-cmp/cmp"
 	"go.temporal.io/sdk/workflow"
 )
@@ -50,7 +49,11 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			spew.Dump(EvaluateDashPassThrough(VprobeRawData))
+			if _, x := EvaluateDashPassThrough(VprobeRawData); len(x) == 0 {
+				slog.Info("FIXME could be passed without transcode", "ShortName", M.ShortName, "number", idx, "stream", M.Inputs[idx].Stream)
+			} else {
+				slog.Info("Transcoding", "ShortName", M.ShortName, "number", idx, "stream", M.Inputs[idx].Stream, "reason", x)
+			}
 			break
 		}
 	}
@@ -77,7 +80,7 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 			if err := future.Get(ctx, &resp); err != nil {
 				return "", shared.Error("Child WF execution failed", "err", err)
 			}
-			spew.Dump(resp)
+			//spew.Dump(resp)
 			languages = append(languages, resp.Language)
 		default:
 			if err := future.Get(ctx, nil); err != nil {
@@ -594,7 +597,7 @@ func (m TranscodingPipeline) MP4BoxArgs(ctx workflow.Context, args shared.Encode
 func (m TranscodingPipeline) NeedsProcessing(t transcodingOptionsRecorder.TranscodingOptionsRecord, ffmpegArgsExpanded shared.FFMpegArgs, dashReadyArgs mp4boxDashReady.MP4BoxDashReadyArgs) string {
 	//If either of ffmpeg and mp4box cmd lines differ, we need (re)processing.
 	var diffs []string
-	if d := cmp.Diff(t.Ffmpeg.Args, ffmpegArgsExpanded); d != "" {
+	if d := cmp.Diff(t.Ffmpeg.Args, ffmpegArgsExpanded.Args); d != "" {
 		diffs = append(diffs, d)
 	}
 	if d := cmp.Diff(t.MP4BoxDashReadyArgs.MP4BoxArgs, dashReadyArgs.MP4BoxArgs); d != "" {

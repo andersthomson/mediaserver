@@ -51,13 +51,14 @@ func (r *RemoteEncode) EncodePrelude(ctx context.Context, args shared.EncodePrel
 }
 
 func (r *RemoteEncode) Encode(ctx context.Context, args shared.EncodeArgs) (shared.EncodeResp, error) {
-	sshTarget := fmt.Sprintf("%s@%s#%d", r.Username, r.Hostname, r.Port)
+	_, m := r.Storage.ResolveInput(args.ESA.InputID)
+	sshTarget := fmt.Sprintf("%s@%s#%d-%s@%s", r.Username, r.Hostname, r.Port, m.ShortName, args.ESA.Profile)
 	slog.Info("Start", "A", "RemoteEncode/Encode", "id", sshTarget)
 	defer slog.Info("Stop ", "A", "RemoteEncode/Encode", "id", sshTarget)
 
 	localPath := r.Storage.ResolveInputNumber(args.ESA.InputID, args.ESA.InputNo)
 	// Force nostats to prevent terminal graph corruption on the stdout line stream
-	remoteCmd := fmt.Sprintf("cd '%s' && %s %s -progress - -nostats",
+	remoteCmd := fmt.Sprintf("cd '%s' && exec %s %s -progress - -nostdin -nostats",
 		r.remoteDir(ctx, filepath.Base(localPath)),
 		r.Ffmpeg,
 		shellquote.Join(args.FfmpegArgs.Args...),
@@ -66,9 +67,9 @@ func (r *RemoteEncode) Encode(ctx context.Context, args shared.EncodeArgs) (shar
 
 	var cmd *exec.Cmd
 	if r.Username != "" {
-		cmd = exec.CommandContext(ctx, "ssh", "-p", strconv.Itoa(r.Port), fmt.Sprintf("%s@%s", r.Username, r.Hostname), remoteCmd)
+		cmd = exec.CommandContext(ctx, "ssh", "-t", "-t", "-p", strconv.Itoa(r.Port), fmt.Sprintf("%s@%s", r.Username, r.Hostname), remoteCmd)
 	} else {
-		cmd = exec.CommandContext(ctx, "ssh", "-p", strconv.Itoa(r.Port), r.Hostname, remoteCmd)
+		cmd = exec.CommandContext(ctx, "ssh", "-t", "-t", "-p", strconv.Itoa(r.Port), r.Hostname, remoteCmd)
 	}
 
 	// Prepare data preservation matrices

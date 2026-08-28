@@ -14,7 +14,6 @@ import (
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/pkg/errors"
 )
 
@@ -36,7 +35,7 @@ type Finalize struct {
 func (f *Finalize) Finalize(ctx context.Context, args FinalizeArgs) (FinalizeResp, error) {
 	slog.Info("Start", "A", "Finalize", "InputID", args.InputID)
 	defer slog.Info("Stop ", "A", "Finalize", "InputID)", args.InputID)
-	spew.Dump(args)
+	//spew.Dump(args)
 	manifestPath := f.Storage.AudioVideoManifestFilePath(args.InputID)
 	manifestFname := filepath.Base(manifestPath)
 
@@ -64,7 +63,7 @@ func (f *Finalize) Finalize(ctx context.Context, args FinalizeArgs) (FinalizeRes
 		if err != nil {
 			return FinalizeResp{}, shared.Fatal("Failed to find codec", "match", match, "err", err)
 		}
-		spew.Dump(codec)
+		//spew.Dump(codec)
 		switch {
 		case shared.IsVideoCodec(codec):
 			props, err := GetSourceProperties(ctx, ProbeParams{
@@ -100,7 +99,7 @@ func (f *Finalize) Finalize(ctx context.Context, args FinalizeArgs) (FinalizeRes
 	if err != nil {
 		return FinalizeResp{}, shared.Error("File to put into mpd manifest has fractional fps", "fps", fps, "matches", matches)
 	}
-	spew.Dump(gopFrames)
+	//spew.Dump(gopFrames)
 
 	if args.Ensure {
 		//If manifest newer than all referenced files, skip creating it
