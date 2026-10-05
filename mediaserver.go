@@ -216,7 +216,7 @@ type posterURLGenI interface {
 }
 
 func posterURLGen[T posterURLGenI](p T) string {
-	return Config.WebRoot + "/item/" + url.PathEscape(p.ID()) + "/part/" + url.PathEscape(p.PosterURLPath())
+	return Config.WebRoot + "/item/" + url.PathEscape(p.PrettyID()) + "/part/" + url.PathEscape(p.PosterURLPath())
 }
 
 type dataSourceServer struct {
