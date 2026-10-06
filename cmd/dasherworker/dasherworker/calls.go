@@ -12,6 +12,7 @@ import (
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/keyframeHistogram"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mp4boxDashReady"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mspreader"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/msswriter"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/transcodingOptionsRecorder"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/vttextract"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/vttstitch"
@@ -96,4 +97,9 @@ func CallExtractVtt(ctx workflow.Context, inputID string, inputNo int, stream st
 func CallVttStitch(ctx workflow.Context, inputID string, languages []string) (string, error) {
 	var a *vttstitch.VttStitcher
 	return CallActivityIO[any, string](ctx, a.Stitch, inputID, languages)
+}
+
+func CallMssWrite(ctx workflow.Context, inputID string, mss scrape.Mss) (string, error) {
+	var a *msswriter.MssWriter
+	return CallActivityIO[any, string](ctx, a.MssWrite, inputID, mss)
 }

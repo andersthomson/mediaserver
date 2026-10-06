@@ -229,12 +229,55 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 	if res.MpdFile != "" && res.M3U8File != "" {
 		Logger.Info("Movie has two streaming formats", "shortname", res.shortName)
 	}
+	//FIXME: This is really a streaming MP4 property
 	res.SubsServer.AddSubsFromMP4Filename(caches[0]+"/"+res.ID()+"/mp4/", basename(m.ShortName+".mp4"))
 
+	//FIXME: This is really a streaming MP4 property
 	res.language = m.Audio.Language
+
 	res.tags["dir"] = append(res.tags["dir"], filepath.Base(dir))
 	res.tags["fulldir"] = append(res.tags["fulldir"], (dir))
 	res.tags["scraper"] = append(res.tags["scraper"], "TMDBMovie")
+	//spew.Dump(res)
+	return res, true
+
+}
+
+func TMDBMovieFromMss(streamDir string, m Mss) (*TMDBMovie, bool) {
+	res := &TMDBMovie{
+		tags: make(map[string][]string, 4),
+	}
+
+	if !extractTMDBMovieData(res, *m.Tmdb.MovieId) {
+		return nil, false
+	}
+	res.id = m.Id
+	res.shortName = m.ShortName
+	if m.Playouts.HasDASHManifest {
+		u := filepath.Join(streamDir, res.PrettyID(), "/dash/", "manifest.mpd")
+		if _, err := os.Stat(u); err == nil {
+			res.MpdFile = u
+		}
+
+	}
+	if m.Playouts.HasHLSMaster {
+		u := filepath.Join(streamDir, res.PrettyID(), "/hls/", "master.m3u8")
+		if _, err := os.Stat(u); err == nil {
+			res.M3U8File = u
+		}
+	}
+	if res.MpdFile != "" && res.M3U8File != "" {
+		Logger.Info("Movie has two streaming formats", "shortname", res.shortName)
+	}
+	//FIXME: This is really a streaming MP4 property
+	//res.SubsServer.AddSubsFromMP4Filename(streamDir+"/"+res.ID()+"/mp4/", basename(m.ShortName+".mp4"))
+
+	//FIXME: This is really a streaming MP4 property
+	//res.language = m.Audio.Language
+
+	//res.tags["dir"] = append(res.tags["dir"], filepath.Base(dir))
+	//res.tags["fulldir"] = append(res.tags["fulldir"], (dir))
+	//res.tags["scraper"] = append(res.tags["scraper"], "TMDBMovie")
 	//spew.Dump(res)
 	return res, true
 
@@ -267,7 +310,7 @@ func TMDBMovieFromGenerate(caches []string, g map[string]string, dir string) (*T
 		//case "mp4":
 		//	res.MediaFile = caches[0] + "/" + res.ID() + "/mp4/" + basename(g["INPUT"]) + ".mp4"
 		case "dash":
-			res.MpdFile = caches[0] + "/" + res.ID() + "/dash/" + "manifest.mpd"
+
 		default:
 			Logger.Warn("unsupported serving method. Skipping", "dir", dir, "input", g["INPUT"], "method", method)
 			return nil, false

@@ -3,8 +3,10 @@ package main
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log/slog"
 	"math/rand"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -62,26 +65,29 @@ func ScanDir(dir string) []datasource.DataSource {
 		return nil
 	}
 	res := make([]datasource.DataSource, 0, len(entries))
-	for _, d := range entries {
-		/*if strings.HasSuffix(d.Name(), ".mp4") {
-			if itm := scrape.ScrapeFile(dir, d.Name()); itm != nil {
-				res = append(res, itm)
-			}
+	for _, entry := range entries {
+		jsonFile, err := os.Open(filepath.Join(dir, entry.Name(), "dash", "mediaserver.mss"))
+		// if we os.Open returns an error then handle it
+		if err != nil {
+			fmt.Println(err)
 			continue
 		}
-		*/
-		/*	if strings.HasSuffix(d.Name(), ".generate") {
-				if itm := scrape.DataSourceFromGenerate(Config.Caches, dir, d.Name()); itm != nil {
-					res = append(res, itm)
-				}
-				continue
-			}
-		*/
-		if strings.HasSuffix(d.Name(), ".msp") {
-			if itm := scrape.DataSourceFromMsp(Config.Caches, dir, d.Name()); itm != nil {
-				res = append(res, itm)
-			}
+		defer jsonFile.Close()
+		byteValue, err := io.ReadAll(jsonFile)
+		if err != nil {
+			fmt.Println("Error reading file:", err)
 			continue
+		}
+		var mss scrape.Mss
+		err = json.Unmarshal(byteValue, &mss)
+		if err != nil {
+			fmt.Println("Error unmarshalling JSON:", err)
+			continue
+		}
+
+		if itm, ok := scrape.TMDBMovieFromMss(dir, mss); itm != nil && ok {
+			res = append(res, itm)
+			fmt.Printf("Scraped %s\n", filepath.Join(dir, entry.Name()))
 		}
 	}
 	return res

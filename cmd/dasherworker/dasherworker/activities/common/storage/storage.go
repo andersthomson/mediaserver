@@ -142,6 +142,10 @@ func (s *Storage) TranscodedRepresentationFilePath(args shared.EncodeStreamArgs)
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+"-transcoded.mp4")
 }
 
+func (s *Storage) MssFilePath(inputID string) string {
+	return filepath.Join(s.ProdDir(inputID), "mediaserver.mss")
+}
+
 func (s *Storage) DasherReadyRepresentationManifestFilePath(args shared.EncodeStreamArgs) string {
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+"-manifest.mpd")
 }

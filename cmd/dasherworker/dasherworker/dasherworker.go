@@ -13,6 +13,7 @@ import (
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mp4boxDashReady"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/transcodingOptionsRecorder"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
+	"github.com/andersthomson/mediaserver/scrape"
 	"github.com/google/go-cmp/cmp"
 	"go.temporal.io/sdk/workflow"
 )
@@ -22,7 +23,7 @@ var targets = []Target{
 	{"x264", "low"},
 	//{"x265", "high"},
 	//{"x265", "low"},
-	//{"aac", ""},
+	{"aac", ""},
 	{"vtt", ""},
 }
 
@@ -96,6 +97,22 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 		return "", err
 	}
 	slog.Info("Stitched in languages", "languages", languages)
+
+	mss := scrape.Mss{
+		Id:        M.Id,
+		ShortName: M.ShortName,
+		Playouts: scrape.Playouts{
+			HasDASHManifest: true,
+		},
+		Tmdb: &scrape.Tmdb{
+			MovieId: M.Tmdb.MovieId,
+		},
+	}
+
+	if _, err := CallMssWrite(ctx, M.Id, mss); err != nil {
+		return "", err
+	}
+
 	return "", nil
 
 }
