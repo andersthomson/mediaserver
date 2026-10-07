@@ -1,8 +1,11 @@
 package shared
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 
@@ -78,4 +81,41 @@ func DashMs2(gopFrames int, fps int) string {
 
 	// 4. Return the combined duration of the stacked GOPs
 	return fmt.Sprintf("%d", gopCount*singleGopMs)
+}
+
+func SaveStructToJSON(filename string, data interface{}) error {
+	// 1. Convert struct to pretty-printed JSON bytes
+	// MarshallIndent adds spacing and line breaks for readability on disk
+	jsonData, err := json.MarshalIndent(data, "", "    ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal struct to JSON: %w", err)
+	}
+
+	// 2. Write bytes to disk
+	err = os.WriteFile(filename, jsonData, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to write JSON file to disk: %w", err)
+	}
+
+	return nil
+}
+
+func LoadJSONToStruct(filename string, target interface{}) error {
+	// 1. Read the raw bytes from the file
+	jsonData, err := os.ReadFile(filename)
+	if err != nil {
+		// Provide a helpful error if the file simply doesn't exist
+		if errors.Is(err, os.ErrNotExist) {
+			slog.Info("File not found", "filename", filename)
+		}
+		return err
+	}
+
+	// 2. Parse the bytes into the struct pointer
+	err = json.Unmarshal(jsonData, target)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+
+	return nil
 }

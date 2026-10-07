@@ -2,9 +2,6 @@ package transcodingOptionsRecorder
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -38,7 +35,7 @@ func (t *TranscodingOptionsRecorder) RecordTranscodingOptions(_ context.Context,
 	base := t.Storage.DasherReadyRepresentationTranscodingLogFilePath(tr.EncodeStream)
 	fname := base + "-" + stamp
 
-	err := SaveStructToJSON(fname, tr)
+	err := shared.SaveStructToJSON(fname, tr)
 	if err != nil {
 		return "", shared.FatalError(err)
 	}
@@ -53,7 +50,7 @@ func (t *TranscodingOptionsRecorder) RecordTranscodingOptions(_ context.Context,
 
 func (t *TranscodingOptionsRecorder) LoadTranscodingOptions(_ context.Context, e shared.EncodeStreamArgs) (*TranscodingOptionsRecord, error) {
 	var tr TranscodingOptionsRecord
-	err := LoadJSONToStruct(t.Storage.DasherReadyRepresentationTranscodingLogFilePath(e), &tr)
+	err := shared.LoadJSONToStruct(t.Storage.DasherReadyRepresentationTranscodingLogFilePath(e), &tr)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -61,41 +58,4 @@ func (t *TranscodingOptionsRecorder) LoadTranscodingOptions(_ context.Context, e
 		return nil, shared.Fatal(err.Error())
 	}
 	return &tr, err
-}
-
-func SaveStructToJSON(filename string, data interface{}) error {
-	// 1. Convert struct to pretty-printed JSON bytes
-	// MarshallIndent adds spacing and line breaks for readability on disk
-	jsonData, err := json.MarshalIndent(data, "", "    ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal struct to JSON: %w", err)
-	}
-
-	// 2. Write bytes to disk
-	err = os.WriteFile(filename, jsonData, 0600)
-	if err != nil {
-		return fmt.Errorf("failed to write JSON file to disk: %w", err)
-	}
-
-	return nil
-}
-
-func LoadJSONToStruct(filename string, target interface{}) error {
-	// 1. Read the raw bytes from the file
-	jsonData, err := os.ReadFile(filename)
-	if err != nil {
-		// Provide a helpful error if the file simply doesn't exist
-		if errors.Is(err, os.ErrNotExist) {
-			slog.Info("File not found", "filename", filename)
-		}
-		return err
-	}
-
-	// 2. Parse the bytes into the struct pointer
-	err = json.Unmarshal(jsonData, target)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
-	}
-
-	return nil
 }
