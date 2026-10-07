@@ -2,14 +2,10 @@ package transcodingOptionsRecorder
 
 import (
 	"context"
-	"os"
-	"path/filepath"
-	"time"
 
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mp4boxDashReady"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
-	"github.com/pkg/errors"
 )
 
 type Invocation struct {
@@ -30,32 +26,13 @@ type TranscodingOptionsRecorder struct {
 	Storage *storage.Storage
 }
 
-func (t *TranscodingOptionsRecorder) RecordTranscodingOptions(_ context.Context, tr TranscodingOptionsRecord) (string, error) {
-	stamp := time.Now().Format("20060102150405")
+func (t *TranscodingOptionsRecorder) RecordTranscodingOptions(ctx context.Context, tr TranscodingOptionsRecord) (string, error) {
 	base := t.Storage.DasherReadyRepresentationTranscodingLogFilePath(tr.EncodeStream)
-	fname := base + "-" + stamp
-
-	err := shared.SaveStructToJSON(fname, tr)
-	if err != nil {
-		return "", shared.FatalError(err)
-	}
-	// Intentional: OK if the name does not exist.
-	_ = os.Rename(base, base+".old")
-
-	if err := os.Symlink(filepath.Base(fname), base); err != nil {
-		return "", shared.FatalError(err)
-	}
-	return "", nil
+	return shared.RecordOptions(ctx, base, tr)
 }
 
-func (t *TranscodingOptionsRecorder) LoadTranscodingOptions(_ context.Context, e shared.EncodeStreamArgs) (*TranscodingOptionsRecord, error) {
+func (t *TranscodingOptionsRecorder) LoadTranscodingOptions(ctx context.Context, e shared.EncodeStreamArgs) (*TranscodingOptionsRecord, error) {
 	var tr TranscodingOptionsRecord
-	err := shared.LoadJSONToStruct(t.Storage.DasherReadyRepresentationTranscodingLogFilePath(e), &tr)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, shared.Fatal(err.Error())
-	}
+	err := shared.LoadOptions(ctx, t.Storage.DasherReadyRepresentationTranscodingLogFilePath(e), &tr)
 	return &tr, err
 }

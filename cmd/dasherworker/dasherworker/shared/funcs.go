@@ -1,13 +1,16 @@
 package shared
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
 	"go.temporal.io/sdk/temporal"
@@ -119,4 +122,32 @@ func LoadJSONToStruct(filename string, target interface{}) error {
 	}
 
 	return nil
+}
+
+func RecordOptions(_ context.Context, base string, strct any) (string, error) {
+	stamp := time.Now().Format("20060102150405")
+	fname := base + "-" + stamp
+
+	err := SaveStructToJSON(fname, strct)
+	if err != nil {
+		return "", FatalError(err)
+	}
+	// Intentional: OK if the name does not exist.
+	_ = os.Rename(base, base+".old")
+
+	if err := os.Symlink(filepath.Base(fname), base); err != nil {
+		return "", FatalError(err)
+	}
+	return "", nil
+}
+
+func LoadOptions(_ context.Context, path string, dst any) error {
+	err := LoadJSONToStruct(path, dst)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return Fatal(err.Error())
+	}
+	return err
 }
