@@ -19,6 +19,7 @@ import (
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mspreader"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/msswriter"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/remoteEncode"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/thumbnailer"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/transcodingOptionsRecorder"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/vttextract"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/vttstitch"
@@ -148,6 +149,7 @@ func main() {
 	w.RegisterWorkflow(dasherworker.CreateRepresentation)
 
 	w.RegisterActivity(mspreader.Read)
+	w.RegisterActivity(&thumbnailer.Thumbnailer{Storage: storage})
 	w.RegisterActivity(&msswriter.MssWriter{Storage: storage})
 	w.RegisterActivity(&localEncode.LocalEncode{Storage: storage})
 	w.RegisterActivity(&vttstitch.VttStitcher{Storage: storage})

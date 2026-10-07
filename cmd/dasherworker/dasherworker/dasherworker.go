@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -14,15 +15,16 @@ import (
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/transcodingOptionsRecorder"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/andersthomson/mediaserver/scrape"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-cmp/cmp"
 	"go.temporal.io/sdk/workflow"
 )
 
 var targets = []Target{
 	//{"x264", "high"},
-	{"x264", "low"},
+	//{"x264", "low"},
 	//{"x265", "high"},
-	//{"x265", "low"},
+	{"x265", "low"},
 	{"aac", ""},
 	{"vtt", ""},
 }
@@ -74,6 +76,8 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 		}))
 	}
 	var languages []string
+	var responses []CreateRepresentationResp
+	spew.Dump(responses)
 	for idx, future := range futures {
 		switch {
 		case shared.IsSubtitlesCodec(targets[idx].Codec):
@@ -84,20 +88,32 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 			//spew.Dump(resp)
 			languages = append(languages, resp.Language)
 		default:
-			if err := future.Get(ctx, nil); err != nil {
+			var resp CreateRepresentationResp
+			if err := future.Get(ctx, &resp); err != nil {
 				return "", shared.Error("Child WF execution failed", "err", err)
 			}
+			responses = append(responses, resp)
 		}
 	}
 
 	if _, err = CallFinalize(ctx, M.Id, true); err != nil {
-		return "", err
+		return "", shared.FatalError(err)
 	}
 	if _, err := CallVttStitch(ctx, M.Id, languages); err != nil {
-		return "", err
+		return "", shared.FatalError(err)
 	}
 	slog.Info("Stitched in languages", "languages", languages)
 
+	//FIXME should be thhe smallest size, really...
+	idx := slices.IndexFunc(responses, func(r CreateRepresentationResp) bool {
+		return shared.IsVideoCodec(r.Eargs.Codec)
+	})
+	if idx != -1 {
+		//We have a video.... make thumbs from it
+		if _, err := CallThumbnail(ctx, responses[idx].Eargs); err != nil {
+			return "", shared.FatalError(err)
+		}
+	}
 	mss := scrape.Mss{
 		Id:        M.Id,
 		ShortName: M.ShortName,
@@ -136,6 +152,7 @@ type CreateRepresentationArgs struct {
 
 type CreateRepresentationResp struct {
 	Language string //Returned by VttEx
+	Eargs    *shared.EncodeStreamArgs
 }
 
 func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (CreateRepresentationResp, error) {
@@ -210,7 +227,9 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 		//We have a history
 		if diff := factory.NeedsProcessing(*t, ffmpegArgs, mp4boxArgs); diff == "" {
 			slog.Info("Already processed", "ShortName", M.ShortName, "inputID", M.Id, "stream", M.Inputs[idx].Stream, "target", args.Target)
-			return CreateRepresentationResp{}, nil
+			return CreateRepresentationResp{
+				Eargs: Eargs,
+			}, nil
 		} else {
 			slog.Info("Need reprocessing", "ShortName", M.ShortName, "InputID", M.Id, "Stream", M.Inputs[idx].Stream, "target", args.Target, "new trancoding diff", diff)
 		}
@@ -219,7 +238,9 @@ func CreateRepresentation(ctx workflow.Context, args CreateRepresentationArgs) (
 	if err != nil {
 		slog.Error("Pipeline processing failed", "ShortName", M.ShortName, "InputID", M.Id, "Stream", M.Inputs[idx].Stream, "target", args.Target, "err", err)
 	}
-	return CreateRepresentationResp{}, nil
+	return CreateRepresentationResp{
+		Eargs: Eargs,
+	}, nil
 
 }
 func crf(codec string, profile string) string {
@@ -452,7 +473,7 @@ func x265EncodingStrategy(gopFrames int, crf string, bitrate string) func(args s
 		ffmpegArgs = append(ffmpegArgs, tune("x265", args.Kind)...)
 		ffmpegArgs = append(ffmpegArgs,
 			shared.NewFFMpegArg(shared.KindString, "-tag:v"), shared.NewFFMpegArg(shared.KindString, "hvc1"),
-			shared.NewFFMpegArg(shared.KindString, "-x265-params:v"), shared.NewFFMpegArg(shared.KindString, "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":no-scenecut=1:scenecut-intra=1:open-gop=1:b-intra=1:bframes=4:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)))
+			shared.NewFFMpegArg(shared.KindString, "-x265-params:v"), shared.NewFFMpegArg(shared.KindString, "keyint="+gopFramesStr+":min-keyint="+gopFramesStr+":scenecut=40:scenecut-intra=0:open-gop=0:b-intra=1:bframes=4:vbv-maxrate="+bitrate+":vbv-bufsize="+bufSize(bitrate)))
 		ffmpegArgs = append(ffmpegArgs, []shared.FFMpegArg{shared.NewFFMpegArg(shared.KindString, "-fps_mode"), shared.NewFFMpegArg(shared.KindString, "cfr")}...)
 		return ffmpegArgs
 	}

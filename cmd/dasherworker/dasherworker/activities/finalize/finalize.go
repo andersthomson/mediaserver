@@ -148,7 +148,11 @@ proceed:
 			return FinalizeResp{}, err
 		}
 		if !equal {
-			return FinalizeResp{}, shared.Error("Generated dash file not equal", "orig", in, "dash", dName)
+			return FinalizeResp{
+				DidExecute:   true,
+				MP4BoxStdout: stdoutBuf.String(),
+				MP4BoxStderr: stderrBuf.String(),
+			}, shared.Error("Generated dash file not equal", "orig", in, "dash", dName)
 		}
 		if err := os.Remove(filepath.Join(targetDir, dName)); err != nil {
 			return FinalizeResp{}, shared.Error("os.Remove failed", "filename", filepath.Join(targetDir, dName), "err", err)

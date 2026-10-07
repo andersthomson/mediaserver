@@ -790,6 +790,7 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
 	type dataT struct {
 		ManifestURL   string
 		MediaURL      string
+		ThumbnailsURL string
 		SubsURLs      []datasource.Subs
 		Title         string
 		SeasonEpisode string
@@ -813,6 +814,7 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
 	if u := hlsURL(ds); u != "" {
 		data.ManifestURL = u
 	}
+	data.ThumbnailsURL = strings.Replace(data.ManifestURL, "manifest.mpd", "thumbnails.vtt", 1)
 	data.SubsURLs = datasource.SubsSliceOrZero(ds)
 	data.SeasonEpisode = seasonEpisode(ds)
 	data.Overview = datasource.OverviewOrZero(ds)
@@ -856,7 +858,7 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
 
     // Configure UI for Cast and CC visibility
     ui.configure({
-      'controlPanelElements': ['play_pause', 'time_and_duration', 'spacer', 'captions', 'cast', 'fullscreen']
+      'controlPanelElements': ['play_pause', 'time_and_duration', 'spacer', 'mute', 'volume','captions', 'cast', 'fullscreen']
     });
 
     try {
@@ -865,6 +867,11 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
      // await player.addTextTrackAsync(captionUri, 'en', 'captions', 'text/vtt');
     } catch (e) {
       console.error('Error loading:', e);
+    }
+  try {
+  await player.addThumbnailsTrack('{{.ThumbnailsURL}}');
+   } catch (e) {
+      console.error('Error loading vtt:', e);
     }
   }
 

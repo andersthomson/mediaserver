@@ -13,6 +13,7 @@ import (
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mp4boxDashReady"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mspreader"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/msswriter"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/thumbnailer"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/transcodingOptionsRecorder"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/vttextract"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/vttstitch"
@@ -102,4 +103,9 @@ func CallVttStitch(ctx workflow.Context, inputID string, languages []string) (st
 func CallMssWrite(ctx workflow.Context, inputID string, mss scrape.Mss) (string, error) {
 	var a *msswriter.MssWriter
 	return CallActivityIO[any, string](ctx, a.MssWrite, inputID, mss)
+}
+
+func CallThumbnail(ctx workflow.Context, Eargs *shared.EncodeStreamArgs) (string, error) {
+	var a *thumbnailer.Thumbnailer
+	return CallActivityIO[any, string](ctx, a.Thumbnail, Eargs)
 }
