@@ -91,6 +91,7 @@ func SaveStructToJSON(filename string, data interface{}) error {
 		return fmt.Errorf("failed to marshal struct to JSON: %w", err)
 	}
 
+	jsonData = append(jsonData, '\n')
 	// 2. Write bytes to disk
 	err = os.WriteFile(filename, jsonData, 0600)
 	if err != nil {
