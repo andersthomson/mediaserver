@@ -150,6 +150,10 @@ func (s *Storage) ThumbnailsVTTFilePath(inputID string) string {
 	return filepath.Join(s.ProdDir(inputID), "thumbnails.vtt")
 }
 
+func (s *Storage) ThumbnailsVTTTranscodingLogFilePath(inputID string) string {
+	return filepath.Join(s.ProdDir(inputID), "thumbnails.vtt.transcodinglog")
+}
+
 func (s *Storage) DasherReadyRepresentationManifestFilePath(args shared.EncodeStreamArgs) string {
 	return filepath.Join(s.ProdDir(args.InputID), representation(args)+"-manifest.mpd")
 }

@@ -118,7 +118,7 @@ func LoadJSONToStruct(filename string, target interface{}) error {
 	// 2. Parse the bytes into the struct pointer
 	err = json.Unmarshal(jsonData, target)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
+		return fmt.Errorf("failed to unmarshal JSON: %w", err, "value", string(jsonData))
 	}
 
 	return nil

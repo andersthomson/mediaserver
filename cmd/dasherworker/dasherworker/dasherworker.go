@@ -12,6 +12,7 @@ import (
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/deinterlacer"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/localEncode"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/mp4boxDashReady"
+	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/thumbnailer"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/transcodingOptionsRecorder"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 	"github.com/andersthomson/mediaserver/scrape"
@@ -110,7 +111,15 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 	})
 	if idx != -1 {
 		//We have a video.... make thumbs from it
-		if _, err := CallThumbnail(ctx, responses[idx].Eargs); err != nil {
+		thumbnailConfig := thumbnailer.ThumbnailConfig{
+			TileWidth:       160,
+			TileHeight:      90,
+			GridCols:        5,
+			GridRows:        5,
+			IntervalSeconds: 2, // 1 thumbnail every 2 seconds
+			ImagePrefix:     "thumb_",
+		}
+		if _, err := CallThumbnail(ctx, responses[idx].Eargs, thumbnailConfig); err != nil {
 			return "", shared.FatalError(err)
 		}
 	}

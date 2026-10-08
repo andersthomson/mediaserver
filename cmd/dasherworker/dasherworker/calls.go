@@ -105,7 +105,7 @@ func CallMssWrite(ctx workflow.Context, inputID string, mss scrape.Mss) (string,
 	return CallActivityIO[any, string](ctx, a.MssWrite, inputID, mss)
 }
 
-func CallThumbnail(ctx workflow.Context, Eargs *shared.EncodeStreamArgs) (string, error) {
+func CallThumbnail(ctx workflow.Context, Eargs *shared.EncodeStreamArgs, config thumbnailer.ThumbnailConfig) (string, error) {
 	var a *thumbnailer.Thumbnailer
-	return CallActivityIO[any, string](ctx, a.Thumbnail, Eargs)
+	return CallActivityIO[any, string](ctx, a.Thumbnail, Eargs, config)
 }

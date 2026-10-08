@@ -10,10 +10,10 @@ type Msp struct {
 	ShortName string
 	Tmdb      TmdbT
 	Inputs    []InputT
-	Audio Audio
+	Audio     Audio
 }
 type Audio struct {
-       Language string
+	Language string
 }
 
 type TmdbT struct {
@@ -22,7 +22,6 @@ type TmdbT struct {
 	Season   *int
 	Episode  *int
 }
-
 
 type AudioT struct {
 	Language string

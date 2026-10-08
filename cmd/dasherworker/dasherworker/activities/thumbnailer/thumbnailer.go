@@ -5,61 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/common/storage"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/activities/encoder"
 	"github.com/andersthomson/mediaserver/cmd/dasherworker/dasherworker/shared"
 )
-
-type Thumbnailer struct {
-	Storage *storage.Storage
-}
-
-func (t *Thumbnailer) Thumbnail(ctx context.Context, args shared.EncodeStreamArgs) error {
-	config := ThumbnailConfig{
-		TileWidth:       160,
-		TileHeight:      90,
-		GridCols:        5,
-		GridRows:        5,
-		IntervalSeconds: 2, // 1 thumbnail every 2 seconds
-		ImagePrefix:     "thumb_",
-	}
-
-	inputVideo := t.Storage.DasherReadyRepresentationFilePath(args)
-
-	// 1. Automatically fetch the exact duration via ffprobe
-	fmt.Println("Analyzing video duration...")
-	duration, err := getVideoDuration(inputVideo)
-	if err != nil {
-		fmt.Printf("Error probing video: %v\n", err)
-		return err
-	}
-	fmt.Printf("Detected Video Duration: %d seconds\n", duration)
-
-	// 2. Automatically extract sheets using FFmpeg
-	fmt.Println("Extracting image grid sheets via FFmpeg...")
-	outputDir := filepath.Dir(inputVideo)
-	if err := executeFFmpegExtract(ctx, inputVideo, outputDir, config, int64(duration)*1000*1000); err != nil {
-		fmt.Printf("Error extracting images: %v\n", err)
-		return err
-	}
-
-	// 3. Automatically generate the clean WebVTT layout map
-	vttOutput := t.Storage.ThumbnailsVTTFilePath(args.InputID)
-	fmt.Printf("Generating fully indexed metadata file: %s...\n", vttOutput)
-	if err := generateVTT(vttOutput, duration, config); err != nil {
-		fmt.Printf("Error generating VTT file: %v\n", err)
-		return err
-	}
-
-	fmt.Println("Automation complete! All assets are fully synchronized.")
-	return nil
-}
 
 type ThumbnailConfig struct {
 	TileWidth       int
@@ -68,6 +25,75 @@ type ThumbnailConfig struct {
 	GridRows        int
 	IntervalSeconds int
 	ImagePrefix     string
+}
+
+type Thumbnailer struct {
+	Storage *storage.Storage
+}
+
+func (t *Thumbnailer) Thumbnail(ctx context.Context, args shared.EncodeStreamArgs, config ThumbnailConfig) error {
+	type Invocation struct {
+		Dir      string
+		Args     []string
+		Stdout   string
+		Stderr   string
+		ExitCode int
+	}
+	type ThumbnailRecord struct {
+		Config ThumbnailConfig
+		Ffmpeg Invocation
+	}
+
+	inputVideo := t.Storage.DasherReadyRepresentationFilePath(args)
+	vttOutput := t.Storage.ThumbnailsVTTFilePath(args.InputID)
+	vttOutputLog := t.Storage.ThumbnailsVTTTranscodingLogFilePath(args.InputID)
+
+	// 1. Automatically fetch the exact duration via ffprobe
+	slog.Info("Analyzing video duration...")
+	duration, err := getVideoDuration(inputVideo)
+	if err != nil {
+		slog.Error("Error probing video", "inputVideo", inputVideo, "err", err)
+		return shared.FatalError(err)
+	}
+	slog.Info("Detected Video Duration", "vttOutput", vttOutput, "duarion", duration)
+
+	outputDir := filepath.Dir(inputVideo)
+	ffmpegExtractArgs := ffmpegExtractArguments(inputVideo, outputDir, config)
+
+	var tr ThumbnailRecord
+	err = shared.LoadOptions(ctx, vttOutputLog, &tr)
+	if err == nil {
+		if tr.Config == config && slices.Equal(tr.Ffmpeg.Args, ffmpegExtractArgs) {
+			slog.Info("Thumbs already extracted.Skipping", "vttOutput", vttOutput)
+			return nil
+		}
+	}
+
+	// 2. Automatically extract sheets using FFmpeg
+	slog.Info("Extracting image grid sheets via FFmpeg...")
+	stdout, stderr, exitCode, err := executeFFmpegExtract(ctx, int64(duration)*1000*1000, inputVideo, ffmpegExtractArgs)
+	if err != nil {
+		slog.Info("Error extracting images", "vttOutput", vttOutput, "err", err)
+		return shared.FatalError(err)
+	}
+
+	// 3. Automatically generate the clean WebVTT layout map
+	slog.Info("Generating fully indexed metadata file", "vttOutput", vttOutput)
+	if err := generateVTT(vttOutput, duration, config); err != nil {
+		slog.Error("Error generating VTT file", "err", err)
+		return shared.FatalError(err)
+	}
+	shared.RecordOptions(ctx, vttOutputLog, ThumbnailRecord{
+		Config: config,
+		Ffmpeg: Invocation{
+			Dir:      "",
+			Args:     ffmpegExtractArgs,
+			Stdout:   stdout,
+			Stderr:   stderr,
+			ExitCode: exitCode,
+		},
+	})
+	return nil
 }
 
 // FFProbeResult maps the required json metadata outputs from the video container
@@ -105,8 +131,7 @@ func getVideoDuration(videoPath string) (int, error) {
 	return int(math.Ceil(durationFloat)), nil
 }
 
-// executeFFmpegExtract calls the time-based sprite tile system natively
-func executeFFmpegExtract(ctx context.Context, videoPath, outputDir string, config ThumbnailConfig, durationUs int64) error {
+func ffmpegExtractArguments(videoPath, outputDir string, config ThumbnailConfig) []string {
 	fpsParam := fmt.Sprintf("fps=1/%d,scale=%d:%d,tile=%dx%d",
 		config.IntervalSeconds,
 		config.TileWidth,
@@ -117,14 +142,7 @@ func executeFFmpegExtract(ctx context.Context, videoPath, outputDir string, conf
 
 	outputPattern := filepath.Join(outputDir, config.ImagePrefix+"%04d.jpg")
 
-	pr, pw, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-	defer pr.Close()
-
-	cmd := exec.CommandContext(ctx, "ffmpeg",
-
+	return []string{
 		"-y", // Automatically overwrite existing files
 		"-i", videoPath,
 		"-vf", fpsParam,
@@ -133,6 +151,19 @@ func executeFFmpegExtract(ctx context.Context, videoPath, outputDir string, conf
 		outputPattern,
 		"-nostats",
 		"-progress", "pipe:3",
+	}
+}
+
+// executeFFmpegExtract calls the time-based sprite tile system natively
+func executeFFmpegExtract(ctx context.Context, durationUs int64, videoPath string, ffmpegargs []string) (string, string, int, error) {
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return "", "", 0, err
+	}
+	defer pr.Close()
+
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		ffmpegargs...,
 	)
 	cmd.ExtraFiles = []*os.File{pw}
 
@@ -148,17 +179,17 @@ func executeFFmpegExtract(ctx context.Context, videoPath, outputDir string, conf
 
 	if err := cmd.Start(); err != nil {
 		pw.Close()
-		return err
+		return "", "", 0, err
 	}
 	pw.Close()
 
 	// Works out of the box!
-	_, err = encoder.RunPreStartedFFmpegCmd(ctx, cmd, pr, meta, &stdoutBuf, &stderrBuf)
+	res, err := encoder.RunPreStartedFFmpegCmd(ctx, cmd, pr, meta, &stdoutBuf, &stderrBuf)
 
 	if err != nil {
-		return fmt.Errorf("ffmpeg thumbnail extraction failed: %w", err)
+		return "", "", 0, fmt.Errorf("ffmpeg thumbnail extraction failed: %w", err)
 	}
-	return nil
+	return res.Stdout, res.Stderr, res.ExitCode, nil
 }
 
 // formatVTTTime formats time blocks to strict Shaka tokenizer requirements
@@ -210,5 +241,30 @@ func generateVTT(outputPath string, totalDurationSeconds int, config ThumbnailCo
 	return nil
 }
 
-func do(inputVideo string) {
+/*
+type Invocation struct {
+	Dir      string
+	Args     []string
+	Stdout   string
+	Stderr   string
+	ExitCode int
 }
+type ThumbnailRecord struct {
+	Config ThumbnailConfig
+	Ffmpeg Invocation
+}
+
+type ThubnailRecorder struct {
+	Storage *storage.Storage
+}
+
+func (t *ThumbnailRecorder) RecordTranscodingOptions(ctx context.Context, tr TranscodingOptionsRecord) (string, error) {
+	base := t.Storage.DasherReadyRepresentationTranscodingLogFilePath(tr.EncodeStream)
+	return shared.RecordOptions(ctx, base, tr)
+}
+
+func (t *ThumbnailRecorder) LoadTranscodingOptions(ctx context.Context, e shared.EncodeStreamArgs) (*TranscodingOptionsRecord, error) {
+	var tr TranscodingOptionsRecord
+	err := shared.LoadOptions(ctx, t.Storage.DasherReadyRepresentationTranscodingLogFilePath(e), &tr)
+	return &tr, err
+}*/
