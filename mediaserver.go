@@ -85,10 +85,10 @@ func ScanDir(dir string) []datasource.DataSource {
 			continue
 		}
 
-		if itm, ok := scrape.TMDBMovieFromMss(dir, mss); itm != nil && ok {
+		/*	if itm, ok := scrape.TMDBMovieFromMss(dir, mss); itm != nil && ok {
 			res = append(res, itm)
 			fmt.Printf("Scraped movie %s\n", filepath.Join(dir, entry.Name()))
-		} else if itm, ok := scrape.StreamAssetFromMss(dir, mss); itm != nil && ok {
+		} else */if itm, ok := scrape.StreamAssetFromMss(dir, mss); itm != nil && ok {
 			res = append(res, itm)
 			fmt.Printf("Scraped StreamAsset %s\n", filepath.Join(dir, entry.Name()))
 		}

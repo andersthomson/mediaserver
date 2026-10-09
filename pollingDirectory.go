@@ -20,7 +20,7 @@ func (d *directoryRepo) Refresh() {
 			d.dsLck.Lock()
 			d.ds = i
 			d.dsLck.Unlock()
-			time.Sleep(time.Minute)
+			time.Sleep(time.Hour)
 		}
 	}()
 }

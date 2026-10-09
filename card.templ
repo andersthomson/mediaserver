@@ -2,6 +2,7 @@
 package main
 
 import (
+	"strings"
 	"slices"
 	"maps"
 	"fmt"
@@ -86,11 +87,8 @@ templ Card4svtplay(ds *scrape.SvtplayItem) {
 templ CardTitle(ds datasource.DataSource) {
 	if t := datasource.TitleOrZero(ds); t != "" {
 		   { t } <br>
-		   return
-        }
-	if t := datasource.ShortNameOrZero(ds); t != "" {
+        } else if t := datasource.ShortNameOrZero(ds); t != "" {
                    { t } <br>
-                   return
         }
 }
 
@@ -100,10 +98,45 @@ templ CardPoster(ds datasource.DataSource) {
 	}
 }
 
+type tagliner interface {
+	Tagline() (string,bool)
+}
+templ CardTagline(ds datasource.DataSource) {
+	if t,ok := ds.(tagliner) ; ok {
+		if txt,ok := t.Tagline() ; ok && txt != "" {
+			Tagline: { txt } <br>
+		}
+	}
+}
+
+type overviewer interface {
+	Overview() (string,bool)
+}
+templ CardOverview(ds datasource.DataSource) {
+	if o,ok := ds.(overviewer) ; ok {
+		if txt,ok := o.Overview()  ; ok && txt != "" {
+			Overview: { txt } <br>
+		}
+	}
+}
+
+type genreser interface {
+	Genres() ([]string,bool)
+}
+templ CardGenres(ds datasource.DataSource) {
+	if g,ok := ds.(genreser) ; ok {
+		if txt,ok := g.Genres()  ; ok && len(txt) != 0 {
+			Genres: { strings.Join(txt,", ") } <br>
+		}
+	}
+}
+
 templ Card4StreamAsset(ds *scrape.StreamAsset) {
 	<div class="card">
 	@CardPoster(ds)
 	@CardTitle(ds)
+	@CardGenres(ds)
+	@CardOverview(ds)
 	@links(ds)
 	</div>
 }

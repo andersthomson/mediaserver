@@ -2,11 +2,13 @@ package scrape
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 )
@@ -246,11 +248,82 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 
 }
 
+type TmdbView struct {
+	Tmdb
+	movieDetails     *tmdb.MovieDetails
+	movieDetailsOnce sync.Once
+}
+
+func (t *TmdbView) readMovieDetails() {
+	movie, err := TMDBMovieDetails(*t.MovieId)
+	if err != nil {
+		Logger.Error("TMDBMovieDetails failed. Skipping", "tmdbId", *t.MovieId, "err", err)
+	}
+	t.movieDetails = movie
+}
+
+func (t *TmdbView) Tagline() (string, bool) {
+	switch {
+	case t.MovieId != nil:
+		t.movieDetailsOnce.Do(t.readMovieDetails)
+		return t.movieDetails.Tagline, true
+	case t.SeriesId != nil:
+		///TODO
+		slog.Warn("NEED IMPLEMENTING")
+	}
+	return "", false
+}
+
+func (t *TmdbView) Overview() (string, bool) {
+	switch {
+	case t.MovieId != nil:
+		t.movieDetailsOnce.Do(t.readMovieDetails)
+		return t.movieDetails.Overview, true
+	case t.SeriesId != nil:
+		///TODO
+		slog.Warn("NEED IMPLEMENTING")
+	}
+	return "", false
+}
+
+func (t *TmdbView) Title() (string, bool) {
+	switch {
+	case t.MovieId != nil:
+		t.movieDetailsOnce.Do(t.readMovieDetails)
+		return t.movieDetails.Title, true
+	case t.SeriesId != nil:
+		///TODO
+		slog.Warn("NEED IMPLEMENTING")
+	}
+	return "", false
+}
+
+func (t *TmdbView) Genres() ([]string, bool) {
+	switch {
+	case t.MovieId != nil:
+		t.movieDetailsOnce.Do(t.readMovieDetails)
+
+		if len(t.movieDetails.Genres) == 0 {
+			return []string{}, false
+		}
+		res := make([]string, 0, len(t.movieDetails.Genres))
+		for _, genre := range t.movieDetails.Genres {
+			res = append(res, strings.TrimSpace(genre.Name))
+		}
+		return res, true
+	case t.SeriesId != nil:
+		///TODO
+		slog.Warn("NEED IMPLEMENTING")
+	}
+	return nil, false
+}
+
 type StreamAsset struct {
 	DashServer
 	HLSServer
 	id        string
 	shortName string
+	TmdbView
 }
 
 func (s StreamAsset) ID() string {
@@ -260,11 +333,12 @@ func (s StreamAsset) ID() string {
 func (s StreamAsset) ShortName() string {
 	return s.shortName
 }
+
 func (s StreamAsset) PrettyID() string {
 	return s.ShortName() + "-" + s.ID()
 }
 func (s StreamAsset) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	Logger.Info("AtreamAsset serving", "Url", r.URL.String())
+	Logger.Info("StreamAsset serving", "Url", r.URL.String())
 	w.Header().Add("Cache-Control", "no-cache, private, max-age=0")
 	switch {
 	//case r.URL.Path == "/"+i.MediaURLPath():
@@ -307,6 +381,7 @@ func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
 	if res.MpdFile != "" && res.M3U8File != "" {
 		Logger.Info("Movie has two streaming formats", "shortname", res.shortName)
 	}
+	res.MovieId = m.Tmdb.MovieId
 	return res, true
 }
 
