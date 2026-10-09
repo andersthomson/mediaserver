@@ -87,7 +87,10 @@ func ScanDir(dir string) []datasource.DataSource {
 
 		if itm, ok := scrape.TMDBMovieFromMss(dir, mss); itm != nil && ok {
 			res = append(res, itm)
-			fmt.Printf("Scraped %s\n", filepath.Join(dir, entry.Name()))
+			fmt.Printf("Scraped movie %s\n", filepath.Join(dir, entry.Name()))
+		} else if itm, ok := scrape.StreamAssetFromMss(dir, mss); itm != nil && ok {
+			res = append(res, itm)
+			fmt.Printf("Scraped StreamAsset %s\n", filepath.Join(dir, entry.Name()))
 		}
 	}
 	return res
@@ -200,6 +203,18 @@ func html5URL(ds datasource.DataSource) string {
 func shakaURL(ds datasource.DataSource) string {
 	return Config.WebRoot + "/view/shaka/" + url.PathEscape(ds.PrettyID())
 }
+
+func shakaURL2(ds datasource.DataSource) (string, bool) {
+	type xer interface {
+		DashURLPath() string
+	}
+	if xx, ok := ds.(xer); ok {
+		if xx.DashURLPath() != "" {
+			return Config.WebRoot + "/view/shaka/" + url.PathEscape(ds.PrettyID()), true
+		}
+	}
+	return "", false
+}
 func backdropURL(ds datasource.DataSource) string {
 	if p := datasource.BackdropURLPathOrZero(ds); p == "" {
 		return ""
@@ -213,6 +228,14 @@ func posterURL(ds datasource.DataSource) string {
 		return ""
 	} else {
 		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + url.PathEscape(p)
+	}
+}
+
+func posterURL2(ds datasource.DataSource) (string, bool) {
+	if p := datasource.PosterURLPathOrZero(ds); p == "" {
+		return "", false
+	} else {
+		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + url.PathEscape(p), true
 	}
 }
 
@@ -540,6 +563,11 @@ func main() {
 		res := make([]datasource.DataSource, 0, len(all))
 		for _, ds := range all {
 			if strings.Contains(strings.ToLower(datasource.TitleOrZero(ds)), searchTerm) {
+				res = append(res, ds)
+			}
+		}
+		for _, ds := range all {
+			if strings.Contains(strings.ToLower(datasource.ShortNameOrZero(ds)), searchTerm) {
 				res = append(res, ds)
 			}
 		}

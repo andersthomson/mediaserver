@@ -130,7 +130,10 @@ func EnsureDashWF(ctx workflow.Context, args EnsureDashWFArgs) (string, error) {
 			HasDASHManifest: true,
 		},
 		Tmdb: &scrape.Tmdb{
-			MovieId: M.Tmdb.MovieId,
+			MovieId:  M.Tmdb.MovieId,
+			SeriesId: M.Tmdb.SeriesId,
+			Season:   M.Tmdb.Season,
+			Episode:  M.Tmdb.Episode,
 		},
 	}
 

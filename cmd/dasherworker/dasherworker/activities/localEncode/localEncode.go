@@ -81,6 +81,7 @@ func (l *LocalEncode) Encode(ctx context.Context, args shared.EncodeArgs) (share
 	} else {
 		finalArgs = args.FfmpegArgs.Args
 	}
+	finalArgs = append(finalArgs, "-nostats")
 
 	cmd := exec.CommandContext(ctx, "/usr/bin/ffmpeg", finalArgs...)
 	cmd.ExtraFiles = []*os.File{pw}

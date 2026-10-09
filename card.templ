@@ -1,3 +1,4 @@
+//go:generate go tool templ generate -lazy -include-timestamp=false
 package main
 
 import (
@@ -6,6 +7,7 @@ import (
 	"fmt"
 	"github.com/andersthomson/mediaserver/datasource"
 	"github.com/andersthomson/mediaserver/scrape"
+//	"github.com/davecgh/go-spew/spew"
 	)
 
 templ Card(content templ.Component) {
@@ -19,6 +21,9 @@ templ links(ds datasource.DataSource) {
 	<a href={mediaURL(ds)}>&lt;Download&gt;</a>
 	<a href={html5URL(ds)}>&lt;Play in browser&gt;</a>
 	<a href={ castURL(ds)}>&lt;Play on ChromeCast&gt;</a><br> 
+	if u,ok := shakaURL2(ds) ; ok {
+		<a href={ templ.SafeURL(u) }>&lt;Play on Shaka&gt;</a><br>
+	}
 	</div>
 }
 templ ItemCard(ds *scrape.ItemData) {
@@ -34,7 +39,7 @@ templ ItemCard(ds *scrape.ItemData) {
 
 templ TMDBMovieCard(ds *scrape.TMDBMovie) {
 	<div class="card">
-	<img src={posterURLGen(ds)} /><br>
+	@CardPoster(ds)
 	{ds.Title()}<br>
 	@links(ds)
 	<i>{ds.Tagline()}</i><br>
@@ -78,6 +83,30 @@ templ Card4svtplay(ds *scrape.SvtplayItem) {
         @Card(svtplayCard(ds))
 }
 
+templ CardTitle(ds datasource.DataSource) {
+	if t := datasource.TitleOrZero(ds); t != "" {
+		   { t } <br>
+		   return
+        }
+	if t := datasource.ShortNameOrZero(ds); t != "" {
+                   { t } <br>
+                   return
+        }
+}
+
+templ CardPoster(ds datasource.DataSource) {
+	if u,ok := posterURL2(ds) ; ok {
+		<img src={ templ.SafeURL(u) } />
+	}
+}
+
+templ Card4StreamAsset(ds *scrape.StreamAsset) {
+	<div class="card">
+	@CardPoster(ds)
+	@CardTitle(ds)
+	@links(ds)
+	</div>
+}
 
 templ Cards4Datasources(splits map[string][]datasource.DataSource) {
 	for _, key := range slices.Sorted(maps.Keys(splits)) {
@@ -93,6 +122,8 @@ templ Cards4Datasources(splits map[string][]datasource.DataSource) {
 				@Card4svtplay(dsT)
 			case *scrape.ItemData:
 				@Card4Item(dsT)
+			case *scrape.StreamAsset:
+				@Card4StreamAsset(dsT)
 			default:
 				{fmt.Sprintf("Unsupported datasource %T\n",dsT)}
 			}

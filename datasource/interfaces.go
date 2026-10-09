@@ -19,6 +19,17 @@ func TitleOrZero(x any) string {
 	return ""
 }
 
+type ShortNamer interface {
+	ShortName() string
+}
+
+func ShortNameOrZero(x any) string {
+	if xT, ok := x.(ShortNamer); ok {
+		return xT.ShortName()
+	}
+	return ""
+}
+
 type Genreser interface {
 	Genres() []string
 }

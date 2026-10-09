@@ -12,6 +12,7 @@ import (
 	"github.com/andersthomson/mediaserver/scrape"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/uuid"
+	"github.com/jxskiss/base62"
 	"go.temporal.io/sdk/client"
 )
 
@@ -107,10 +108,16 @@ func main() {
 			run.Get(context.Background(), nil)
 			return
 		case "ensuredash":
+			id, _ := uuid.NewV7()
+
+			// 2. Compress the 16-byte binary array into a short Base62 string
+			bytes, _ := id.MarshalBinary()
+			shortID := base62.EncodeToString(bytes)
+
 			run, err := c.ExecuteWorkflow(context.Background(),
 				client.StartWorkflowOptions{
-					ID:        uuid.New().String(), // Unique ID for business logic
-					TaskQueue: "dasherQueue",       // Which worker group should handle this
+					ID:        filepath.Base(os.Args[2]) + "-" + shortID, // Unique ID for business logic
+					TaskQueue: "dasherQueue",                             // Which worker group should handle this
 				},
 				//"EnsureDashWF",
 				dasherworker.EnsureDashWF,

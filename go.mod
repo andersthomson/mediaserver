@@ -1,10 +1,10 @@
 module github.com/andersthomson/mediaserver
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/a-h/templ v0.3.1001
+	github.com/a-h/templ v0.3.1070
 	github.com/barbashov/iso639-3 v1.0.0
 	github.com/clbanning/mxj/v2 v2.7.0
 	github.com/creack/pty v1.1.24
@@ -20,8 +20,8 @@ require (
 	go.temporal.io/api v1.62.7
 	go.temporal.io/sdk v1.42.0
 	golang.org/x/oauth2 v0.34.0
-	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.45.0
+	golang.org/x/sync v0.23.0
+	golang.org/x/sys v0.48.0
 	golang.org/x/time v0.3.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
@@ -29,24 +29,38 @@ require (
 require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	github.com/Eyevinn/dash-mpd v0.17.0 // indirect
+	github.com/a-h/parse v0.0.0-20250122154542-74294addb73e // indirect
+	github.com/andybalholm/brotli v1.2.6 // indirect
 	github.com/barkimedes/go-deepcopy v0.0.0-20220514131651-17c30cfc62df // indirect
+	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
+	github.com/cli/browser v1.3.0 // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
+	github.com/fatih/color v1.19.0 // indirect
+	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
+	github.com/jxskiss/base62 v1.1.0 // indirect
+	github.com/mattn/go-colorable v0.1.15 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
+	github.com/natefinch/atomic v1.0.1 // indirect
 	github.com/nexus-rpc/sdk-go v0.6.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/tools v0.51.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260120221211-b8f7ae30c516 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260120221211-b8f7ae30c516 // indirect
 	google.golang.org/grpc v1.79.3 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+tool github.com/a-h/templ/cmd/templ

@@ -213,6 +213,9 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 		tags: make(map[string][]string, 4),
 	}
 
+	if m.Tmdb.MovieId == nil {
+		return nil, false
+	}
 	if !extractTMDBMovieData(res, *m.Tmdb.MovieId) {
 		return nil, false
 	}
@@ -243,11 +246,78 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 
 }
 
+type StreamAsset struct {
+	DashServer
+	HLSServer
+	id        string
+	shortName string
+}
+
+func (s StreamAsset) ID() string {
+	return s.id
+}
+
+func (s StreamAsset) ShortName() string {
+	return s.shortName
+}
+func (s StreamAsset) PrettyID() string {
+	return s.ShortName() + "-" + s.ID()
+}
+func (s StreamAsset) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	Logger.Info("AtreamAsset serving", "Url", r.URL.String())
+	w.Header().Add("Cache-Control", "no-cache, private, max-age=0")
+	switch {
+	//case r.URL.Path == "/"+i.MediaURLPath():
+	//	s.MediaServer.ServeHTTP(w, r)
+	case strings.HasPrefix(r.URL.String(), "/dash/"):
+		s.DashServer.ServeHTTP(w, r)
+	//case strings.HasPrefix(r.URL.String(), "/hls/"):
+	//	s.HLSServer.ServeHTTP(w, r)
+	//case r.URL.Path == "/"+i.PosterURLPath():
+	//	s.PosterServer.ServeHTTP(w, r)
+	///case r.URL.Path == "/"+i.BackdropURLPath():
+	//	s.BackdropServer.ServeHTTP(w, r)
+	//case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
+	//	s.SubsServer.ServeHTTP(w, r)
+	default:
+		Logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
+		w.WriteHeader(404)
+		return
+	}
+}
+
+func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
+	res := &StreamAsset{}
+	res.id = m.Id
+	res.shortName = m.ShortName
+
+	if m.Playouts.HasDASHManifest {
+		u := filepath.Join(streamDir, res.PrettyID(), "/dash/", "manifest.mpd")
+		if _, err := os.Stat(u); err == nil {
+			res.MpdFile = u
+		}
+
+	}
+	if m.Playouts.HasHLSMaster {
+		u := filepath.Join(streamDir, res.PrettyID(), "/hls/", "master.m3u8")
+		if _, err := os.Stat(u); err == nil {
+			res.M3U8File = u
+		}
+	}
+	if res.MpdFile != "" && res.M3U8File != "" {
+		Logger.Info("Movie has two streaming formats", "shortname", res.shortName)
+	}
+	return res, true
+}
+
 func TMDBMovieFromMss(streamDir string, m Mss) (*TMDBMovie, bool) {
 	res := &TMDBMovie{
 		tags: make(map[string][]string, 4),
 	}
 
+	if m.Tmdb.MovieId == nil {
+		return nil, false
+	}
 	if !extractTMDBMovieData(res, *m.Tmdb.MovieId) {
 		return nil, false
 	}

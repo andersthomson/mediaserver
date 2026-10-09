@@ -23,7 +23,7 @@ import (
 )
 
 func CallReadMspFile(ctx workflow.Context, mspPath string) (scrape.Msp, error) {
-	return CallActivityIO[string, scrape.Msp](ctx, mspreader.Read, filepath.Dir(mspPath), filepath.Base(mspPath))
+	return CallActivityFast[string, scrape.Msp](ctx, mspreader.Read, filepath.Dir(mspPath), filepath.Base(mspPath))
 }
 
 func CallFinalize(ctx workflow.Context, inputID string, ensure bool) (finalize.FinalizeResp, error) {
@@ -102,7 +102,7 @@ func CallVttStitch(ctx workflow.Context, inputID string, languages []string) (st
 
 func CallMssWrite(ctx workflow.Context, inputID string, mss scrape.Mss) (string, error) {
 	var a *msswriter.MssWriter
-	return CallActivityIO[any, string](ctx, a.MssWrite, inputID, mss)
+	return CallActivityFast[any, string](ctx, a.MssWrite, inputID, mss)
 }
 
 func CallThumbnail(ctx workflow.Context, Eargs *shared.EncodeStreamArgs, config thumbnailer.ThumbnailConfig) (string, error) {

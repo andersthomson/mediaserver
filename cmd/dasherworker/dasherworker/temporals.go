@@ -11,7 +11,7 @@ func CallActivityFast[IN, OUT any](ctx workflow.Context, activity any, args ...I
 	return CallActivity[IN, OUT](ctx, activity, 1*time.Minute, args...)
 }
 func CallActivityIO[IN, OUT any](ctx workflow.Context, activity any, args ...IN) (OUT, error) {
-	return CallActivity[IN, OUT](ctx, activity, 20*time.Minute, args...)
+	return CallActivity[IN, OUT](ctx, activity, 60*time.Minute, args...)
 }
 
 func CallActivity[IN, OUT any](ctx workflow.Context, activity any, startToCloseTimeout time.Duration, args ...IN) (OUT, error) {
