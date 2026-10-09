@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
+	"github.com/davecgh/go-spew/spew"
 )
 
 type TMDBMovie struct {
@@ -318,9 +319,24 @@ func (t *TmdbView) Genres() ([]string, bool) {
 	return nil, false
 }
 
+// For the benefit of posterServer....
+func (t *TmdbView) posterPath() string {
+	switch {
+	case t.MovieId != nil:
+		t.movieDetailsOnce.Do(t.readMovieDetails)
+		spew.Dump(t.movieDetails.PosterPath)
+		return t.movieDetails.PosterPath
+	case t.SeriesId != nil:
+		///TODO
+		slog.Warn("NEED IMPLEMENTING")
+	}
+	return ""
+}
+
 type StreamAsset struct {
 	DashServer
 	HLSServer
+	PosterServer
 	id        string
 	shortName string
 	TmdbView
@@ -347,8 +363,8 @@ func (s StreamAsset) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.DashServer.ServeHTTP(w, r)
 	//case strings.HasPrefix(r.URL.String(), "/hls/"):
 	//	s.HLSServer.ServeHTTP(w, r)
-	//case r.URL.Path == "/"+i.PosterURLPath():
-	//	s.PosterServer.ServeHTTP(w, r)
+	case r.URL.Path == "/"+s.PosterURLPath():
+		s.PosterServer.ServeHTTP(w, r)
 	///case r.URL.Path == "/"+i.BackdropURLPath():
 	//	s.BackdropServer.ServeHTTP(w, r)
 	//case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
@@ -382,6 +398,16 @@ func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
 		Logger.Info("Movie has two streaming formats", "shortname", res.shortName)
 	}
 	res.MovieId = m.Tmdb.MovieId
+
+	//Thread the tmdb poster to the PosterServer
+	if p := res.posterPath(); p != "" {
+		if fname, err := TMDBImage(p, tmdb.W500); err == nil {
+			res.PosterFile = fname
+		}
+	} else {
+		Logger.Warn("Has no poster image", "tmdbId", m.Tmdb)
+	}
+	spew.Dump(res.PosterFile)
 	return res, true
 }
 

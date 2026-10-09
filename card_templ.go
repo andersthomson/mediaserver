@@ -638,7 +638,7 @@ func CardPoster(ds datasource.DataSource) templ.Component {
 			templ_7745c5c3_Var29 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		if u, ok := posterURL2(ds); ok {
+		if u := posterURL(ds); u != "" {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<img src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
