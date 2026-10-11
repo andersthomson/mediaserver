@@ -1,5 +1,7 @@
 package scrape
 
+import "sync"
+
 type Playouts struct {
 	HasDASHManifest bool
 	HasHLSMaster    bool
@@ -16,4 +18,37 @@ type Mss struct {
 	ShortName string
 	Playouts  Playouts
 	Tmdb      *Tmdb `json:",omitempty"`
+}
+
+type MssCache struct {
+	m map[string]Mss
+	sync.Mutex
+}
+
+func NewMssCache() *MssCache {
+	return &MssCache{
+		m: make(map[string]Mss, 64),
+	}
+}
+
+func (m *MssCache) Add(mss Mss) {
+	m.Lock()
+	m.m[mss.Id] = mss
+	m.Unlock()
+}
+
+func (m *MssCache) MovieId(id string) (int, bool) {
+	m.Lock()
+	defer m.Unlock()
+	itm, ok := m.m[id]
+	if !ok {
+		return 0, false
+	}
+	if itm.Tmdb == nil {
+		return 0, false
+	}
+	if itm.Tmdb.MovieId == nil {
+		return 0, false
+	}
+	return *itm.Tmdb.MovieId, true
 }

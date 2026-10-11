@@ -56,6 +56,7 @@ var internalIDP *InternalIDP
 
 var logger *slog.Logger
 var Config config
+var mssCache *scrape.MssCache
 
 func ScanDir(dir string) []datasource.DataSource {
 	//slog.Info("Scanning", "dir", dir)
@@ -84,7 +85,7 @@ func ScanDir(dir string) []datasource.DataSource {
 			fmt.Println("Error unmarshalling JSON:", err)
 			continue
 		}
-
+		mssCache.Add(mss)
 		/*	if itm, ok := scrape.TMDBMovieFromMss(dir, mss); itm != nil && ok {
 			res = append(res, itm)
 			fmt.Printf("Scraped movie %s\n", filepath.Join(dir, entry.Name()))
@@ -231,25 +232,12 @@ func posterURL(ds datasource.DataSource) string {
 	}
 }
 
-func posterURL2(ds datasource.DataSource) (string, bool) {
-	if p := datasource.PosterURLPathOrZero(ds); p == "" {
-		return "", false
-	} else {
-		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + url.PathEscape(p), true
-	}
-}
-
-type posterURLGenI interface {
-	datasource.PosterURLPather
-	datasource.DataSource
-}
-
-func posterURLGen[T posterURLGenI](p T) string {
-	return Config.WebRoot + "/item/" + url.PathEscape(p.PrettyID()) + "/part/" + url.PathEscape(p.PosterURLPath())
-}
-
 type dataSourceServer struct {
+	mssCache *scrape.MssCache
 }
+
+const ItmId = "ItmId"
+const MssCacheCtx = "MssCacheCtx"
 
 func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -260,17 +248,19 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.WarnContext(ctx, "datasource unknown", "id", itm)
 		return
 	}
-	/*
-		r2 := new(http.Request)
-		*r2 = *r
-		r2.URL = new(url.URL)
-		*r2.URL = *r.URL
-		r2.URL.Path = r.PathValue("subPath")
-	*/
-	r.URL.Path = "/" + r.PathValue("subPath")
-	r.URL.RawPath = ""
+
+	ctx = context.WithValue(ctx, ItmId, ds.ID())
+	ctx = context.WithValue(ctx, MssCacheCtx, p.mssCache)
+	r = r.WithContext(ctx)
+
+	subRequest := r.Clone(r.Context())
+
+	// Pull the raw, raw unescaped remaining tail path segment safely
+	subPathTail := r.PathValue("subPath")
+	subRequest.URL.Path = "/" + path.Clean(subPathTail)
+
 	hdlr := ds.(http.Handler)
-	hdlr.ServeHTTP(w, r)
+	hdlr.ServeHTTP(w, subRequest)
 	return
 }
 
@@ -488,6 +478,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	mssCache = scrape.NewMssCache()
+
 	IDPRoot := webRootURL.Path + "/auth"
 	idpManager := NewIDPManager()
 	if slices.Contains(Config.IDProviders, "GoogleOAuth") {
@@ -542,7 +534,7 @@ func main() {
 	mux.Handle(webRootURL.Path+"/view/html5/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemHtml5)))
 	mux.Handle(webRootURL.Path+"/view/shaka/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemShaka)))
 
-	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{}))
+	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache}))
 
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveTopIndex)))
 

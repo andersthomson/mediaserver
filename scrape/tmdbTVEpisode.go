@@ -170,9 +170,10 @@ func scrapeAsTMDBTVEpisode(itm *TMDBTVEpisode, ffdata FFProbeRoot) bool {
 	itm.episode = episode
 	itm.season = season
 	if p := getFirstString(&tvEpisodeDetails.StillPath, &tvSeasonDetails.PosterPath); p != nil {
-		if fname, err := TMDBImage(*p, tmdb.W500); err == nil {
-			itm.PosterFile = fname
-		}
+		//if fname, err := TMDBImage(*p, tmdb.W500); err == nil {
+		//FIXME separate poster server for TV....
+		//itm.PosterFile = fname
+		//}
 	}
 	if p := getFirstString(&tvDetails.BackdropPath); p != nil {
 		if fname, err := TMDBImage(*p, tmdb.W500); err == nil {
@@ -199,13 +200,14 @@ func NewTMDBTVEpisode(dir string, fname string, ffdata FFProbeRoot) (*TMDBTVEpis
 
 	res.SubsServer.AddSubsFromMP4Filename(dir, fname)
 
-	basename := strings.TrimSuffix(fname, ".mp4")
-	target := filepath.Join(dir, basename+"-poster.jpg")
-	if fileExists(target) {
-		res.PosterFile = target
-		Logger.Info("", "source", "filename", "posterfile", res.PosterFile)
-	}
-
+	/*
+		basename := strings.TrimSuffix(fname, ".mp4")
+		target := filepath.Join(dir, basename+"-poster.jpg")
+		if fileExists(target) {
+			res.PosterFile = target
+			Logger.Info("", "source", "filename", "posterfile", res.PosterFile)
+		}
+	*/
 	if ffdata.Format.Tags.Grouping != "" {
 		res.tags["grouping"] = append(res.tags["grouping"], strings.TrimSpace(ffdata.Format.Tags.Grouping))
 		Logger.Info("", "source", "mp4 Format.Tags.Grouping", "grouping", ffdata.Format.Tags.Grouping)

@@ -119,13 +119,6 @@ func extractTMDBMovieData(itm *TMDBMovie, tmdbId int) bool {
 	itm.title = movie.Title
 	itm.tags["Movie"] = []string{itm.title}
 	itm.overview = movie.Overview
-	if movie.PosterPath != "" {
-		if fname, err := TMDBImage(movie.PosterPath, tmdb.W500); err == nil {
-			itm.PosterFile = fname
-		}
-	} else {
-		Logger.Warn("Has no poster image", "id", tmdbId, "title", movie.Title)
-	}
 	if movie.BackdropPath != "" {
 		if fname, err := TMDBImage(movie.BackdropPath, tmdb.W1280); err == nil {
 			itm.BackdropFile = fname
@@ -354,8 +347,42 @@ func (s StreamAsset) PrettyID() string {
 	return s.ShortName() + "-" + s.ID()
 }
 func (s StreamAsset) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	Logger.Info("StreamAsset serving", "Url", r.URL.String())
+	Logger.Info("StreamAsset serving", "Url", r.URL.Path)
 	w.Header().Add("Cache-Control", "no-cache, private, max-age=0")
+
+	// Fetch the unmutated raw path string context from the headers.
+	// If r.URL.RawPath is empty (meaning the URL contains zero special characters),
+	// we naturally fall back to the standard pre-cleaned r.URL.Path.
+	currentRawPath := r.URL.RawPath
+	if currentRawPath == "" {
+		currentRawPath = r.URL.Path
+	}
+
+	//if !strings.HasPrefix(currentRawPath, "/") {
+	//	currentRawPath = "/" + currentRawPath
+	//}
+
+	spew.Dump(currentRawPath)
+	spew.Dump(s.PosterURLPath())
+
+	//FIXME  remove the slash when its settles whether muxes start with a slash
+	if currentRawPath == "/"+s.PosterURLPath() || strings.HasPrefix(currentRawPath, "/"+s.PosterURLPath()) {
+		// Strip off the structural token prefix "/dash/" keeping the original
+		// percent-encoding intact so nested sub-servers parse arguments safely.
+		trimmedRawPath := "/" + strings.TrimPrefix(currentRawPath, "/dash/")
+		trimmedRawPath = strings.TrimSuffix(trimmedRawPath, "/")
+
+		// Clone request parameters to update execution tracking variables safely
+		r.URL.Path = trimmedRawPath
+		if r.URL.RawPath != "" {
+			r.URL.RawPath = trimmedRawPath
+		}
+
+		// Direct explicit execution delegation down to the embedded interface instance
+		s.PosterServer.ServeHTTP(w, r)
+		return
+	}
+
 	switch {
 	//case r.URL.Path == "/"+i.MediaURLPath():
 	//	s.MediaServer.ServeHTTP(w, r)
@@ -363,8 +390,8 @@ func (s StreamAsset) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.DashServer.ServeHTTP(w, r)
 	//case strings.HasPrefix(r.URL.String(), "/hls/"):
 	//	s.HLSServer.ServeHTTP(w, r)
-	case r.URL.Path == "/"+s.PosterURLPath():
-		s.PosterServer.ServeHTTP(w, r)
+	//	case r.URL.Path == "/"+s.PosterURLPath():
+	//		s.PosterServer.ServeHTTP(w, r)
 	///case r.URL.Path == "/"+i.BackdropURLPath():
 	//	s.BackdropServer.ServeHTTP(w, r)
 	//case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
@@ -400,13 +427,14 @@ func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
 	res.MovieId = m.Tmdb.MovieId
 
 	//Thread the tmdb poster to the PosterServer
-	if p := res.posterPath(); p != "" {
-		if fname, err := TMDBImage(p, tmdb.W500); err == nil {
-			res.PosterFile = fname
-		}
-	} else {
-		Logger.Warn("Has no poster image", "tmdbId", m.Tmdb)
-	}
+	/*
+		if p := res.posterPath(); p != "" {
+			if fname, err := TMDBImage(p, tmdb.W500); err == nil {
+				res.PosterFile = fname
+			}
+		} else {
+			Logger.Warn("Has no poster image", "tmdbId", m.Tmdb)
+		}*/
 	return res, true
 }
 

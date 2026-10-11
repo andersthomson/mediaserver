@@ -27,16 +27,6 @@ templ links(ds datasource.DataSource) {
 	}
 	</div>
 }
-templ ItemCard(ds *scrape.ItemData) {
-	<div class="card">
-	<img src={posterURLGen(ds)} /><br>
-	{ds.Title()}<br>
-	<b>QA Notice: Uses Item scaper</b><br>
-	@links(ds)
-	//<i>{ds.Tagline()}</i><br>
-	//{ds.Overview()}<br>
-	</div>
-}
 
 templ TMDBMovieCard(ds *scrape.TMDBMovie) {
 	<div class="card">
@@ -48,19 +38,9 @@ templ TMDBMovieCard(ds *scrape.TMDBMovie) {
 	</div>
 }
 
-templ svtplayCard(ds *scrape.SvtplayItem) {
-	<div class="card">
-	<img src={posterURLGen(ds)} /><br>
-	{ds.Title()}<br>
-	@links(ds)
-	//<i>{ds.Tagline()}</i><br>
-	//{ds.Overview()}<br>
-	</div>
-}
-
 templ TMDBEpisodeCard(ds *scrape.TMDBTVEpisode) {
 	<div class="card">
-	<img src={posterURLGen(ds)} /><br>
+	@CardPoster(ds)
 	{ds.Title()}<br>
 	@links(ds)
 	<i>{ds.Tagline()}</i><br>
@@ -76,14 +56,6 @@ templ Card4Movie(ds *scrape.TMDBMovie) {
 	@Card(TMDBMovieCard(ds))
 }
 
-templ Card4Item(ds *scrape.ItemData) {
-        @Card(ItemCard(ds))
-}
-
-templ Card4svtplay(ds *scrape.SvtplayItem) {
-        @Card(svtplayCard(ds))
-}
-
 templ CardTitle(ds datasource.DataSource) {
 	if t := datasource.TitleOrZero(ds); t != "" {
 		   { t } <br>
@@ -93,7 +65,7 @@ templ CardTitle(ds datasource.DataSource) {
 }
 
 templ CardPoster(ds datasource.DataSource) {
-	if u := posterURL(ds) ; u!="" {
+	if u := posterURL(ds) ; u != "" {
 		<img src={ templ.SafeURL(u) } />
 	}
 }
@@ -151,10 +123,6 @@ templ Cards4Datasources(splits map[string][]datasource.DataSource) {
 				@Card4Movie(dsT)
 			case *scrape.TMDBTVEpisode:
 				@Card4Episode(dsT)
-			case *scrape.SvtplayItem:
-				@Card4svtplay(dsT)
-			case *scrape.ItemData:
-				@Card4Item(dsT)
 			case *scrape.StreamAsset:
 				@Card4StreamAsset(dsT)
 			default:
