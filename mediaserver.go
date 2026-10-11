@@ -476,14 +476,6 @@ func Chain(middlewares ...Middleware) Middleware {
 	}
 }
 
-func serveTopIndex(w http.ResponseWriter, r *http.Request) {
-	webRootURL, err := url.Parse(Config.WebRoot)
-	if err != nil {
-		panic(err)
-	}
-	serveIndex(r.Context(), w, r, allRepos.AllDataSources(), webRootURL.Path+"/", webRootURL.Path+"/search")
-}
-
 func main() {
 	setupLogger()
 	var sessions *SessionStore
@@ -546,7 +538,7 @@ func main() {
 	mux.Handle(webRootURL.Path+"/auth/", http.StripPrefix(webRootURL.Path+"/auth", idpManager.ServeMux()))
 	mux.Handle(webRootURL.Path+"/auth/login", Chain(LoggingMiddleware)(idpManager))
 
-	mux.Handle(webRootURL.Path+"/view/cast/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemCast)))
+	mux.Handle("GET "+path.Join(webRootURL.Path, "view/cast/{item}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemCast)))
 	mux.Handle(webRootURL.Path+"/view/html5/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemHtml5)))
 	mux.Handle(webRootURL.Path+"/view/shaka/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemShaka)))
 
@@ -554,7 +546,18 @@ func main() {
 
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveTopIndex)))
 
-	mux.Handle(webRootURL.Path+"/search", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle(webRootURL.Path+"/search", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(allRepos)))
+
+	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
+	logger.Info("Started", "Listening at", listenaddr)
+	err = http.ListenAndServe(listenaddr, mux)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+	}
+}
+
+func HandleSearch(allRepos allReposT) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		// Extract the 'search' value from the POST request
 		searchTerm := strings.ToLower(r.FormValue("search"))
 
@@ -575,13 +578,6 @@ func main() {
 		splits := SplitByGenre(res)
 		logger.InfoContext(r.Context(), "serving search", "SearchTerm", searchTerm, "num datasources", len(res))
 		templ.Handler(Cards4Datasources(splits)).ServeHTTP(w, r)
-	})))
-
-	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
-	logger.Info("Started", "Listening at", listenaddr)
-	err = http.ListenAndServe(listenaddr, mux)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
 	}
 }
 
@@ -1102,6 +1098,14 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) *groupedMovies {
 		}
 	*/
 	return res
+}
+
+func serveTopIndex(w http.ResponseWriter, r *http.Request) {
+	webRootURL, err := url.Parse(Config.WebRoot)
+	if err != nil {
+		panic(err)
+	}
+	serveIndex(r.Context(), w, r, allRepos.AllDataSources(), webRootURL.Path+"/", webRootURL.Path+"/search")
 }
 
 func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss []datasource.DataSource, formActionURL string, searchURL string) {

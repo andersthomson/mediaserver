@@ -407,7 +407,6 @@ func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
 	} else {
 		Logger.Warn("Has no poster image", "tmdbId", m.Tmdb)
 	}
-	spew.Dump(res.PosterFile)
 	return res, true
 }
 
