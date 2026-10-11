@@ -83,8 +83,6 @@ func (i TMDBTVEpisode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == i.MediaURLPath():
 		i.MediaServer.ServeHTTP(w, r)
-	case r.URL.Path == i.PosterURLPath():
-		i.PosterServer.ServeHTTP(w, r)
 	case r.URL.Path == i.BackdropURLPath():
 		i.BackdropServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):

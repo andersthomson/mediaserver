@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
-	"github.com/davecgh/go-spew/spew"
 )
 
 type TMDBMovie struct {
@@ -84,8 +83,6 @@ func (i TMDBMovie) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		i.DashServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), "/hls/"):
 		i.HLSServer.ServeHTTP(w, r)
-	case r.URL.Path == "/"+i.PosterURLPath():
-		i.PosterServer.ServeHTTP(w, r)
 	case r.URL.Path == "/"+i.BackdropURLPath():
 		i.BackdropServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
@@ -310,132 +307,6 @@ func (t *TmdbView) Genres() ([]string, bool) {
 		slog.Warn("NEED IMPLEMENTING")
 	}
 	return nil, false
-}
-
-// For the benefit of posterServer....
-func (t *TmdbView) posterPath() string {
-	switch {
-	case t.MovieId != nil:
-		t.movieDetailsOnce.Do(t.readMovieDetails)
-		spew.Dump(t.movieDetails.PosterPath)
-		return t.movieDetails.PosterPath
-	case t.SeriesId != nil:
-		///TODO
-		slog.Warn("NEED IMPLEMENTING")
-	}
-	return ""
-}
-
-type StreamAsset struct {
-	DashServer
-	HLSServer
-	PosterServer
-	id        string
-	shortName string
-	TmdbView
-}
-
-func (s StreamAsset) ID() string {
-	return s.id
-}
-
-func (s StreamAsset) ShortName() string {
-	return s.shortName
-}
-
-func (s StreamAsset) PrettyID() string {
-	return s.ShortName() + "-" + s.ID()
-}
-func (s StreamAsset) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	Logger.Info("StreamAsset serving", "Url", r.URL.Path)
-	w.Header().Add("Cache-Control", "no-cache, private, max-age=0")
-
-	// Fetch the unmutated raw path string context from the headers.
-	// If r.URL.RawPath is empty (meaning the URL contains zero special characters),
-	// we naturally fall back to the standard pre-cleaned r.URL.Path.
-	currentRawPath := r.URL.RawPath
-	if currentRawPath == "" {
-		currentRawPath = r.URL.Path
-	}
-
-	//if !strings.HasPrefix(currentRawPath, "/") {
-	//	currentRawPath = "/" + currentRawPath
-	//}
-
-	spew.Dump(currentRawPath)
-	spew.Dump(s.PosterURLPath())
-
-	//FIXME  remove the slash when its settles whether muxes start with a slash
-	if currentRawPath == "/"+s.PosterURLPath() || strings.HasPrefix(currentRawPath, "/"+s.PosterURLPath()) {
-		// Strip off the structural token prefix "/dash/" keeping the original
-		// percent-encoding intact so nested sub-servers parse arguments safely.
-		trimmedRawPath := "/" + strings.TrimPrefix(currentRawPath, "/dash/")
-		trimmedRawPath = strings.TrimSuffix(trimmedRawPath, "/")
-
-		// Clone request parameters to update execution tracking variables safely
-		r.URL.Path = trimmedRawPath
-		if r.URL.RawPath != "" {
-			r.URL.RawPath = trimmedRawPath
-		}
-
-		// Direct explicit execution delegation down to the embedded interface instance
-		s.PosterServer.ServeHTTP(w, r)
-		return
-	}
-
-	switch {
-	//case r.URL.Path == "/"+i.MediaURLPath():
-	//	s.MediaServer.ServeHTTP(w, r)
-	case strings.HasPrefix(r.URL.String(), "/dash/"):
-		s.DashServer.ServeHTTP(w, r)
-	//case strings.HasPrefix(r.URL.String(), "/hls/"):
-	//	s.HLSServer.ServeHTTP(w, r)
-	//	case r.URL.Path == "/"+s.PosterURLPath():
-	//		s.PosterServer.ServeHTTP(w, r)
-	///case r.URL.Path == "/"+i.BackdropURLPath():
-	//	s.BackdropServer.ServeHTTP(w, r)
-	//case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
-	//	s.SubsServer.ServeHTTP(w, r)
-	default:
-		Logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
-		w.WriteHeader(404)
-		return
-	}
-}
-
-func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
-	res := &StreamAsset{}
-	res.id = m.Id
-	res.shortName = m.ShortName
-
-	if m.Playouts.HasDASHManifest {
-		u := filepath.Join(streamDir, res.PrettyID(), "/dash/", "manifest.mpd")
-		if _, err := os.Stat(u); err == nil {
-			res.MpdFile = u
-		}
-
-	}
-	if m.Playouts.HasHLSMaster {
-		u := filepath.Join(streamDir, res.PrettyID(), "/hls/", "master.m3u8")
-		if _, err := os.Stat(u); err == nil {
-			res.M3U8File = u
-		}
-	}
-	if res.MpdFile != "" && res.M3U8File != "" {
-		Logger.Info("Movie has two streaming formats", "shortname", res.shortName)
-	}
-	res.MovieId = m.Tmdb.MovieId
-
-	//Thread the tmdb poster to the PosterServer
-	/*
-		if p := res.posterPath(); p != "" {
-			if fname, err := TMDBImage(p, tmdb.W500); err == nil {
-				res.PosterFile = fname
-			}
-		} else {
-			Logger.Warn("Has no poster image", "tmdbId", m.Tmdb)
-		}*/
-	return res, true
 }
 
 func TMDBMovieFromMss(streamDir string, m Mss) (*TMDBMovie, bool) {

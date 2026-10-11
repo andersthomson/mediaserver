@@ -85,17 +85,6 @@ func PlotOrZero(x any) string {
 	return ""
 }
 
-type PosterURLPather interface {
-	PosterURLPath() string
-}
-
-func PosterURLPathOrZero(x any) string {
-	if xT, ok := x.(PosterURLPather); ok {
-		return xT.PosterURLPath()
-	}
-	return ""
-}
-
 type MediaURLPather interface {
 	MediaURLPath() string
 }

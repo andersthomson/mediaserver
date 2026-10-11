@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -225,11 +226,18 @@ func backdropURL(ds datasource.DataSource) string {
 }
 
 func posterURL(ds datasource.DataSource) string {
-	if p := datasource.PosterURLPathOrZero(ds); p == "" {
-		return ""
-	} else {
-		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + url.PathEscape(p)
+	pr := scrape.PosterResolver{
+		MssCache: mssCache,
 	}
+	meta, err := pr.ResolvePosterState(ds.ID())
+	if err != nil {
+		slog.Error("Item ID for poster resoution not found", "id", ds.ID())
+		return ""
+	}
+	if meta.HasPoster {
+		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + "poster"
+	}
+	return ""
 }
 
 type dataSourceServer struct {
@@ -248,8 +256,13 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.WarnContext(ctx, "datasource unknown", "id", itm)
 		return
 	}
-
-	ctx = context.WithValue(ctx, ItmId, ds.ID())
+	_, id, err := SplitPrettyID(itm)
+	if err != nil {
+		slog.Error("Failed to derive ID", "err", err)
+		return
+	}
+	ctx = context.WithValue(ctx, ItmId, id)
+	//ctx = context.WithValue(ctx, ItmId, ds.ID())
 	ctx = context.WithValue(ctx, MssCacheCtx, p.mssCache)
 	r = r.WithContext(ctx)
 
@@ -464,6 +477,29 @@ func Chain(middlewares ...Middleware) Middleware {
 		}
 		return final
 	}
+}
+
+func SplitPrettyID(s string) (string, string, error) {
+	const uuidLen = 36
+
+	// A valid <randomchars>-<uuid> must be at least 38 chars long
+	// (minimum 1 char for random + 1 char for separator '-' + 36 chars for UUID)
+	if len(s) < uuidLen+2 {
+		return "", "", errors.New("string too short to contain random chars and a UUID")
+	}
+
+	// Calculate the exact split index right before the UUID
+	splitIdx := len(s) - uuidLen - 1
+
+	// Validate that the separator right before the UUID is a hyphen
+	if s[splitIdx] != '-' {
+		return "", "", errors.New("malformed format: missing hyphen separator before UUID")
+	}
+
+	shortName := s[:splitIdx]
+	id := s[len(s)-uuidLen:]
+
+	return shortName, id, nil
 }
 
 func main() {
