@@ -272,6 +272,18 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	subPathTail := r.PathValue("subPath")
 	subRequest.URL.Path = "/" + path.Clean(subPathTail)
 
+	if subRequest.URL.Path == "/poster" {
+		pr := &scrape.PosterResolver{
+			MssCache: mssCache,
+		}
+
+		ps := &scrape.PosterServer{
+			PosterResolver: pr,
+		}
+		ps.ServeHTTP(w, subRequest)
+		return
+	}
+
 	hdlr := ds.(http.Handler)
 	hdlr.ServeHTTP(w, subRequest)
 	return
@@ -1026,7 +1038,7 @@ type groupedMovies struct {
 	MovieListItems []movieListItem
 }
 
-func groupMovies(dss []datasource.DataSource, r *http.Request) *groupedMovies {
+func groupMovies(dss []datasource.DataSource, r *http.Request) (*groupedMovies, []datasource.DataSource) {
 	queries := r.URL.Query()
 	markedMovies := make([]string, 0, len(queries))
 	for key, _ := range queries {
@@ -1040,25 +1052,26 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) *groupedMovies {
 
 	collections := make(map[string][]ListItem, 64)
 	titles := make([]ListItem, 0, len(dss))
+	others := make([]datasource.DataSource, 0, len(dss))
 	for _, ds := range dss {
-		dsT, ok := ds.(*scrape.TMDBMovie)
-		if !ok {
-			continue
-		}
-		tags := dsT.Tags()
-		if collectionName, ok := tags["collection"]; ok {
-			if collections[collectionName[0]] == nil {
-				collections[collectionName[0]] = make([]ListItem, 0, 4)
+		if dsT, ok := ds.(*scrape.TMDBMovie); ok {
+			tags := dsT.Tags()
+			if collectionName, ok := tags["collection"]; ok {
+				if collections[collectionName[0]] == nil {
+					collections[collectionName[0]] = make([]ListItem, 0, 4)
+				}
+				collections[collectionName[0]] = append(collections[collectionName[0]], ListItem{
+					Movie:  dsT,
+					Marked: slices.Contains(markedMovies, dsT.Title()),
+				})
+			} else {
+				titles = append(titles, ListItem{
+					Movie:  dsT,
+					Marked: slices.Contains(markedMovies, dsT.Title()),
+				})
 			}
-			collections[collectionName[0]] = append(collections[collectionName[0]], ListItem{
-				Movie:  dsT,
-				Marked: slices.Contains(markedMovies, dsT.Title()),
-			})
 		} else {
-			titles = append(titles, ListItem{
-				Movie:  dsT,
-				Marked: slices.Contains(markedMovies, dsT.Title()),
-			})
+			others = append(others, ds)
 		}
 	}
 	//sort each collection
@@ -1126,7 +1139,7 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) *groupedMovies {
 			}
 		}
 	*/
-	return res
+	return res, others
 }
 
 func HandleIndex(allRepos allReposT) http.HandlerFunc {
@@ -1238,9 +1251,11 @@ func HandleIndex(allRepos allReposT) http.HandlerFunc {
 			FormActionURL string
 			SearchURL     string
 		}
+		movs, other := groupMovies(dss, r)
+		spew.Dump(other)
 		data := dataT{
 			User:          ctx.Value(userCtxKey{}).(User).UserID(),
-			GroupedMovies: groupMovies(dss, r),
+			GroupedMovies: movs,
 			FilterTags:    FilterTags,
 			Objects:       o,
 			FormActionURL: formActionURL,
