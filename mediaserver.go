@@ -572,7 +572,7 @@ func main() {
 
 	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache}))
 
-	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveTopIndex)))
+	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(allRepos)))
 
 	mux.Handle(webRootURL.Path+"/search", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(allRepos)))
 
@@ -1069,6 +1069,7 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) *groupedMovies {
 	}
 	res := &groupedMovies{}
 	res.MovieListItems = make([]movieListItem, 0, len(titles)+len(collections))
+	spew.Dump(res)
 	//Add individual titles to the result slice
 	for _, t := range titles {
 		res.MovieListItems = append(res.MovieListItems, movieListItem{
@@ -1128,121 +1129,125 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) *groupedMovies {
 	return res
 }
 
-func serveTopIndex(w http.ResponseWriter, r *http.Request) {
-	webRootURL, err := url.Parse(Config.WebRoot)
-	if err != nil {
-		panic(err)
-	}
-	serveIndex(r.Context(), w, r, allRepos.AllDataSources(), webRootURL.Path+"/", webRootURL.Path+"/search")
-}
-
-func serveIndex(ctx context.Context, w http.ResponseWriter, r *http.Request, dss []datasource.DataSource, formActionURL string, searchURL string) {
-	logger.InfoContext(ctx, "Serving idx", "url", r.URL.String())
-	//Find all tags
-	FilterTags := map[string]map[string]bool{}
-	for _, ds := range dss {
-		dsT, ok := ds.(Tagser)
-		if !ok {
-			continue
+func HandleIndex(allRepos allReposT) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		webRootURL, err := url.Parse(Config.WebRoot)
+		if err != nil {
+			panic(err)
 		}
-		for k, v := range dsT.Tags() {
-			//if k == "dir" {
-			for _, vv := range v {
-				if FilterTags[k] == nil {
-					FilterTags[k] = map[string]bool{}
+		ctx := r.Context()
+		dss := allRepos.AllDataSources()
+		formActionURL := webRootURL.Path + "/"
+		searchURL := webRootURL.Path + "/search"
+
+		logger.InfoContext(ctx, "Serving idx", "url", r.URL.String())
+		//Find all tags
+		FilterTags := map[string]map[string]bool{}
+		for _, ds := range dss {
+			dsT, ok := ds.(Tagser)
+			if !ok {
+				continue
+			}
+			for k, v := range dsT.Tags() {
+				//if k == "dir" {
+				for _, vv := range v {
+					if FilterTags[k] == nil {
+						FilterTags[k] = map[string]bool{}
+					}
+					FilterTags[k][vv] = false
 				}
-				FilterTags[k][vv] = false
+				//}
 			}
-			//}
 		}
-	}
 
-	//	spew.Dump(r.Header)
-	queries := r.URL.Query()
-	for key, value := range queries {
-		fmt.Printf("  %v ===== %v\n", key, value)
-		splits := strings.SplitN(key, ".", 2)
-		tag := splits[0]
-		val := splits[1]
-		if _, ok := FilterTags[tag][val]; ok {
-			FilterTags[tag][val] = true
+		//	spew.Dump(r.Header)
+		queries := r.URL.Query()
+		for key, value := range queries {
+			fmt.Printf("  %v ===== %v\n", key, value)
+			splits := strings.SplitN(key, ".", 2)
+			tag := splits[0]
+			val := splits[1]
+			if _, ok := FilterTags[tag][val]; ok {
+				FilterTags[tag][val] = true
+			}
 		}
-	}
-	type object struct {
-		Html5URL      string
-		ShakaURL      string
-		DashURL       string
-		HLSURL        string
-		CastURL       string
-		MediaURL      string
-		PosterURL     string
-		BackdropURL   string
-		Title         string
-		Language      string
-		Overview      string
-		ShowName      string
-		EpisodeTitle  string
-		Plot          string
-		SeasonEpisode string
-		Tags          map[string][]string
-		BackingStruct string
-		SubsLanguages []string
-	}
+		type object struct {
+			Html5URL      string
+			ShakaURL      string
+			DashURL       string
+			HLSURL        string
+			CastURL       string
+			MediaURL      string
+			PosterURL     string
+			BackdropURL   string
+			Title         string
+			Language      string
+			Overview      string
+			ShowName      string
+			EpisodeTitle  string
+			Plot          string
+			SeasonEpisode string
+			Tags          map[string][]string
+			BackingStruct string
+			SubsLanguages []string
+		}
 
-	o := make([]object, 0, len(dss))
-	sortSources(dss)
-	for _, ds := range dss {
-		if hasSetTag(ds, FilterTags) {
-			dsObject := object{
-				Html5URL:      html5URL(ds),
-				ShakaURL:      shakaURL(ds),
-				DashURL:       dashURL(ds),
-				HLSURL:        hlsURL(ds),
-				CastURL:       castURL(ds),
-				MediaURL:      mediaURL(ds),
-				PosterURL:     posterURL(ds),
-				BackdropURL:   backdropURL(ds),
-				Title:         datasource.TitleOrZero(ds),
-				Overview:      datasource.OverviewOrZero(ds),
-				Plot:          datasource.PlotOrZero(ds),
-				Language:      datasource.LanguageOrZero(ds),
-				SeasonEpisode: seasonEpisode(ds),
-				BackingStruct: spew.Sdump(ds),
-			}
-			if dsT, ok := ds.(EpisodeTitler); ok {
-				dsObject.EpisodeTitle = dsT.EpisodeTitle()
-			}
-			if dsT, ok := ds.(ShowNamer); ok {
-				dsObject.ShowName = dsT.ShowName()
-			}
-			if dsT, ok := ds.(Tagser); ok {
-				dsObject.Tags = dsT.Tags()
-			}
-			if dsT, ok := ds.(datasource.SubsSlicer); ok {
-				for _, sh := range dsT.SubsSlice() {
-					dsObject.SubsLanguages = append(dsObject.SubsLanguages, iso639_3.LanguagesPart1[sh.Language].Name)
+		o := make([]object, 0, len(dss))
+		sortSources(dss)
+		spew.Dump(len(dss))
+		for _, ds := range dss {
+			if hasSetTag(ds, FilterTags) {
+				dsObject := object{
+					Html5URL:      html5URL(ds),
+					ShakaURL:      shakaURL(ds),
+					DashURL:       dashURL(ds),
+					HLSURL:        hlsURL(ds),
+					CastURL:       castURL(ds),
+					MediaURL:      mediaURL(ds),
+					PosterURL:     posterURL(ds),
+					BackdropURL:   backdropURL(ds),
+					Title:         datasource.TitleOrZero(ds),
+					Overview:      datasource.OverviewOrZero(ds),
+					Plot:          datasource.PlotOrZero(ds),
+					Language:      datasource.LanguageOrZero(ds),
+					SeasonEpisode: seasonEpisode(ds),
+					BackingStruct: spew.Sdump(ds),
 				}
+				if dsT, ok := ds.(EpisodeTitler); ok {
+					dsObject.EpisodeTitle = dsT.EpisodeTitle()
+				}
+				if dsT, ok := ds.(ShowNamer); ok {
+					dsObject.ShowName = dsT.ShowName()
+				}
+				if dsT, ok := ds.(Tagser); ok {
+					dsObject.Tags = dsT.Tags()
+				}
+				if dsT, ok := ds.(datasource.SubsSlicer); ok {
+					for _, sh := range dsT.SubsSlice() {
+						dsObject.SubsLanguages = append(dsObject.SubsLanguages, iso639_3.LanguagesPart1[sh.Language].Name)
+					}
+				}
+				o = append(o, dsObject)
 			}
-			o = append(o, dsObject)
 		}
-	}
-	type dataT struct {
-		User          string
-		GroupedMovies *groupedMovies
-		FilterTags    map[string]map[string]bool
-		Objects       []object
-		FormActionURL string
-		SearchURL     string
-	}
-	data := dataT{
-		User:          ctx.Value(userCtxKey{}).(User).UserID(),
-		GroupedMovies: groupMovies(dss, r),
-		FilterTags:    FilterTags,
-		Objects:       o,
-		FormActionURL: formActionURL,
-		SearchURL:     searchURL,
-	}
-	htmltempl := `<!DOCTYPE html>
+		type dataT struct {
+			User          string
+			GroupedMovies *groupedMovies
+			FilterTags    map[string]map[string]bool
+			Objects       []object
+			FormActionURL string
+			SearchURL     string
+		}
+		data := dataT{
+			User:          ctx.Value(userCtxKey{}).(User).UserID(),
+			GroupedMovies: groupMovies(dss, r),
+			FilterTags:    FilterTags,
+			Objects:       o,
+			FormActionURL: formActionURL,
+			SearchURL:     searchURL,
+		}
+		spew.Dump(data)
+		htmltempl := `<!DOCTYPE html>
 	<html lang="en" dir="ltr">
 		<head>
 			<meta charset="utf-8">
@@ -1444,9 +1449,10 @@ NADA
 		</body>
 	</html>
 `
-	templ := template.Must(template.New("foo").Parse(htmltempl))
-	if err := templ.Execute(w, data); err != nil {
-		logger.Warn("template error", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		templ := template.Must(template.New("foo").Parse(htmltempl))
+		if err := templ.Execute(w, data); err != nil {
+			logger.Warn("template error", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}
 }
