@@ -26,7 +26,6 @@ import (
 	"github.com/a-h/templ"
 	"github.com/andersthomson/mediaserver/datasource"
 	"github.com/andersthomson/mediaserver/scrape"
-	iso639_3 "github.com/barbashov/iso639-3"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/felixge/httpsnoop"
 	slogctx "github.com/veqryn/slog-context"
@@ -88,10 +87,8 @@ func ScanDir(dir string) []datasource.DataSource {
 			continue
 		}
 		mssCache.Add(mssDir, mss)
-		/*	if itm, ok := scrape.TMDBMovieFromMss(dir, mss); itm != nil && ok {
-			res = append(res, itm)
-			fmt.Printf("Scraped movie %s\n", filepath.Join(dir, entry.Name()))
-		} else */if itm, ok := scrape.StreamAssetFromMss(dir, mss); itm != nil && ok {
+
+		if itm, ok := scrape.StreamAssetFromMss(dir, mss); itm != nil && ok {
 			res = append(res, itm)
 			fmt.Printf("Scraped StreamAsset %s\n", filepath.Join(dir, entry.Name()))
 		}
@@ -217,10 +214,6 @@ func html5URL(ds datasource.DataSource) string {
 
 func shakaURL(ds datasource.DataSource) string {
 	return Config.WebRoot + "/view/shaka/" + url.PathEscape(ds.PrettyID())
-}
-
-func shakaURL2(ds datasource.DataSource) (string, bool) {
-	return Config.WebRoot + "/view/shaka/" + url.PathEscape(ds.PrettyID()), true
 }
 
 func shakaURL3(id, shortname string) string {
@@ -611,8 +604,38 @@ type CardViewModel struct {
 	ShakaURL    string
 }
 
+type IndexViewModel struct {
+	ID            string
+	Title         string
+	PosterURL     string
+	Overview      string
+	ShakaURL      string
+	Html5URL      string
+	HLSURL        string
+	CastURL       string
+	MediaURL      string
+	Plot          string
+	SeasonEpisode string
+	Language      string
+	BackdropURL   string
+	EpisodeTitle  string
+	ShowName      string
+	Tags          map[string][]string
+	SubsLanguages []string // should be slide of iso639_3.LanguagesPart1[sh.Language].Name
+}
 type ViewModelGenerator struct {
 	Orchestrator *MetadataOrchestrator
+}
+
+func (g *ViewModelGenerator) posterURL(id string) string {
+	return posterURLByID(id)
+}
+
+func (g *ViewModelGenerator) shakaURL(manifest MediaManifest, id string) string {
+	if manifest.HasDash {
+		return shakaURL3(id, manifest.ShortName)
+	}
+	return ""
 }
 
 func (g *ViewModelGenerator) AssembleCard(id string) (CardViewModel, error) {
@@ -622,10 +645,6 @@ func (g *ViewModelGenerator) AssembleCard(id string) (CardViewModel, error) {
 		return CardViewModel{}, err
 	}
 
-	var shakaURL string
-	if manifest.HasDash {
-		shakaURL = shakaURL3(id, manifest.ShortName)
-	}
 	// 2. The view generator simply maps fields flatly without checking discriminators!
 	return CardViewModel{
 		ID:        manifest.ID,
@@ -633,8 +652,25 @@ func (g *ViewModelGenerator) AssembleCard(id string) (CardViewModel, error) {
 		Tagline:   manifest.Tagline,
 		Genres:    manifest.Genres,
 		Overview:  manifest.Overview,
-		PosterURL: posterURLByID(id),
-		ShakaURL:  shakaURL,
+		PosterURL: g.posterURL(id),
+		ShakaURL:  g.shakaURL(manifest, id),
+	}, nil
+}
+
+func (g *ViewModelGenerator) AssembleIndex(id string) (IndexViewModel, error) {
+	// 1. Fetch the unified manifest package
+	manifest, err := g.Orchestrator.GetUnifiedManifest(id)
+	if err != nil {
+		return IndexViewModel{}, err
+	}
+
+	// 2. The view generator simply maps fields flatly without checking discriminators!
+	return IndexViewModel{
+		ID:        manifest.ID,
+		Title:     manifest.Title,
+		PosterURL: g.posterURL(id),
+		Overview:  manifest.Overview,
+		ShakaURL:  g.shakaURL(manifest, id),
 	}, nil
 }
 
@@ -733,7 +769,7 @@ func main() {
 
 	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, dashServer}))
 
-	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(allRepos)))
+	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(allRepos, viewModelGenerator)))
 
 	mux.Handle(webRootURL.Path+"/search", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(allRepos, viewModelGenerator)))
 
@@ -1304,7 +1340,7 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) (*groupedMovies, 
 	return res, others
 }
 
-func HandleIndex(allRepos allReposT) http.HandlerFunc {
+func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		webRootURL, err := url.Parse(Config.WebRoot)
 		if err != nil {
@@ -1318,38 +1354,40 @@ func HandleIndex(allRepos allReposT) http.HandlerFunc {
 		logger.InfoContext(ctx, "Serving idx", "url", r.URL.String())
 		//Find all tags
 		FilterTags := map[string]map[string]bool{}
-		for _, ds := range dss {
-			dsT, ok := ds.(Tagser)
-			if !ok {
-				continue
-			}
-			for k, v := range dsT.Tags() {
-				//if k == "dir" {
-				for _, vv := range v {
-					if FilterTags[k] == nil {
-						FilterTags[k] = map[string]bool{}
-					}
-					FilterTags[k][vv] = false
+		/*
+			for _, ds := range dss {
+				dsT, ok := ds.(Tagser)
+				if !ok {
+					continue
 				}
-				//}
+				for k, v := range dsT.Tags() {
+					//if k == "dir" {
+					for _, vv := range v {
+						if FilterTags[k] == nil {
+							FilterTags[k] = map[string]bool{}
+						}
+						FilterTags[k][vv] = false
+					}
+					//}
+				}
 			}
-		}
 
-		//	spew.Dump(r.Header)
-		queries := r.URL.Query()
-		for key, value := range queries {
-			fmt.Printf("  %v ===== %v\n", key, value)
-			splits := strings.SplitN(key, ".", 2)
-			tag := splits[0]
-			val := splits[1]
-			if _, ok := FilterTags[tag][val]; ok {
-				FilterTags[tag][val] = true
+			//	spew.Dump(r.Header)
+			queries := r.URL.Query()
+			for key, value := range queries {
+				fmt.Printf("  %v ===== %v\n", key, value)
+				splits := strings.SplitN(key, ".", 2)
+				tag := splits[0]
+				val := splits[1]
+				if _, ok := FilterTags[tag][val]; ok {
+					FilterTags[tag][val] = true
+				}
 			}
-		}
+			sortSources(dss)
+		*/
 		type object struct {
 			Html5URL      string
 			ShakaURL      string
-			DashURL       string
 			HLSURL        string
 			CastURL       string
 			MediaURL      string
@@ -1368,41 +1406,34 @@ func HandleIndex(allRepos allReposT) http.HandlerFunc {
 		}
 
 		o := make([]object, 0, len(dss))
-		sortSources(dss)
 		for _, ds := range dss {
-			if hasSetTag(ds, FilterTags) {
-				dsObject := object{
-					Html5URL:      html5URL(ds),
-					ShakaURL:      shakaURL(ds),
-					DashURL:       dashURLByID(ds.ID()),
-					HLSURL:        hlsURL(ds),
-					CastURL:       castURL(ds),
-					MediaURL:      mediaURL(ds),
-					PosterURL:     posterURLByID(ds.ID()),
-					BackdropURL:   backdropURL(ds),
-					Title:         datasource.TitleOrZero(ds),
-					Overview:      datasource.OverviewOrZero(ds),
-					Plot:          datasource.PlotOrZero(ds),
-					Language:      datasource.LanguageOrZero(ds),
-					SeasonEpisode: seasonEpisode(ds),
-					BackingStruct: spew.Sdump(ds),
-				}
-				if dsT, ok := ds.(EpisodeTitler); ok {
-					dsObject.EpisodeTitle = dsT.EpisodeTitle()
-				}
-				if dsT, ok := ds.(ShowNamer); ok {
-					dsObject.ShowName = dsT.ShowName()
-				}
-				if dsT, ok := ds.(Tagser); ok {
-					dsObject.Tags = dsT.Tags()
-				}
-				if dsT, ok := ds.(datasource.SubsSlicer); ok {
-					for _, sh := range dsT.SubsSlice() {
-						dsObject.SubsLanguages = append(dsObject.SubsLanguages, iso639_3.LanguagesPart1[sh.Language].Name)
-					}
-				}
-				o = append(o, dsObject)
+			//if hasSetTag(ds, FilterTags) {
+			viewModel, err := viewModelGenerator.AssembleIndex(ds.ID())
+			if err != nil {
+				slog.Error("Failed to AssembleIndex", "err", err)
+				w.WriteHeader(500)
+				return
 			}
+			dsObject := object{
+				Html5URL:      viewModel.Html5URL,
+				ShakaURL:      viewModel.ShakaURL,
+				HLSURL:        viewModel.HLSURL,
+				CastURL:       viewModel.CastURL,
+				MediaURL:      viewModel.MediaURL,
+				PosterURL:     viewModel.PosterURL,
+				BackdropURL:   viewModel.BackdropURL,
+				Title:         viewModel.Title,
+				Overview:      viewModel.Overview,
+				Plot:          viewModel.Plot,
+				Language:      viewModel.Language,
+				SeasonEpisode: viewModel.SeasonEpisode,
+				EpisodeTitle:  viewModel.EpisodeTitle,
+				ShowName:      viewModel.ShowName,
+				Tags:          viewModel.Tags,
+				SubsLanguages: viewModel.SubsLanguages,
+			}
+			o = append(o, dsObject)
+			//}
 		}
 		type dataT struct {
 			User          string
@@ -1605,7 +1636,7 @@ NADA
 							<a href="{{.MediaURL}}">&lt;Download&gt;</a>
 							<a href="{{ .Html5URL}}">&lt;Play in browser&gt;</a>
 						{{ end }}
-						{{ if .DashURL }}
+						{{ if .ShakaURL }}
 							<a href="{{ .ShakaURL}}">&lt;Play in Shaka&gt;</a>
 						{{ end }}
 						{{ if .HLSURL }}
