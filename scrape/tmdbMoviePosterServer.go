@@ -11,13 +11,6 @@ type PosterServer struct {
 	PosterResolver *PosterResolver
 }
 
-func (p PosterServer) XPosterURLPath() string {
-	//if p.PosterFile != "" {
-	return "poster"
-	//}
-	//return ""
-}
-
 func (p PosterServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	val := ctx.Value("ItmId")
@@ -27,7 +20,6 @@ func (p PosterServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	itemID := val.(string)
-	slog.Info("SHOULD STream poster", "id", val.(string))
 
 	val2 := ctx.Value("MssCacheCtx")
 	if val2 == nil {
@@ -53,6 +45,6 @@ func (p PosterServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
 		return
 	}
-	slog.Info("Serving poster", "fromFile", metadata.LocalDiskPath)
+	slog.Info("Serving poster", "id", ItemID, "fromFile", metadata.LocalDiskPath)
 	http.ServeContent(w, r, "", time.Time{}, content)
 }
