@@ -121,11 +121,14 @@ func extractTMDBMovieData(itm *TMDBMovie, tmdbId int) bool {
 	} else {
 		Logger.Warn("Has no backdrop image", "id", tmdbId, "title", movie.Title)
 	}
-	for _, genre := range movie.Genres {
-		itm.tags["genre"] = append(itm.tags["genre"], strings.TrimSpace(genre.Name))
-		itm.genres = append(itm.genres, strings.TrimSpace(genre.Name))
-	}
-	itm.tagline = movie.Tagline
+
+	/*
+		for _, genre := range movie.Genres {
+			itm.tags["genre"] = append(itm.tags["genre"], strings.TrimSpace(genre.Name))
+			itm.genres = append(itm.genres, strings.TrimSpace(genre.Name))
+		}*/
+
+	//itm.tagline = movie.Tagline
 
 	if movie.BelongsToCollection.ID != 0 {
 		collection, err := TMDBCollectionDetails(int(movie.BelongsToCollection.ID))

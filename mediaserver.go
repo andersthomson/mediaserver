@@ -222,6 +222,11 @@ func shakaURL(ds datasource.DataSource) string {
 func shakaURL2(ds datasource.DataSource) (string, bool) {
 	return Config.WebRoot + "/view/shaka/" + url.PathEscape(ds.PrettyID()), true
 }
+
+func shakaURL3(id, shortname string) string {
+	return Config.WebRoot + "/view/shaka/" + url.PathEscape(PrettyID(id, shortname))
+}
+
 func backdropURL(ds datasource.DataSource) string {
 	if p := datasource.BackdropURLPathOrZero(ds); p == "" {
 		return ""
@@ -538,12 +543,15 @@ const KindTVshow MediaKind = "mediakind.tvshow"
 // MediaManifest is the "Aggregate Root". It holds the raw, unformatted
 // data state of the entity across ALL sources before path composition happens.
 type MediaManifest struct {
-	ID string
-	//ShortName string
+	ID        string
+	ShortName string
 	Title     string
+	Genres    []string
+	Tagline   string
+	Overview  string
+	HasDash   bool
 	Kind      MediaKind
 	Poster    scrape.PosterMetadata
-	PosterURL string
 	Dash      scrape.DashMetadata
 }
 
@@ -557,7 +565,16 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 	// Consolidate background system lookups into a single execution pass
 	var res MediaManifest
 	var err error
+	var ok bool
 	res.ID = id
+	res.ShortName, ok = m.MssCache.ShortName(id)
+	if !ok {
+		return MediaManifest{}, fmt.Errorf("ID %s not in msscache", id)
+	}
+	res.HasDash, ok = m.MssCache.HasDashManifest(id)
+	if !ok {
+		return MediaManifest{}, fmt.Errorf("ID %s not in msscache", id)
+	}
 	if tmdbMovieID, ok := m.MssCache.MovieId(id); ok {
 		res.Kind = KindMovie
 		movieDetails, err := scrape.TMDBMovieDetails(tmdbMovieID)
@@ -565,12 +582,14 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 			return MediaManifest{}, fmt.Errorf("tmdb breakdown: %w", err)
 		}
 		res.Title = scrape.TmdbMovieTitle(movieDetails)
+		res.Genres = scrape.TmdbMovieGenres(movieDetails)
+		res.Tagline = scrape.TmdbMovieTagline(movieDetails)
+		res.Overview = scrape.TmdbMovieOverview(movieDetails)
 	}
 	res.Poster, err = m.PosterResolver.ResolvePosterState(id)
 	if err != nil {
 		return MediaManifest{}, fmt.Errorf("orchestrator poster matching crash: %w", err)
 	}
-	res.PosterURL = posterURLByID(id)
 
 	res.Dash, err = m.DashResolver.ResolveDashState(id)
 	if err != nil {
@@ -580,10 +599,16 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 }
 
 type CardViewModel struct {
-	ID        string
-	Title     string
-	PosterURL string
-	Badge     string
+	ID          string
+	Title       string
+	PosterURL   string
+	Tagline     string
+	Genres      []string
+	Overview    string
+	DownloadURL string
+	CastURL     string
+	Html5URL    string
+	ShakaURL    string
 }
 
 type ViewModelGenerator struct {
@@ -597,11 +622,19 @@ func (g *ViewModelGenerator) AssembleCard(id string) (CardViewModel, error) {
 		return CardViewModel{}, err
 	}
 
+	var shakaURL string
+	if manifest.HasDash {
+		shakaURL = shakaURL3(id, manifest.ShortName)
+	}
 	// 2. The view generator simply maps fields flatly without checking discriminators!
 	return CardViewModel{
 		ID:        manifest.ID,
-		PosterURL: manifest.PosterURL,
 		Title:     manifest.Title,
+		Tagline:   manifest.Tagline,
+		Genres:    manifest.Genres,
+		Overview:  manifest.Overview,
+		PosterURL: posterURLByID(id),
+		ShakaURL:  shakaURL,
 	}, nil
 }
 

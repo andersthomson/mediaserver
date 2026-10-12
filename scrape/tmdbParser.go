@@ -1,6 +1,10 @@
 package scrape
 
-import tmdb "github.com/cyruzin/golang-tmdb"
+import (
+	"strings"
+
+	tmdb "github.com/cyruzin/golang-tmdb"
+)
 
 func TmdbMoviePosterPath(t *tmdb.MovieDetails) string {
 	return t.PosterPath
@@ -8,4 +12,18 @@ func TmdbMoviePosterPath(t *tmdb.MovieDetails) string {
 
 func TmdbMovieTitle(t *tmdb.MovieDetails) string {
 	return t.Title
+}
+
+func TmdbMovieGenres(t *tmdb.MovieDetails) []string {
+	var res []string
+	for _, genre := range t.Genres {
+		res = append(res, strings.TrimSpace(genre.Name))
+	}
+	return res
+}
+func TmdbMovieTagline(t *tmdb.MovieDetails) string {
+	return t.Tagline
+}
+func TmdbMovieOverview(t *tmdb.MovieDetails) string {
+	return t.Overview
 }
