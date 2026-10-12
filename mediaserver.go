@@ -68,7 +68,8 @@ func ScanDir(dir string) []datasource.DataSource {
 	}
 	res := make([]datasource.DataSource, 0, len(entries))
 	for _, entry := range entries {
-		jsonFile, err := os.Open(filepath.Join(dir, entry.Name(), "dash", "mediaserver.mss"))
+		mssDir := filepath.Join(dir, entry.Name(), "dash")
+		jsonFile, err := os.Open(filepath.Join(mssDir, "mediaserver.mss"))
 		// if we os.Open returns an error then handle it
 		if err != nil {
 			fmt.Println(err)
@@ -86,7 +87,7 @@ func ScanDir(dir string) []datasource.DataSource {
 			fmt.Println("Error unmarshalling JSON:", err)
 			continue
 		}
-		mssCache.Add(mss)
+		mssCache.Add(mssDir, mss)
 		/*	if itm, ok := scrape.TMDBMovieFromMss(dir, mss); itm != nil && ok {
 			res = append(res, itm)
 			fmt.Printf("Scraped movie %s\n", filepath.Join(dir, entry.Name()))
@@ -248,6 +249,7 @@ const ItmId = "ItmId"
 const MssCacheCtx = "MssCacheCtx"
 
 func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	slog.Info("HERE")
 	ctx := r.Context()
 	itm := r.PathValue("item")
 	ds := allRepos.DataSourceByPrettyID(itm)
@@ -1207,7 +1209,6 @@ func HandleIndex(allRepos allReposT) http.HandlerFunc {
 
 		o := make([]object, 0, len(dss))
 		sortSources(dss)
-		spew.Dump(len(dss))
 		for _, ds := range dss {
 			if hasSetTag(ds, FilterTags) {
 				dsObject := object{
@@ -1251,8 +1252,7 @@ func HandleIndex(allRepos allReposT) http.HandlerFunc {
 			FormActionURL string
 			SearchURL     string
 		}
-		movs, other := groupMovies(dss, r)
-		spew.Dump(other)
+		movs, _ := groupMovies(dss, r)
 		data := dataT{
 			User:          ctx.Value(userCtxKey{}).(User).UserID(),
 			GroupedMovies: movs,
@@ -1261,7 +1261,6 @@ func HandleIndex(allRepos allReposT) http.HandlerFunc {
 			FormActionURL: formActionURL,
 			SearchURL:     searchURL,
 		}
-		spew.Dump(data)
 		htmltempl := `<!DOCTYPE html>
 	<html lang="en" dir="ltr">
 		<head>

@@ -21,7 +21,8 @@ type Mss struct {
 }
 
 type MssCache struct {
-	m map[string]Mss
+	m      map[string]Mss
+	mssDir string
 	sync.Mutex
 }
 
@@ -31,9 +32,10 @@ func NewMssCache() *MssCache {
 	}
 }
 
-func (m *MssCache) Add(mss Mss) {
+func (m *MssCache) Add(dir string, mss Mss) {
 	m.Lock()
 	m.m[mss.Id] = mss
+	m.mssDir = dir
 	m.Unlock()
 }
 
