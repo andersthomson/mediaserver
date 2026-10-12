@@ -45,6 +45,6 @@ func (p PosterServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
 		return
 	}
-	slog.Info("Serving poster", "id", ItemID, "fromFile", metadata.LocalDiskPath)
+	slog.Info("Serving poster", "id", itemID, "fromFile", metadata.LocalDiskPath)
 	http.ServeContent(w, r, "", time.Time{}, content)
 }

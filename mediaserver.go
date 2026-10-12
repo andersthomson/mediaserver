@@ -188,11 +188,7 @@ func hlsURL(ds datasource.DataSource) string {
 }
 
 func dashURL(ds datasource.DataSource) string {
-	if p := datasource.DashURLPathOrZero(ds); p == "" {
-		return ""
-	} else {
-		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + p
-	}
+	return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + "dash/manifest.mpd"
 }
 
 func castURL(ds datasource.DataSource) string {
@@ -208,15 +204,7 @@ func shakaURL(ds datasource.DataSource) string {
 }
 
 func shakaURL2(ds datasource.DataSource) (string, bool) {
-	type xer interface {
-		DashURLPath() string
-	}
-	if xx, ok := ds.(xer); ok {
-		if xx.DashURLPath() != "" {
-			return Config.WebRoot + "/view/shaka/" + url.PathEscape(ds.PrettyID()), true
-		}
-	}
-	return "", false
+	return Config.WebRoot + "/view/shaka/" + url.PathEscape(ds.PrettyID()), true
 }
 func backdropURL(ds datasource.DataSource) string {
 	if p := datasource.BackdropURLPathOrZero(ds); p == "" {

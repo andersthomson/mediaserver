@@ -8,7 +8,7 @@ import (
 )
 
 type StreamAsset struct {
-	DashServer
+	DashServer DashServer
 	HLSServer
 	id        string
 	shortName string
@@ -68,7 +68,7 @@ func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
 	if m.Playouts.HasDASHManifest {
 		u := filepath.Join(streamDir, res.PrettyID(), "/dash/", "manifest.mpd")
 		if _, err := os.Stat(u); err == nil {
-			res.MpdFile = u
+			res.DashServer.MpdFile = u
 		}
 
 	}
@@ -78,7 +78,7 @@ func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
 			res.M3U8File = u
 		}
 	}
-	if res.MpdFile != "" && res.M3U8File != "" {
+	if res.DashServer.MpdFile != "" && res.M3U8File != "" {
 		Logger.Info("Movie has two streaming formats", "shortname", res.shortName)
 	}
 	res.MovieId = m.Tmdb.MovieId
