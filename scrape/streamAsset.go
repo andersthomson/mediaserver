@@ -4,11 +4,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type StreamAsset struct {
-	DashServer DashServer
 	HLSServer
 	id        string
 	shortName string
@@ -45,8 +43,8 @@ func (s StreamAsset) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	//case r.URL.Path == "/"+i.MediaURLPath():
 	//	s.MediaServer.ServeHTTP(w, r)
-	case strings.HasPrefix(r.URL.String(), "/dash/"):
-		s.DashServer.ServeHTTP(w, r)
+	//case strings.HasPrefix(r.URL.String(), "/dash/"):
+	//	s.DashServer.ServeHTTP(w, r)
 	//case strings.HasPrefix(r.URL.String(), "/hls/"):
 	//	s.HLSServer.ServeHTTP(w, r)
 	///case r.URL.Path == "/"+i.BackdropURLPath():
@@ -65,13 +63,6 @@ func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
 	res.id = m.Id
 	res.shortName = m.ShortName
 
-	if m.Playouts.HasDASHManifest {
-		u := filepath.Join(streamDir, res.PrettyID(), "/dash/", "manifest.mpd")
-		if _, err := os.Stat(u); err == nil {
-			res.DashServer.DashResolver = &DashResolver{}
-		}
-
-	}
 	if m.Playouts.HasHLSMaster {
 		u := filepath.Join(streamDir, res.PrettyID(), "/hls/", "master.m3u8")
 		if _, err := os.Stat(u); err == nil {

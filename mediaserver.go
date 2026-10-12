@@ -299,6 +299,16 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ps.ServeHTTP(w, subRequest)
 		return
 	}
+	if strings.HasPrefix(subRequest.URL.Path, "/dash/") {
+		dr := &scrape.DashResolver{
+			MssCache: mssCache,
+		}
+		ds := &scrape.DashServer{
+			DashResolver: dr,
+		}
+		ds.ServeHTTP(w, subRequest)
+		return
+	}
 
 	hdlr := ds.(http.Handler)
 	hdlr.ServeHTTP(w, subRequest)

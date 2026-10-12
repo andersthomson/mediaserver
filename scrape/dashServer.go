@@ -21,17 +21,6 @@ func (d DashServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID := val.(string)
 
-	val2 := ctx.Value("MssCacheCtx")
-	if val2 == nil {
-		slog.Error("Failed to find msscache")
-		w.WriteHeader(500)
-		return
-	}
-	mssCache := val2.(*MssCache)
-
-	//FIXME Hack
-	d.DashResolver.MssCache = mssCache
-
 	state, err := d.DashResolver.ResolveDashState(itemID)
 	if err != nil {
 		slog.Error("DasherServer failed to resolve dash state", "err", err)
