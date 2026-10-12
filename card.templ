@@ -65,7 +65,7 @@ templ CardTitle(ds datasource.DataSource) {
 }
 
 templ CardPoster(ds datasource.DataSource) {
-	if u := posterURL(ds) ; u != "" {
+	if u := posterURLByID(ds.ID()) ; u != "" {
 		<img src={ templ.SafeURL(u) } />
 	}
 }

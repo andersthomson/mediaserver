@@ -187,8 +187,24 @@ func hlsURL(ds datasource.DataSource) string {
 	}
 }
 
-func dashURL(ds datasource.DataSource) string {
-	return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + "dash/manifest.mpd"
+func dashURLByID(id string) string {
+	dr := scrape.DashResolver{
+		MssCache: mssCache,
+	}
+	meta, err := dr.ResolveDashState(id)
+	if err != nil {
+		slog.Error("Dash resoution failed", "id", id, "err", err)
+		return ""
+	}
+	if !meta.HasDash {
+		return ""
+	}
+	short, ok := mssCache.ShortName(id)
+	if !ok {
+		slog.Error("item has no shortName", "itemID", id)
+		return ""
+	}
+	return Config.WebRoot + "/item/" + url.PathEscape(PrettyID(id, short)) + "/part/" + "dash/manifest.mpd"
 }
 
 func castURL(ds datasource.DataSource) string {
@@ -874,7 +890,7 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
 	data := dataT{}
 	data.MediaURL = mediaURL(ds)
 	//Prefer Dash over HLS
-	data.ManifestURL = dashURL(ds)
+	data.ManifestURL = dashURLByID(ds.ID())
 	if u := hlsURL(ds); u != "" {
 		data.ManifestURL = u
 	}
@@ -1212,7 +1228,7 @@ func HandleIndex(allRepos allReposT) http.HandlerFunc {
 				dsObject := object{
 					Html5URL:      html5URL(ds),
 					ShakaURL:      shakaURL(ds),
-					DashURL:       dashURL(ds),
+					DashURL:       dashURLByID(ds.ID()),
 					HLSURL:        hlsURL(ds),
 					CastURL:       castURL(ds),
 					MediaURL:      mediaURL(ds),
