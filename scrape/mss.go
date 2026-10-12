@@ -22,20 +22,21 @@ type Mss struct {
 
 type MssCache struct {
 	m      map[string]Mss
-	mssDir string
+	mssDir map[string]string
 	sync.Mutex
 }
 
 func NewMssCache() *MssCache {
 	return &MssCache{
-		m: make(map[string]Mss, 64),
+		m:      make(map[string]Mss, 64),
+		mssDir: make(map[string]string, 64),
 	}
 }
 
 func (m *MssCache) Add(dir string, mss Mss) {
 	m.Lock()
 	m.m[mss.Id] = mss
-	m.mssDir = dir
+	m.mssDir[mss.Id] = dir
 	m.Unlock()
 }
 
@@ -53,4 +54,21 @@ func (m *MssCache) MovieId(id string) (int, bool) {
 		return 0, false
 	}
 	return *itm.Tmdb.MovieId, true
+}
+
+func (m *MssCache) HasDashManifest(id string) (bool, bool) {
+	m.Lock()
+	defer m.Unlock()
+	itm, ok := m.m[id]
+	if !ok {
+		return false, false
+	}
+	return itm.Playouts.HasDASHManifest, true
+}
+
+func (m *MssCache) Dir(id string) (string, bool) {
+	m.Lock()
+	defer m.Unlock()
+	itm, ok := m.mssDir[id]
+	return itm, ok
 }

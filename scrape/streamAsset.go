@@ -69,6 +69,7 @@ func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
 		u := filepath.Join(streamDir, res.PrettyID(), "/dash/", "manifest.mpd")
 		if _, err := os.Stat(u); err == nil {
 			res.DashServer.MpdFile = u
+			res.DashServer.DashResolver = &DashResolver{}
 		}
 
 	}
@@ -83,14 +84,5 @@ func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
 	}
 	res.MovieId = m.Tmdb.MovieId
 
-	//Thread the tmdb poster to the PosterServer
-	/*
-		if p := res.posterPath(); p != "" {
-			if fname, err := TMDBImage(p, tmdb.W500); err == nil {
-				res.PosterFile = fname
-			}
-		} else {
-			Logger.Warn("Has no poster image", "tmdbId", m.Tmdb)
-		}*/
 	return res, true
 }

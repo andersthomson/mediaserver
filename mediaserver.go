@@ -220,7 +220,7 @@ func posterURL(ds datasource.DataSource) string {
 	}
 	meta, err := pr.ResolvePosterState(ds.ID())
 	if err != nil {
-		slog.Error("Item ID for poster resoution not found", "id", ds.ID())
+		slog.Error("Poster resoution failed", "id", ds.ID(), "err", err)
 		return ""
 	}
 	if meta.HasPoster {

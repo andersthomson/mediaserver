@@ -1,34 +1,57 @@
 package scrape
 
 import (
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
 )
 
 type DashServer struct {
-	MpdFile string
+	MpdFile      string
+	DashResolver *DashResolver
 }
 
-func (d DashServer) DashURLPath() string {
-	if d.MpdFile != "" {
-		return "dash/manifest.mpd"
-	}
-	return ""
-}
 func (d DashServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if d.MpdFile == "" {
-		Logger.Error("Dash server started without setting MpdFile")
+	ctx := r.Context()
+	val := ctx.Value("ItmId")
+	if val == nil {
+		slog.Error("Failed to find itmid")
 		w.WriteHeader(500)
 		return
 	}
-	Logger.Info("DashServer", "Serving File", d.MpdFile, "r.URL", r.URL, "Range", r.Header.Get("Range"))
+	itemID := val.(string)
+
+	val2 := ctx.Value("MssCacheCtx")
+	if val2 == nil {
+		slog.Error("Failed to find msscache")
+		w.WriteHeader(500)
+		return
+	}
+	mssCache := val2.(*MssCache)
+
+	//FIXME Hack
+	d.DashResolver.MssCache = mssCache
+
+	state, err := d.DashResolver.ResolveDashState(itemID)
+	if err != nil {
+		slog.Error("DasherServer failed to resolve dash state", "err", err)
+		w.WriteHeader(500)
+		return
+	}
+	if !state.HasDash {
+		slog.Info("Dasher server called, but item has no dash manifest", "itemid", itemID)
+		w.WriteHeader(404)
+		return
+	}
+
+	Logger.Info("DashServer", "Serving File", state.ManifestPath, "r.URL", r.URL, "Range", r.Header.Get("Range"))
 	//We expect r.URL.Path to host e.g. "/dash/manifest.mpd"
 	splits := strings.SplitN(r.URL.Path, "/", 3)
 	r.URL.Path = splits[2]
 	//Hack for shaka HLS??
 	r.Header.Del("If-Modified-Since")
 	Logger.Info("Serving  dash", "splits", splits, "got 2", r.URL.Path, "file location", d.MpdFile, "Range", r.Header.Get("Range"))
-	hdlr := http.FileServer(http.Dir(filepath.Dir(d.MpdFile)))
+	hdlr := http.FileServer(http.Dir(filepath.Dir(state.ManifestPath)))
 	hdlr.ServeHTTP(w, r)
 }
