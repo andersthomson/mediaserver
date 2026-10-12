@@ -214,19 +214,29 @@ func backdropURL(ds datasource.DataSource) string {
 	}
 }
 
-func posterURL(ds datasource.DataSource) string {
+func posterURLByID(id string) string {
+
 	pr := scrape.PosterResolver{
 		MssCache: mssCache,
 	}
-	meta, err := pr.ResolvePosterState(ds.ID())
+	meta, err := pr.ResolvePosterState(id)
 	if err != nil {
-		slog.Error("Poster resoution failed", "id", ds.ID(), "err", err)
+		slog.Error("Poster resoution failed", "id", id, "err", err)
 		return ""
 	}
-	if meta.HasPoster {
-		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + "poster"
+	if !meta.HasPoster {
+		return ""
 	}
-	return ""
+	short, ok := mssCache.ShortName(id)
+	if !ok {
+		slog.Error("item has no shortName", "itemID", id)
+		return ""
+	}
+	return Config.WebRoot + "/item/" + url.PathEscape(PrettyID(id, short)) + "/part/" + "poster"
+}
+
+func PrettyID(id, shortName string) string {
+	return shortName + "-" + id
 }
 
 type dataSourceServer struct {
@@ -646,7 +656,7 @@ func serveItemCast(w http.ResponseWriter, r *http.Request) {
 	}
 	data := dataT{
 		Title:     datasource.TitleOrZero(ds),
-		PosterURL: posterURL(ds),
+		PosterURL: posterURLByID(ds.ID()),
 		MediaURL:  mediaURL(ds),
 		SubsURLs:  datasource.SubsSliceOrZero(ds),
 		Tagline:   datasource.TaglineOrZero(ds),
@@ -1206,7 +1216,7 @@ func HandleIndex(allRepos allReposT) http.HandlerFunc {
 					HLSURL:        hlsURL(ds),
 					CastURL:       castURL(ds),
 					MediaURL:      mediaURL(ds),
-					PosterURL:     posterURL(ds),
+					PosterURL:     posterURLByID(ds.ID()),
 					BackdropURL:   backdropURL(ds),
 					Title:         datasource.TitleOrZero(ds),
 					Overview:      datasource.OverviewOrZero(ds),

@@ -56,6 +56,16 @@ func (m *MssCache) MovieId(id string) (int, bool) {
 	return *itm.Tmdb.MovieId, true
 }
 
+func (m *MssCache) ShortName(id string) (string, bool) {
+	m.Lock()
+	defer m.Unlock()
+	itm, ok := m.m[id]
+	if !ok {
+		return "", false
+	}
+	return itm.ShortName, true
+}
+
 func (m *MssCache) HasDashManifest(id string) (bool, bool) {
 	m.Lock()
 	defer m.Unlock()
