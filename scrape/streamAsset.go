@@ -68,7 +68,6 @@ func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
 	if m.Playouts.HasDASHManifest {
 		u := filepath.Join(streamDir, res.PrettyID(), "/dash/", "manifest.mpd")
 		if _, err := os.Stat(u); err == nil {
-			res.DashServer.MpdFile = u
 			res.DashServer.DashResolver = &DashResolver{}
 		}
 
@@ -78,9 +77,6 @@ func StreamAssetFromMss(streamDir string, m Mss) (*StreamAsset, bool) {
 		if _, err := os.Stat(u); err == nil {
 			res.M3U8File = u
 		}
-	}
-	if res.DashServer.MpdFile != "" && res.M3U8File != "" {
-		Logger.Info("Movie has two streaming formats", "shortname", res.shortName)
 	}
 	res.MovieId = m.Tmdb.MovieId
 

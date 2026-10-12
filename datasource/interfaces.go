@@ -107,17 +107,6 @@ func HLSURLPathOrZero(x any) string {
 	return ""
 }
 
-type DashURLPather interface {
-	DashURLPath() string
-}
-
-func DashURLPathOrZero(x any) string {
-	if xT, ok := x.(DashURLPather); ok {
-		return xT.DashURLPath()
-	}
-	return ""
-}
-
 type BackdropURLPather interface {
 	BackdropURLPath() string
 }

@@ -214,16 +214,9 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 	}
 	res.id = m.Id
 	res.shortName = m.ShortName
-	u := caches[0] + "/" + res.PrettyID() + "/dash/" + "manifest.mpd"
-	if _, err := os.Stat(u); err == nil {
-		res.MpdFile = u
-	}
-	u = caches[0] + "/" + res.PrettyID() + "/hls/" + "master.m3u8"
+	u := caches[0] + "/" + res.PrettyID() + "/hls/" + "master.m3u8"
 	if _, err := os.Stat(u); err == nil {
 		res.M3U8File = u
-	}
-	if res.MpdFile != "" && res.M3U8File != "" {
-		Logger.Info("Movie has two streaming formats", "shortname", res.shortName)
 	}
 	//FIXME: This is really a streaming MP4 property
 	res.SubsServer.AddSubsFromMP4Filename(caches[0]+"/"+res.ID()+"/mp4/", basename(m.ShortName+".mp4"))
@@ -322,21 +315,11 @@ func TMDBMovieFromMss(streamDir string, m Mss) (*TMDBMovie, bool) {
 	}
 	res.id = m.Id
 	res.shortName = m.ShortName
-	if m.Playouts.HasDASHManifest {
-		u := filepath.Join(streamDir, res.PrettyID(), "/dash/", "manifest.mpd")
-		if _, err := os.Stat(u); err == nil {
-			res.MpdFile = u
-		}
-
-	}
 	if m.Playouts.HasHLSMaster {
 		u := filepath.Join(streamDir, res.PrettyID(), "/hls/", "master.m3u8")
 		if _, err := os.Stat(u); err == nil {
 			res.M3U8File = u
 		}
-	}
-	if res.MpdFile != "" && res.M3U8File != "" {
-		Logger.Info("Movie has two streaming formats", "shortname", res.shortName)
 	}
 	//FIXME: This is really a streaming MP4 property
 	//res.SubsServer.AddSubsFromMP4Filename(streamDir+"/"+res.ID()+"/mp4/", basename(m.ShortName+".mp4"))

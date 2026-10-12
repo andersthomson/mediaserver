@@ -8,7 +8,6 @@ import (
 )
 
 type DashServer struct {
-	MpdFile      string
 	DashResolver *DashResolver
 }
 
@@ -51,7 +50,6 @@ func (d DashServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.URL.Path = splits[2]
 	//Hack for shaka HLS??
 	r.Header.Del("If-Modified-Since")
-	Logger.Info("Serving  dash", "splits", splits, "got 2", r.URL.Path, "file location", d.MpdFile, "Range", r.Header.Get("Range"))
 	hdlr := http.FileServer(http.Dir(filepath.Dir(state.ManifestPath)))
 	hdlr.ServeHTTP(w, r)
 }
