@@ -546,6 +546,7 @@ type MediaManifest struct {
 	Kind      MediaKind
 	Poster    scrape.PosterMetadata
 	Dash      scrape.DashMetadata
+	Tags      map[string][]string
 }
 
 type MetadataOrchestrator struct {
@@ -576,6 +577,8 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 		}
 		res.Title = scrape.TmdbMovieTitle(movieDetails)
 		res.Genres = scrape.TmdbMovieGenres(movieDetails)
+		res.Tags = make(map[string][]string)
+		res.Tags["genre"] = slices.Clone(res.Genres)
 		res.Tagline = scrape.TmdbMovieTagline(movieDetails)
 		res.Overview = scrape.TmdbMovieOverview(movieDetails)
 	}
@@ -671,6 +674,7 @@ func (g *ViewModelGenerator) AssembleIndex(id string) (IndexViewModel, error) {
 		PosterURL: g.posterURL(id),
 		Overview:  manifest.Overview,
 		ShakaURL:  g.shakaURL(manifest, id),
+		Tags:      manifest.Tags,
 	}, nil
 }
 
@@ -1152,16 +1156,11 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func hasSetTag(ds datasource.DataSource, filterTags map[string]map[string]bool) bool {
-	dss, ok := ds.(Tagser)
-	if !ok {
-		return false
-	}
-	dsTags := dss.Tags()
-
+func hasSetTag(dsTags map[string][]string, filterTags map[string]map[string]bool) bool {
+	slog.Info("hasSetTag", "dsTags", dsTags, "filterTags", filterTags)
 	for filterTagClass, x := range filterTags {
 		for filterTagKey, filterTagValue := range x {
-			//slog.Info("Testing Filter", "Class", filterTagClass, "Key", filterTagKey, "val", filterTagValue)
+			slog.Info("Testing Filter", "Class", filterTagClass, "Key", filterTagKey, "val", filterTagValue)
 			for dsClass, dsValSlice := range dsTags {
 				if dsClass == filterTagClass {
 					if slices.Contains(dsValSlice, filterTagKey) {
@@ -1354,37 +1353,37 @@ func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) htt
 		logger.InfoContext(ctx, "Serving idx", "url", r.URL.String())
 		//Find all tags
 		FilterTags := map[string]map[string]bool{}
-		/*
-			for _, ds := range dss {
-				dsT, ok := ds.(Tagser)
-				if !ok {
-					continue
-				}
-				for k, v := range dsT.Tags() {
-					//if k == "dir" {
-					for _, vv := range v {
-						if FilterTags[k] == nil {
-							FilterTags[k] = map[string]bool{}
-						}
-						FilterTags[k][vv] = false
+		for _, ds := range dss {
+			viewModel, err := viewModelGenerator.AssembleIndex(ds.ID())
+			if err != nil {
+				slog.Error("Failed to assemble index", "err", err)
+				return
+			}
+			for k, v := range viewModel.Tags {
+				//if k == "dir" {
+				for _, vv := range v {
+					if FilterTags[k] == nil {
+						FilterTags[k] = map[string]bool{}
 					}
-					//}
+					FilterTags[k][vv] = false
 				}
+				//}
 			}
+		}
 
-			//	spew.Dump(r.Header)
-			queries := r.URL.Query()
-			for key, value := range queries {
-				fmt.Printf("  %v ===== %v\n", key, value)
-				splits := strings.SplitN(key, ".", 2)
-				tag := splits[0]
-				val := splits[1]
-				if _, ok := FilterTags[tag][val]; ok {
-					FilterTags[tag][val] = true
-				}
+		//	spew.Dump(r.Header)
+		queries := r.URL.Query()
+		for key, value := range queries {
+			fmt.Printf("  %v ===== %v\n", key, value)
+			splits := strings.SplitN(key, ".", 2)
+			tag := splits[0]
+			val := splits[1]
+			if _, ok := FilterTags[tag][val]; ok {
+				FilterTags[tag][val] = true
 			}
-			sortSources(dss)
-		*/
+		}
+		sortSources(dss)
+		movs, _ := groupMovies(dss, r)
 		type object struct {
 			Html5URL      string
 			ShakaURL      string
@@ -1407,33 +1406,33 @@ func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) htt
 
 		o := make([]object, 0, len(dss))
 		for _, ds := range dss {
-			//if hasSetTag(ds, FilterTags) {
 			viewModel, err := viewModelGenerator.AssembleIndex(ds.ID())
 			if err != nil {
 				slog.Error("Failed to AssembleIndex", "err", err)
 				w.WriteHeader(500)
 				return
 			}
-			dsObject := object{
-				Html5URL:      viewModel.Html5URL,
-				ShakaURL:      viewModel.ShakaURL,
-				HLSURL:        viewModel.HLSURL,
-				CastURL:       viewModel.CastURL,
-				MediaURL:      viewModel.MediaURL,
-				PosterURL:     viewModel.PosterURL,
-				BackdropURL:   viewModel.BackdropURL,
-				Title:         viewModel.Title,
-				Overview:      viewModel.Overview,
-				Plot:          viewModel.Plot,
-				Language:      viewModel.Language,
-				SeasonEpisode: viewModel.SeasonEpisode,
-				EpisodeTitle:  viewModel.EpisodeTitle,
-				ShowName:      viewModel.ShowName,
-				Tags:          viewModel.Tags,
-				SubsLanguages: viewModel.SubsLanguages,
+			if hasSetTag(viewModel.Tags, FilterTags) {
+				dsObject := object{
+					Html5URL:      viewModel.Html5URL,
+					ShakaURL:      viewModel.ShakaURL,
+					HLSURL:        viewModel.HLSURL,
+					CastURL:       viewModel.CastURL,
+					MediaURL:      viewModel.MediaURL,
+					PosterURL:     viewModel.PosterURL,
+					BackdropURL:   viewModel.BackdropURL,
+					Title:         viewModel.Title,
+					Overview:      viewModel.Overview,
+					Plot:          viewModel.Plot,
+					Language:      viewModel.Language,
+					SeasonEpisode: viewModel.SeasonEpisode,
+					EpisodeTitle:  viewModel.EpisodeTitle,
+					ShowName:      viewModel.ShowName,
+					Tags:          viewModel.Tags,
+					SubsLanguages: viewModel.SubsLanguages,
+				}
+				o = append(o, dsObject)
 			}
-			o = append(o, dsObject)
-			//}
 		}
 		type dataT struct {
 			User          string
@@ -1443,7 +1442,6 @@ func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) htt
 			FormActionURL string
 			SearchURL     string
 		}
-		movs, _ := groupMovies(dss, r)
 		data := dataT{
 			User:          ctx.Value(userCtxKey{}).(User).UserID(),
 			GroupedMovies: movs,

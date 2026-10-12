@@ -38,7 +38,7 @@ func (f *FFMpegArgsPocessor) Process(ctx context.Context, s []shared.FFMpegArg) 
 				return res, shared.Fatal("json unmarshal failed", "err", err)
 			}
 			p := f.Storage.ResolveInputNumber(v.Id, v.Number)
-			res.Args[idx] = filepath.Base(p)
+			res.Args[idx] = "file:" + filepath.Base(p)
 		case shared.KindSubtitlesRepresentationFilePath:
 			var v shared.SubtitlesRepresentationFilePath
 			if err := json.Unmarshal(x.Payload, &v); err != nil {
