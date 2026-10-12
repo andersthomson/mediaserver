@@ -11,12 +11,6 @@ import (
 //	"github.com/davecgh/go-spew/spew"
 	)
 
-templ Card(content templ.Component) {
-     <div class="card-body">
-     @content
-   </div>
-}
-
 templ links(ds datasource.DataSource) {
 	<div id="navigation">
 	<a href={mediaURL(ds)}>&lt;Download&gt;</a>
@@ -26,34 +20,6 @@ templ links(ds datasource.DataSource) {
 		<a href={ templ.SafeURL(u) }>&lt;Play on Shaka&gt;</a><br>
 	}
 	</div>
-}
-
-templ TMDBMovieCard(ds *scrape.TMDBMovie) {
-	<div class="card">
-	@CardPoster(ds)
-	{ds.Title()}<br>
-	@links(ds)
-	<i>{ds.Tagline()}</i><br>
-	{ds.Overview()}<br>
-	</div>
-}
-
-templ TMDBEpisodeCard(ds *scrape.TMDBTVEpisode) {
-	<div class="card">
-	@CardPoster(ds)
-	{ds.Title()}<br>
-	@links(ds)
-	<i>{ds.Tagline()}</i><br>
-	{ds.Overview()}<br>
-	</div>
-}
-
-templ Card4Episode(ds *scrape.TMDBTVEpisode) {
-	@Card(TMDBEpisodeCard(ds))
-}
-
-templ Card4Movie(ds *scrape.TMDBMovie) {
-	@Card(TMDBMovieCard(ds))
 }
 
 templ CardTitle(ds datasource.DataSource) {
@@ -119,10 +85,6 @@ templ Cards4Datasources(splits map[string][]datasource.DataSource) {
 		<div class="row-content">
 		for _,ds := range splits[key] {
 			switch dsT := ds.(type) {
-			case *scrape.TMDBMovie:
-				@Card4Movie(dsT)
-			case *scrape.TMDBTVEpisode:
-				@Card4Episode(dsT)
 			case *scrape.StreamAsset:
 				@Card4StreamAsset(dsT)
 			default:
@@ -133,4 +95,33 @@ templ Cards4Datasources(splits map[string][]datasource.DataSource) {
 		<br>
 	}
 }
-	
+templ CardPoster4ID(u string) {
+	if u != "" {
+		<img src={ templ.SafeURL(u) } />
+	}
+}
+templ CardTitle4ID(title string) {
+	if title != "" {
+		   { title } <br>
+        }
+}
+
+
+templ Card4ID(cvm CardViewModel) {
+        <div class="card">
+        @CardPoster4ID(cvm.PosterURL)
+        @CardTitle4ID(cvm.Title)
+        </div>
+}
+
+templ Cards4IDs(splits map[string][]CardViewModel) {
+        for _, key := range slices.Sorted(maps.Keys(splits)) {
+                <b>{key}</b><br>
+                <div class="row-content">
+                for _,cvm := range splits[key] {
+                        @Card4ID(cvm)
+                }
+                </div>
+                <br>
+        }
+}

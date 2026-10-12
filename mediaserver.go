@@ -529,6 +529,82 @@ func SplitPrettyID(s string) (string, string, error) {
 	return shortName, id, nil
 }
 
+type MediaKind string
+
+const KindUnknown MediaKind = "mediakind.unknown"
+const KindMovie MediaKind = "mediakind.movie"
+const KindTVshow MediaKind = "mediakind.tvshow"
+
+// MediaManifest is the "Aggregate Root". It holds the raw, unformatted
+// data state of the entity across ALL sources before path composition happens.
+type MediaManifest struct {
+	ID string
+	//ShortName string
+	Title     string
+	Kind      MediaKind
+	Poster    scrape.PosterMetadata
+	PosterURL string
+	Dash      scrape.DashMetadata
+}
+
+type MetadataOrchestrator struct {
+	PosterResolver *scrape.PosterResolver
+	DashResolver   *scrape.DashResolver
+	MssCache       *scrape.MssCache
+}
+
+func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, error) {
+	// Consolidate background system lookups into a single execution pass
+	var res MediaManifest
+	var err error
+	res.ID = id
+	if tmdbMovieID, ok := m.MssCache.MovieId(id); ok {
+		res.Kind = KindMovie
+		movieDetails, err := scrape.TMDBMovieDetails(tmdbMovieID)
+		if err != nil {
+			return MediaManifest{}, fmt.Errorf("tmdb breakdown: %w", err)
+		}
+		res.Title = scrape.TmdbMovieTitle(movieDetails)
+	}
+	res.Poster, err = m.PosterResolver.ResolvePosterState(id)
+	if err != nil {
+		return MediaManifest{}, fmt.Errorf("orchestrator poster matching crash: %w", err)
+	}
+	res.PosterURL = posterURLByID(id)
+
+	res.Dash, err = m.DashResolver.ResolveDashState(id)
+	if err != nil {
+		return MediaManifest{}, fmt.Errorf("orchestrator dash matching crash: %w", err)
+	}
+	return res, nil
+}
+
+type CardViewModel struct {
+	ID        string
+	Title     string
+	PosterURL string
+	Badge     string
+}
+
+type ViewModelGenerator struct {
+	Orchestrator *MetadataOrchestrator
+}
+
+func (g *ViewModelGenerator) AssembleCard(id string) (CardViewModel, error) {
+	// 1. Fetch the unified manifest package
+	manifest, err := g.Orchestrator.GetUnifiedManifest(id)
+	if err != nil {
+		return CardViewModel{}, err
+	}
+
+	// 2. The view generator simply maps fields flatly without checking discriminators!
+	return CardViewModel{
+		ID:        manifest.ID,
+		PosterURL: manifest.PosterURL,
+		Title:     manifest.Title,
+	}, nil
+}
+
 func main() {
 	setupLogger()
 	var sessions *SessionStore
@@ -598,6 +674,16 @@ func main() {
 	dashServer := &scrape.DashServer{
 		DashResolver: dashResolver,
 	}
+
+	orchestrator := &MetadataOrchestrator{
+		PosterResolver: posterResolver,
+		DashResolver:   dashResolver,
+		MssCache:       mssCache,
+	}
+	viewModelGenerator := &ViewModelGenerator{
+		Orchestrator: orchestrator,
+	}
+
 	mux := http.NewServeMux()
 
 	//mux.Handle(webRootURL.Path+"/auth/google/login", Chain(LoggingMiddleware)(http.HandlerFunc(googleIDP.googleLoginHandler)))
@@ -616,7 +702,7 @@ func main() {
 
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(allRepos)))
 
-	mux.Handle(webRootURL.Path+"/search", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(allRepos)))
+	mux.Handle(webRootURL.Path+"/search", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(allRepos, viewModelGenerator)))
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Started", "Listening at", listenaddr)
@@ -626,7 +712,7 @@ func main() {
 	}
 }
 
-func HandleSearch(allRepos allReposT) http.HandlerFunc {
+func HandleSearch(allRepos allReposT, viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Extract the 'search' value from the POST request
 		searchTerm := strings.ToLower(r.FormValue("search"))
@@ -647,7 +733,20 @@ func HandleSearch(allRepos allReposT) http.HandlerFunc {
 		sortSources(res)
 		splits := SplitByGenre(res)
 		logger.InfoContext(r.Context(), "serving search", "SearchTerm", searchTerm, "num datasources", len(res))
-		templ.Handler(Cards4Datasources(splits)).ServeHTTP(w, r)
+		//templ.Handler(Cards4Datasources(splits)).ServeHTTP(w, r)
+
+		sID := map[string][]CardViewModel{}
+		for key, genreSlice := range splits {
+			for _, ds := range genreSlice {
+				cvm, err := viewModelGenerator.AssembleCard(ds.ID())
+				if err != nil {
+					slog.Error("Failed to assemble card", "id", ds.ID())
+					continue
+				}
+				sID[key] = append(sID[key], cvm)
+			}
+		}
+		templ.Handler(Cards4IDs(sID)).ServeHTTP(w, r)
 	}
 }
 

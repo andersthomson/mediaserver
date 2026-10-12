@@ -2,13 +2,11 @@ package scrape
 
 import (
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
 )
@@ -232,76 +230,6 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 
 }
 
-type TmdbView struct {
-	Tmdb
-	movieDetails     *tmdb.MovieDetails
-	movieDetailsOnce sync.Once
-}
-
-func (t *TmdbView) readMovieDetails() {
-	movie, err := TMDBMovieDetails(*t.MovieId)
-	if err != nil {
-		Logger.Error("TMDBMovieDetails failed. Skipping", "tmdbId", *t.MovieId, "err", err)
-	}
-	t.movieDetails = movie
-}
-
-func (t *TmdbView) Tagline() (string, bool) {
-	switch {
-	case t.MovieId != nil:
-		t.movieDetailsOnce.Do(t.readMovieDetails)
-		return t.movieDetails.Tagline, true
-	case t.SeriesId != nil:
-		///TODO
-		slog.Warn("NEED IMPLEMENTING")
-	}
-	return "", false
-}
-
-func (t *TmdbView) Overview() (string, bool) {
-	switch {
-	case t.MovieId != nil:
-		t.movieDetailsOnce.Do(t.readMovieDetails)
-		return t.movieDetails.Overview, true
-	case t.SeriesId != nil:
-		///TODO
-		slog.Warn("NEED IMPLEMENTING")
-	}
-	return "", false
-}
-
-func (t *TmdbView) Title() (string, bool) {
-	switch {
-	case t.MovieId != nil:
-		t.movieDetailsOnce.Do(t.readMovieDetails)
-		return t.movieDetails.Title, true
-	case t.SeriesId != nil:
-		///TODO
-		slog.Warn("NEED IMPLEMENTING")
-	}
-	return "", false
-}
-
-func (t *TmdbView) Genres() ([]string, bool) {
-	switch {
-	case t.MovieId != nil:
-		t.movieDetailsOnce.Do(t.readMovieDetails)
-
-		if len(t.movieDetails.Genres) == 0 {
-			return []string{}, false
-		}
-		res := make([]string, 0, len(t.movieDetails.Genres))
-		for _, genre := range t.movieDetails.Genres {
-			res = append(res, strings.TrimSpace(genre.Name))
-		}
-		return res, true
-	case t.SeriesId != nil:
-		///TODO
-		slog.Warn("NEED IMPLEMENTING")
-	}
-	return nil, false
-}
-
 func TMDBMovieFromMss(streamDir string, m Mss) (*TMDBMovie, bool) {
 	res := &TMDBMovie{
 		tags: make(map[string][]string, 4),
@@ -334,47 +262,3 @@ func TMDBMovieFromMss(streamDir string, m Mss) (*TMDBMovie, bool) {
 	return res, true
 
 }
-
-/*
-func TMDBMovieFromGenerate(caches []string, g map[string]string, dir string) (*TMDBMovie, bool) {
-	res := &TMDBMovie{
-		tags: make(map[string][]string, 4),
-	}
-	id, err := strconv.Atoi(g["TMDBMOVIE"])
-	if err != nil {
-		Logger.Warn("Unexpected TMDBMOVIE in .generate file. Skipping", "err", err)
-		return nil, false
-
-	}
-
-	if !extractTMDBMovieData(res, id) {
-		return nil, false
-	}
-	res.id = res.deriveID(g["INPUT"])
-
-	methods, ok := g["methods"]
-	if !ok {
-		Logger.Warn("no serving method(s) defined. Skipping", "dir", dir, "input", g["INPUT"])
-		return nil, false
-	}
-	for _, method := range strings.Split(methods, ",") {
-		switch method {
-		//case "mp4":
-		//	res.MediaFile = caches[0] + "/" + res.ID() + "/mp4/" + basename(g["INPUT"]) + ".mp4"
-		case "dash":
-
-		default:
-			Logger.Warn("unsupported serving method. Skipping", "dir", dir, "input", g["INPUT"], "method", method)
-			return nil, false
-		}
-	}
-	res.SubsServer.AddSubsFromMP4Filename(caches[0]+"/"+res.ID()+"/mp4/", basename(g["INPUT"]+".mp4"))
-
-	res.language = g["AUDIOLANGUAGE"]
-	res.tags["dir"] = append(res.tags["dir"], filepath.Base(dir))
-	res.tags["fulldir"] = append(res.tags["fulldir"], (dir))
-	res.tags["scraper"] = append(res.tags["scraper"], "TMDBMovie")
-	//spew.Dump(res)
-	return res, true
-
-}*/
