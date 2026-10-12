@@ -256,7 +256,9 @@ func PrettyID(id, shortName string) string {
 }
 
 type dataSourceServer struct {
-	mssCache *scrape.MssCache
+	mssCache     *scrape.MssCache
+	PosterServer *scrape.PosterServer
+	DashServer   *scrape.DashServer
 }
 
 const ItmId = "ItmId"
@@ -289,24 +291,11 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	subRequest.URL.Path = "/" + path.Clean(subPathTail)
 
 	if subRequest.URL.Path == "/poster" {
-		pr := &scrape.PosterResolver{
-			MssCache: mssCache,
-		}
-
-		ps := &scrape.PosterServer{
-			PosterResolver: pr,
-		}
-		ps.ServeHTTP(w, subRequest)
+		p.PosterServer.ServeHTTP(w, subRequest)
 		return
 	}
 	if strings.HasPrefix(subRequest.URL.Path, "/dash/") {
-		dr := &scrape.DashResolver{
-			MssCache: mssCache,
-		}
-		ds := &scrape.DashServer{
-			DashResolver: dr,
-		}
-		ds.ServeHTTP(w, subRequest)
+		p.DashServer.ServeHTTP(w, subRequest)
 		return
 	}
 
@@ -594,6 +583,21 @@ func main() {
 		}
 		//}
 	}
+	posterResolver := &scrape.PosterResolver{
+		MssCache: mssCache,
+	}
+
+	posterServer := &scrape.PosterServer{
+		PosterResolver: posterResolver,
+	}
+
+	dashResolver := &scrape.DashResolver{
+		MssCache: mssCache,
+	}
+
+	dashServer := &scrape.DashServer{
+		DashResolver: dashResolver,
+	}
 	mux := http.NewServeMux()
 
 	//mux.Handle(webRootURL.Path+"/auth/google/login", Chain(LoggingMiddleware)(http.HandlerFunc(googleIDP.googleLoginHandler)))
@@ -608,7 +612,7 @@ func main() {
 	mux.Handle(webRootURL.Path+"/view/html5/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemHtml5)))
 	mux.Handle(webRootURL.Path+"/view/shaka/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemShaka)))
 
-	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache}))
+	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, dashServer}))
 
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(allRepos)))
 
