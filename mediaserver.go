@@ -281,7 +281,6 @@ const ItmId = "ItmId"
 const MssCacheCtx = "MssCacheCtx"
 
 func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	slog.Info("HERE")
 	ctx := r.Context()
 	itm := r.PathValue("item")
 	ds := allRepos.DataSourceByPrettyID(itm)
@@ -558,18 +557,22 @@ const KindTVshow MediaKind = "mediakind.tvshow"
 // MediaManifest is the "Aggregate Root". It holds the raw, unformatted
 // data state of the entity across ALL sources before path composition happens.
 type MediaManifest struct {
-	ID        string
-	ShortName string
-	Title     string
-	Genres    []string
-	Tagline   string
-	Overview  string
-	HasDash   bool
-	Kind      MediaKind
-	Poster    scrape.PosterMetadata
-	Backdrop  scrape.BackdropMetadata
-	Dash      scrape.DashMetadata
-	Tags      map[string][]string
+	ID         string
+	ShortName  string
+	Title      string
+	Genres     []string
+	Collection string
+	Tagline    string
+	Overview   string
+	HasDash    bool
+	ShowName   string
+	Season     int
+	Episode    int
+	Kind       MediaKind
+	Poster     scrape.PosterMetadata
+	Backdrop   scrape.BackdropMetadata
+	Dash       scrape.DashMetadata
+	Tags       map[string][]string
 }
 
 type MetadataOrchestrator struct {
@@ -606,6 +609,14 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 		res.Tags["Movie"] = []string{res.Title}
 		res.Tagline = scrape.TmdbMovieTagline(movieDetails)
 		res.Overview = scrape.TmdbMovieOverview(movieDetails)
+		if cid := scrape.TmdbMovieCollectionID(movieDetails); cid != 0 {
+			collectionDetails, err := scrape.TMDBCollectionDetails(cid)
+			if err != nil {
+				return MediaManifest{}, fmt.Errorf("tmdb breakdown: %w", err)
+			}
+			res.Collection = collectionDetails.Name
+			res.Tags["collection"] = []string{res.Collection}
+		}
 	}
 	res.Poster, err = m.PosterResolver.ResolvePosterState(id)
 	if err != nil {
@@ -660,6 +671,7 @@ type IndexViewModel struct {
 }
 type ViewModelGenerator struct {
 	Orchestrator *MetadataOrchestrator
+	MssCache     *scrape.MssCache
 }
 
 func (g *ViewModelGenerator) posterURL(id string) string {
@@ -717,6 +729,108 @@ func (g *ViewModelGenerator) AssembleIndex(id string) (IndexViewModel, error) {
 	}, nil
 }
 
+type object struct {
+	Html5URL      string
+	ShakaURL      string
+	HLSURL        string
+	CastURL       string
+	MediaURL      string
+	PosterURL     string
+	BackdropURL   string
+	Title         string
+	Language      string
+	Overview      string
+	ShowName      string
+	EpisodeTitle  string
+	Plot          string
+	SeasonEpisode string
+	Tags          map[string][]string
+	BackingStruct string
+	SubsLanguages []string
+}
+type IndexViewModel2 struct {
+	User          string
+	GroupedMovies *groupedMovies
+	FilterTags    map[string]map[string]bool
+	Objects       []object
+	FormActionURL string
+	SearchURL     string
+}
+
+func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, query url.Values) (IndexViewModel2, error) {
+	webRootURL, err := url.Parse(Config.WebRoot)
+	if err != nil {
+		panic(err)
+	}
+	ids := allRepos.AllIDs()
+	manifests := make([]MediaManifest, 0, len(ids))
+	for _, id := range ids {
+		manifest, err := g.Orchestrator.GetUnifiedManifest(id)
+		if err != nil {
+			return IndexViewModel2{}, err
+		}
+		manifests = append(manifests, manifest)
+	}
+
+	formActionURL := webRootURL.Path + "/"
+	searchURL := webRootURL.Path + "/search"
+
+	//Find all tags
+	FilterTags := map[string]map[string]bool{}
+
+	for _, mfest := range manifests {
+		for k, v := range mfest.Tags {
+			//if k == "dir" {
+			for _, vv := range v {
+				if FilterTags[k] == nil {
+					FilterTags[k] = map[string]bool{}
+				}
+				FilterTags[k][vv] = false
+			}
+			//}
+		}
+	}
+
+	//	spew.Dump(r.Header)
+	//slog.Info("Query string", "query", queries)
+	//FIXME shoudld be in the http handler...
+	for key, value := range query {
+		slog.Info("  %v ===== %v\n", key, value)
+		splits := strings.SplitN(key, ".", 2)
+		tag := splits[0]
+		val := splits[1]
+		if _, ok := FilterTags[tag][val]; ok {
+			FilterTags[tag][val] = true
+		}
+	}
+
+	sortSources(manifests)
+	movs := groupMovies(manifests, query)
+
+	o := make([]object, 0, len(manifests))
+	for _, manifest := range manifests {
+		if hasSetTag(manifest.Tags, FilterTags) {
+			Object := object{
+				Title:       manifest.Title,
+				PosterURL:   g.posterURL(manifest.ID),
+				BackdropURL: g.backdropURL(manifest),
+				Overview:    manifest.Overview,
+				ShakaURL:    g.shakaURL(manifest, manifest.ID),
+				Tags:        manifest.Tags,
+			}
+			o = append(o, Object)
+		}
+	}
+	return IndexViewModel2{
+		User:          ctx.Value(userCtxKey{}).(User).UserID(),
+		GroupedMovies: movs,
+		FilterTags:    FilterTags,
+		Objects:       o,
+		FormActionURL: formActionURL,
+		SearchURL:     searchURL,
+	}, nil
+
+}
 func main() {
 	setupLogger()
 	var sessions *SessionStore
@@ -803,6 +917,7 @@ func main() {
 	}
 	viewModelGenerator := &ViewModelGenerator{
 		Orchestrator: orchestrator,
+		MssCache:     mssCache,
 	}
 
 	mux := http.NewServeMux()
@@ -1223,24 +1338,24 @@ func hasSetTag(dsTags map[string][]string, filterTags map[string]map[string]bool
 	return false
 }
 
-func sortSources(ivms []IndexViewModel) {
-	title := func(c1, c2 IndexViewModel) int {
+func sortSources(mms []MediaManifest) {
+	title := func(c1, c2 MediaManifest) int {
 		return cmp.Compare(c1.Title, c2.Title)
 	}
-	showname := func(c1, c2 IndexViewModel) int {
+	showname := func(c1, c2 MediaManifest) int {
 		return cmp.Compare(c1.ShowName, c2.ShowName)
 	}
-	season := func(c1, c2 IndexViewModel) int {
+	season := func(c1, c2 MediaManifest) int {
 		return cmp.Compare(c1.Season, c2.Season)
 	}
-	episode := func(c1, c2 IndexViewModel) int {
+	episode := func(c1, c2 MediaManifest) int {
 		return cmp.Compare(c1.Episode, c2.Episode)
 	}
-	slices.SortFunc(ivms, datasource.OrderedBy(showname, season, episode, title))
+	slices.SortFunc(mms, datasource.OrderedBy(showname, season, episode, title))
 }
 
 type ListItem struct {
-	Movie  IndexViewModel
+	Movie  MediaManifest
 	Marked bool
 }
 type Collection struct {
@@ -1258,8 +1373,7 @@ type groupedMovies struct {
 	MovieListItems []movieListItem
 }
 
-func groupMovies(ivms []IndexViewModel, r *http.Request) *groupedMovies {
-	queries := r.URL.Query()
+func groupMovies(mms []MediaManifest, queries url.Values) *groupedMovies {
 	markedMovies := make([]string, 0, len(queries))
 	for key, _ := range queries {
 		splits := strings.SplitN(key, ".", 2)
@@ -1271,21 +1385,21 @@ func groupMovies(ivms []IndexViewModel, r *http.Request) *groupedMovies {
 	}
 
 	collections := make(map[string][]ListItem, 64)
-	titles := make([]ListItem, 0, len(ivms))
-	for _, ivm := range ivms {
-		tags := ivm.Tags
+	titles := make([]ListItem, 0, len(mms))
+	for _, mFest := range mms {
+		tags := mFest.Tags
 		if collectionName, ok := tags["collection"]; ok {
 			if collections[collectionName[0]] == nil {
 				collections[collectionName[0]] = make([]ListItem, 0, 4)
 			}
 			collections[collectionName[0]] = append(collections[collectionName[0]], ListItem{
-				Movie:  ivm,
-				Marked: slices.Contains(markedMovies, ivm.Title),
+				Movie:  mFest,
+				Marked: slices.Contains(markedMovies, mFest.Title),
 			})
 		} else {
 			titles = append(titles, ListItem{
-				Movie:  ivm,
-				Marked: slices.Contains(markedMovies, ivm.Title),
+				Movie:  mFest,
+				Marked: slices.Contains(markedMovies, mFest.Title),
 			})
 		}
 	}
@@ -1358,119 +1472,16 @@ func groupMovies(ivms []IndexViewModel, r *http.Request) *groupedMovies {
 
 func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		webRootURL, err := url.Parse(Config.WebRoot)
-		if err != nil {
-			panic(err)
-		}
 		ctx := r.Context()
-		ids := allRepos.AllIDs()
-		formActionURL := webRootURL.Path + "/"
-		searchURL := webRootURL.Path + "/search"
 
-		logger.InfoContext(ctx, "Serving idx", "url", r.URL.String())
-		//Find all tags
-		FilterTags := map[string]map[string]bool{}
-
-		var ivms []IndexViewModel
-		for _, id := range ids {
-			viewModel, err := viewModelGenerator.AssembleIndex(id)
-			if err != nil {
-				slog.Error("Failed to AssembleIndex", "err", err)
-				w.WriteHeader(500)
-				return
-			}
-
-			ivms = append(ivms, viewModel)
-		}
-
-		for _, ivm := range ivms {
-			for k, v := range ivm.Tags {
-				//if k == "dir" {
-				for _, vv := range v {
-					if FilterTags[k] == nil {
-						FilterTags[k] = map[string]bool{}
-					}
-					FilterTags[k][vv] = false
-				}
-				//}
-			}
-		}
-
-		//	spew.Dump(r.Header)
 		queries := r.URL.Query()
-		//slog.Info("Query string", "query", queries)
-		for key, value := range queries {
-			fmt.Printf("  %v ===== %v\n", key, value)
-			splits := strings.SplitN(key, ".", 2)
-			tag := splits[0]
-			val := splits[1]
-			if _, ok := FilterTags[tag][val]; ok {
-				FilterTags[tag][val] = true
-			}
-		}
 
-		sortSources(ivms)
-		movs := groupMovies(ivms, r)
-		type object struct {
-			Html5URL      string
-			ShakaURL      string
-			HLSURL        string
-			CastURL       string
-			MediaURL      string
-			PosterURL     string
-			BackdropURL   string
-			Title         string
-			Language      string
-			Overview      string
-			ShowName      string
-			EpisodeTitle  string
-			Plot          string
-			SeasonEpisode string
-			Tags          map[string][]string
-			BackingStruct string
-			SubsLanguages []string
+		data, err := viewModelGenerator.AssembleIndex2(ctx, queries)
+		if err != nil {
+			slog.Error("Failed to generate index vireModel", "err", err)
+			return
 		}
-
-		o := make([]object, 0, len(ivms))
-		for _, viewModel := range ivms {
-			if hasSetTag(viewModel.Tags, FilterTags) {
-				Object := object{
-					Html5URL:      viewModel.Html5URL,
-					ShakaURL:      viewModel.ShakaURL,
-					HLSURL:        viewModel.HLSURL,
-					CastURL:       viewModel.CastURL,
-					MediaURL:      viewModel.MediaURL,
-					PosterURL:     viewModel.PosterURL,
-					BackdropURL:   viewModel.BackdropURL,
-					Title:         viewModel.Title,
-					Overview:      viewModel.Overview,
-					Plot:          viewModel.Plot,
-					Language:      viewModel.Language,
-					SeasonEpisode: viewModel.SeasonEpisode,
-					EpisodeTitle:  viewModel.EpisodeTitle,
-					ShowName:      viewModel.ShowName,
-					Tags:          viewModel.Tags,
-					SubsLanguages: viewModel.SubsLanguages,
-				}
-				o = append(o, Object)
-			}
-		}
-		type dataT struct {
-			User          string
-			GroupedMovies *groupedMovies
-			FilterTags    map[string]map[string]bool
-			Objects       []object
-			FormActionURL string
-			SearchURL     string
-		}
-		data := dataT{
-			User:          ctx.Value(userCtxKey{}).(User).UserID(),
-			GroupedMovies: movs,
-			FilterTags:    FilterTags,
-			Objects:       o,
-			FormActionURL: formActionURL,
-			SearchURL:     searchURL,
-		}
+		logger.InfoContext(ctx, "Serving idx", "url", r.URL.String())
 		htmltempl := `<!DOCTYPE html>
 	<html lang="en" dir="ltr">
 		<head>
