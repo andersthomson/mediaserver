@@ -26,7 +26,6 @@ import (
 	"github.com/a-h/templ"
 	"github.com/andersthomson/mediaserver/datasource"
 	"github.com/andersthomson/mediaserver/scrape"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/felixge/httpsnoop"
 	slogctx "github.com/veqryn/slog-context"
 )
@@ -166,6 +165,24 @@ func (a allReposT) DataSourceByID(id string) datasource.DataSource {
 	return nil
 }
 
+func (a allReposT) AllIDs() []string {
+	res := make([]string, 0, 1024)
+	a.reposMu.Lock()
+	for _, r := range a.repos {
+		if r != nil {
+			//logger.Warn("pulling", "xxx", r.AllDataSources())
+			//spew.Dump(r.AllDataSources())
+			if srcs := r.AllDataSources(); len(srcs) > 0 {
+				for _, s := range srcs {
+					res = append(res, s.ID())
+				}
+			}
+		}
+	}
+	a.reposMu.Unlock()
+	return res
+}
+
 var allRepos allReposT
 
 func mediaURL(ds datasource.DataSource) string {
@@ -294,7 +311,6 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if subRequest.URL.Path == "/backdrop" {
-		spew.Dump(p.BackdropServer)
 		p.BackdropServer.ServeHTTP(w, subRequest)
 		return
 	}
@@ -1189,10 +1205,10 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
 }
 
 func hasSetTag(dsTags map[string][]string, filterTags map[string]map[string]bool) bool {
-	slog.Info("hasSetTag", "dsTags", dsTags, "filterTags", filterTags)
+	//slog.Info("hasSetTag", "dsTags", dsTags, "filterTags", filterTags)
 	for filterTagClass, x := range filterTags {
 		for filterTagKey, filterTagValue := range x {
-			slog.Info("Testing Filter", "Class", filterTagClass, "Key", filterTagKey, "val", filterTagValue)
+			//slog.Info("Testing Filter", "Class", filterTagClass, "Key", filterTagKey, "val", filterTagValue)
 			for dsClass, dsValSlice := range dsTags {
 				if dsClass == filterTagClass {
 					if slices.Contains(dsValSlice, filterTagKey) {
@@ -1281,7 +1297,6 @@ func groupMovies(ivms []IndexViewModel, r *http.Request) *groupedMovies {
 	}
 	res := &groupedMovies{}
 	res.MovieListItems = make([]movieListItem, 0, len(titles)+len(collections))
-	spew.Dump(res)
 	//Add individual titles to the result slice
 	for _, t := range titles {
 		res.MovieListItems = append(res.MovieListItems, movieListItem{
@@ -1348,7 +1363,7 @@ func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) htt
 			panic(err)
 		}
 		ctx := r.Context()
-		dss := allRepos.AllDataSources()
+		ids := allRepos.AllIDs()
 		formActionURL := webRootURL.Path + "/"
 		searchURL := webRootURL.Path + "/search"
 
@@ -1357,8 +1372,8 @@ func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) htt
 		FilterTags := map[string]map[string]bool{}
 
 		var ivms []IndexViewModel
-		for _, ds := range dss {
-			viewModel, err := viewModelGenerator.AssembleIndex(ds.ID())
+		for _, id := range ids {
+			viewModel, err := viewModelGenerator.AssembleIndex(id)
 			if err != nil {
 				slog.Error("Failed to AssembleIndex", "err", err)
 				w.WriteHeader(500)
@@ -1383,7 +1398,7 @@ func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) htt
 
 		//	spew.Dump(r.Header)
 		queries := r.URL.Query()
-		slog.Info("Query string", "query", queries)
+		//slog.Info("Query string", "query", queries)
 		for key, value := range queries {
 			fmt.Printf("  %v ===== %v\n", key, value)
 			splits := strings.SplitN(key, ".", 2)
