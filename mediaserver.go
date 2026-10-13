@@ -26,7 +26,6 @@ import (
 	"github.com/a-h/templ"
 	"github.com/andersthomson/mediaserver/datasource"
 	"github.com/andersthomson/mediaserver/scrape"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/felixge/httpsnoop"
 	slogctx "github.com/veqryn/slog-context"
 )
@@ -234,10 +233,6 @@ func shakaURL(ds datasource.DataSource) string {
 	return Config.WebRoot + "/view/shaka/" + url.PathEscape(ds.PrettyID())
 }
 
-func shakaURL3(id, shortname string) string {
-	return Config.WebRoot + "/view/shaka/" + url.PathEscape(PrettyID(id, shortname))
-}
-
 func backdropURL(ds datasource.DataSource) string {
 	if p := datasource.BackdropURLPathOrZero(ds); p == "" {
 		return ""
@@ -279,7 +274,6 @@ type dataSourceServer struct {
 }
 
 const ItmId = "ItmId"
-const MssCacheCtx = "MssCacheCtx"
 
 func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -296,8 +290,6 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx = context.WithValue(ctx, ItmId, id)
-	//ctx = context.WithValue(ctx, ItmId, ds.ID())
-	ctx = context.WithValue(ctx, MssCacheCtx, p.mssCache)
 	r = r.WithContext(ctx)
 
 	subRequest := r.Clone(r.Context())
@@ -636,27 +628,6 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 	return res, nil
 }
 
-type IndexViewModel struct {
-	ID            string
-	Title         string
-	PosterURL     string
-	BackdropURL   string
-	Overview      string
-	ShakaURL      string
-	Html5URL      string
-	HLSURL        string
-	CastURL       string
-	MediaURL      string
-	Plot          string
-	SeasonEpisode string
-	Season        string
-	Episode       string
-	Language      string
-	EpisodeTitle  string
-	ShowName      string
-	Tags          map[string][]string
-	SubsLanguages []string // should be slide of iso639_3.LanguagesPart1[sh.Language].Name
-}
 type ViewModelGenerator struct {
 	Orchestrator *MetadataOrchestrator
 	MssCache     *scrape.MssCache
@@ -674,7 +645,19 @@ func (g *ViewModelGenerator) backdropURL(manifest MediaManifest) string {
 }
 func (g *ViewModelGenerator) shakaURL(manifest MediaManifest, id string) string {
 	if manifest.HasDash {
-		return shakaURL3(id, manifest.ShortName)
+		return Config.WebRoot + "/view/shaka/" + url.PathEscape(PrettyID(id, manifest.ShortName))
+	}
+	return ""
+}
+func (g *ViewModelGenerator) dashURL(manifest MediaManifest) string {
+	if manifest.HasDash {
+		return Config.WebRoot + "/item/" + url.PathEscape(PrettyID(manifest.ID, manifest.ShortName)) + "/part/" + "dash/manifest.mpd"
+	}
+	return ""
+}
+func (g *ViewModelGenerator) thumbnailsURL(manifest MediaManifest) string {
+	if manifest.HasDash {
+		return Config.WebRoot + "/item/" + url.PathEscape(PrettyID(manifest.ID, manifest.ShortName)) + "/part/" + "dash/thumbnails.vtt"
 	}
 	return ""
 }
@@ -741,7 +724,6 @@ func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, enabledTags map
 		}
 	}
 
-	spew.Dump(enabledTags)
 	for tag, vals := range enabledTags {
 		for _, val := range vals {
 			//F the value already exists, enable it (thus not accepting non-exisiting values)
@@ -838,6 +820,25 @@ func (g *ViewModelGenerator) AssembleSearchViewModel(ctx context.Context, search
 		}
 	}
 	return sID, nil
+}
+
+type ShakaViewModel struct {
+	ManifestURL   string
+	ThumbnailsURL string
+}
+
+func (g *ViewModelGenerator) AssembleShakaViewModel(ctx context.Context, id string) (ShakaViewModel, error) {
+	manifest, err := g.Orchestrator.GetUnifiedManifest(id)
+	if err != nil {
+		slog.Error("Failed to get manifest", "id", id, "err", err)
+		return ShakaViewModel{}, fmt.Errorf("Failed to get manifest", "id", id, "err", err)
+	}
+
+	data := ShakaViewModel{
+		ManifestURL:   g.dashURL(manifest),
+		ThumbnailsURL: g.thumbnailsURL(manifest),
+	}
+	return data, nil
 }
 
 func main() {
@@ -941,13 +942,13 @@ func main() {
 
 	mux.Handle("GET "+path.Join(webRootURL.Path, "view/cast/{item}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemCast)))
 	mux.Handle(webRootURL.Path+"/view/html5/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemHtml5)))
-	mux.Handle(webRootURL.Path+"/view/shaka/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemShaka)))
+	mux.Handle(webRootURL.Path+"/view/shaka/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleShaka(viewModelGenerator)))
 
 	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, backdropServer, dashServer}))
 
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(viewModelGenerator)))
 
-	mux.Handle(webRootURL.Path+"/search", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(allRepos, viewModelGenerator)))
+	mux.Handle(webRootURL.Path+"/search", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(viewModelGenerator)))
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Started", "Listening at", listenaddr)
@@ -957,7 +958,7 @@ func main() {
 	}
 }
 
-func HandleSearch(allRepos allReposT, viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
+func HandleSearch(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Extract the 'search' value from the POST request
 		searchTerm := strings.ToLower(r.FormValue("search"))
@@ -1198,42 +1199,21 @@ func serveItemHtml5(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func serveItemShaka(w http.ResponseWriter, r *http.Request) {
-	type dataT struct {
-		ManifestURL   string
-		MediaURL      string
-		ThumbnailsURL string
-		SubsURLs      []datasource.Subs
-		Title         string
-		SeasonEpisode string
-		Plot          string
-		Overview      string
-	}
-
-	ctx := r.Context()
-	itm := r.PathValue("item")
-	ds := allRepos.DataSourceByPrettyID(itm)
-	if ds == nil {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unknown", "id", itm)
-		return
-	}
-
-	data := dataT{}
-	data.MediaURL = mediaURL(ds)
-	//Prefer Dash over HLS
-	data.ManifestURL = dashURLByID(ds.ID())
-	if u := hlsURL(ds); u != "" {
-		data.ManifestURL = u
-	}
-	data.ThumbnailsURL = strings.Replace(data.ManifestURL, "manifest.mpd", "thumbnails.vtt", 1)
-	data.SubsURLs = datasource.SubsSliceOrZero(ds)
-	data.SeasonEpisode = seasonEpisode(ds)
-	data.Overview = datasource.OverviewOrZero(ds)
-	data.Title = datasource.TitleOrZero(ds)
-	data.Plot = datasource.PlotOrZero(ds)
-
-	htmltempl := `
+func HandleShaka(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		pretty := r.PathValue("item")
+		_, id, err := SplitPrettyID(pretty)
+		if err != nil {
+			slog.Error("Failed to split prettyID", "prettyID", pretty, "err", err)
+			return
+		}
+		data, err := viewModelGenerator.AssembleShakaViewModel(ctx, id)
+		if err != nil {
+			slog.Error("Failed to assemble ShakaViewModel", "err", err)
+			return
+		}
+		htmltempl := `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1295,13 +1275,13 @@ func serveItemShaka(w http.ResponseWriter, r *http.Request) {
 </html>
 `
 
-	templ := template.Must(template.New("foo").Parse(htmltempl))
-	if err := templ.Execute(w, data); err != nil {
-		logger.WarnContext(ctx, "Template error", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		templ := template.Must(template.New("foo").Parse(htmltempl))
+		if err := templ.Execute(w, data); err != nil {
+			logger.WarnContext(ctx, "Template error", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}
 }
-
 func hasSetTag(dsTags map[string][]string, filterTags map[string]map[string]bool) bool {
 	//slog.Info("hasSetTag", "dsTags", dsTags, "filterTags", filterTags)
 	for filterTagClass, x := range filterTags {
@@ -1452,7 +1432,9 @@ func HandleIndex(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 		queries := r.URL.Query()
 		enabledTags := map[string][]string{}
 		for key, value := range queries {
-			slog.Info("  %v ===== %v\n", key, value)
+			if value[0] != "on" {
+				continue
+			}
 			splits := strings.SplitN(key, ".", 2)
 			tag := splits[0]
 			val := splits[1]
