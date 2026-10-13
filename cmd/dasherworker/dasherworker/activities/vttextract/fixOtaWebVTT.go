@@ -21,7 +21,7 @@ func fixOtaWebVTT(input string) string {
 	}
 
 	var processedCues []cueBlock
-	timeRegex := regexp.MustCompile(`^(\d{2}:\d{2}\.\d{3}) --> (\d{2}:\d{2}\.\d{3})$`)
+	timeRegex := regexp.MustCompile(`^((?:\d{2}:)?\d{2}:\d{2}\.\d{3}) --> ((?:\d{2}:)?\d{2}:\d{2}\.\d{3})$`)
 
 	// Helper to convert WebVTT timestamp (MM:SS.mmm) to total milliseconds
 	timeToMs := func(t string) int64 {
