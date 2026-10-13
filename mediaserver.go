@@ -878,6 +878,32 @@ func (g *ViewModelGenerator) AssembleHtml5ViewModel(ctx context.Context, id stri
 	}
 	return data, nil
 }
+
+type CastViewModel struct {
+	Title     string
+	PosterURL string
+	MediaURL  string
+	SubsURL   string
+	SubsURLs  []datasource.Subs
+	Tagline   string
+}
+
+func (g *ViewModelGenerator) AssembleCastViewModel(ctx context.Context, id string) (CastViewModel, error) {
+	manifest, err := g.Orchestrator.GetUnifiedManifest(id)
+	if err != nil {
+		slog.Error("Failed to get manifest", "id", id, "err", err)
+		return CastViewModel{}, fmt.Errorf("Failed to get manifest", "id", id, "err", err)
+	}
+
+	data := CastViewModel{
+		Title:     manifest.Title,
+		MediaURL:  "", //TODO
+		PosterURL: g.posterURL(manifest.ID),
+		Tagline:   manifest.Tagline,
+	}
+	return data, nil
+}
+
 func main() {
 	setupLogger()
 	var sessions *SessionStore
@@ -977,15 +1003,15 @@ func main() {
 	mux.Handle(webRootURL.Path+"/auth/", http.StripPrefix(webRootURL.Path+"/auth", idpManager.ServeMux()))
 	mux.Handle(webRootURL.Path+"/auth/login", Chain(LoggingMiddleware)(idpManager))
 
-	mux.Handle("GET "+path.Join(webRootURL.Path, "view/cast/{item}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemCast)))
-	mux.Handle(webRootURL.Path+"/view/html5/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleHtml5(viewModelGenerator)))
-	mux.Handle(webRootURL.Path+"/view/shaka/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleShaka(viewModelGenerator)))
+	mux.Handle("GET "+path.Join(webRootURL.Path, "view/cast/{item}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleCast(viewModelGenerator)))
+	mux.Handle("GET "+path.Join(webRootURL.Path, "/view/html5/{item}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleHtml5(viewModelGenerator)))
+	mux.Handle("GET "+path.Join(webRootURL.Path, "/view/shaka/{item}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleShaka(viewModelGenerator)))
 
-	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, backdropServer, dashServer}))
+	mux.Handle("GET "+path.Join(webRootURL.Path, "/item/{item}/part/{subPath...}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, backdropServer, dashServer}))
 
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(viewModelGenerator)))
 
-	mux.Handle(webRootURL.Path+"/search", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(viewModelGenerator)))
+	mux.Handle("GET "+path.Join(webRootURL.Path, "/search"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(viewModelGenerator)))
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Started", "Listening at", listenaddr)
@@ -1021,33 +1047,21 @@ func SplitByGenre(manifests []MediaManifest) map[string][]MediaManifest {
 	return res
 }
 
-func serveItemCast(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	itm := r.PathValue("item")
-	ds := allRepos.DataSourceByPrettyID(itm)
-	if ds == nil {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unknown", "id", itm)
-		return
-	}
-
-	//<button onclick="startCasting('{{$.MediaURL}}','{{$.PosterURL}}','','{{$.Title}}','{{$.Tagline}}')">Play Movie</button><br>
-	type dataT struct {
-		Title     string
-		PosterURL string
-		MediaURL  string
-		SubsURL   string
-		SubsURLs  []datasource.Subs
-		Tagline   string
-	}
-	data := dataT{
-		Title:     datasource.TitleOrZero(ds),
-		PosterURL: posterURLByID(ds.ID()),
-		MediaURL:  mediaURL(ds),
-		SubsURLs:  datasource.SubsSliceOrZero(ds),
-		Tagline:   datasource.TaglineOrZero(ds),
-	}
-	html2templ := `
+func HandleCast(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		pretty := r.PathValue("item")
+		_, id, err := SplitPrettyID(pretty)
+		if err != nil {
+			slog.Error("Failed to split prettyID", "prettyID", pretty, "err", err)
+			return
+		}
+		data, err := viewModelGenerator.AssembleCastViewModel(ctx, id)
+		if err != nil {
+			slog.Error("Failed to assemble CastViewModel", "err", err)
+			return
+		}
+		html2templ := `
 		<!DOCTYPE html>
 <html>
 <head>
@@ -1124,11 +1138,12 @@ func serveItemCast(w http.ResponseWriter, r *http.Request) {
 
 `
 
-	_ = html2templ
-	templ := template.Must(template.New("foo").Parse(html2templ))
-	if err := templ.Execute(w, data); err != nil {
-		logger.WarnContext(ctx, "Temaplate error", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		_ = html2templ
+		templ := template.Must(template.New("foo").Parse(html2templ))
+		if err := templ.Execute(w, data); err != nil {
+			logger.WarnContext(ctx, "Temaplate error", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}
 }
 
