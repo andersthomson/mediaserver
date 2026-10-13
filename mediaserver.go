@@ -254,9 +254,10 @@ func PrettyID(id, shortName string) string {
 }
 
 type dataSourceServer struct {
-	mssCache     *scrape.MssCache
-	PosterServer *scrape.PosterServer
-	DashServer   *scrape.DashServer
+	mssCache       *scrape.MssCache
+	PosterServer   *scrape.PosterServer
+	BackdropServer *scrape.BackdropServer
+	DashServer     *scrape.DashServer
 }
 
 const ItmId = "ItmId"
@@ -290,6 +291,11 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if subRequest.URL.Path == "/poster" {
 		p.PosterServer.ServeHTTP(w, subRequest)
+		return
+	}
+	if subRequest.URL.Path == "/backdrop" {
+		spew.Dump(p.BackdropServer)
+		p.BackdropServer.ServeHTTP(w, subRequest)
 		return
 	}
 	if strings.HasPrefix(subRequest.URL.Path, "/dash/") {
@@ -545,14 +551,16 @@ type MediaManifest struct {
 	HasDash   bool
 	Kind      MediaKind
 	Poster    scrape.PosterMetadata
+	Backdrop  scrape.BackdropMetadata
 	Dash      scrape.DashMetadata
 	Tags      map[string][]string
 }
 
 type MetadataOrchestrator struct {
-	PosterResolver *scrape.PosterResolver
-	DashResolver   *scrape.DashResolver
-	MssCache       *scrape.MssCache
+	PosterResolver   *scrape.PosterResolver
+	BackdropResolver *scrape.BackdropResolver
+	DashResolver     *scrape.DashResolver
+	MssCache         *scrape.MssCache
 }
 
 func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, error) {
@@ -588,6 +596,11 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 		return MediaManifest{}, fmt.Errorf("orchestrator poster matching crash: %w", err)
 	}
 
+	res.Backdrop, err = m.BackdropResolver.ResolveBackdropState(id)
+	if err != nil {
+		return MediaManifest{}, fmt.Errorf("orchestrator backdrop matching crash: %w", err)
+	}
+
 	res.Dash, err = m.DashResolver.ResolveDashState(id)
 	if err != nil {
 		return MediaManifest{}, fmt.Errorf("orchestrator dash matching crash: %w", err)
@@ -612,6 +625,7 @@ type IndexViewModel struct {
 	ID            string
 	Title         string
 	PosterURL     string
+	BackdropURL   string
 	Overview      string
 	ShakaURL      string
 	Html5URL      string
@@ -623,7 +637,6 @@ type IndexViewModel struct {
 	Season        string
 	Episode       string
 	Language      string
-	BackdropURL   string
 	EpisodeTitle  string
 	ShowName      string
 	Tags          map[string][]string
@@ -637,6 +650,12 @@ func (g *ViewModelGenerator) posterURL(id string) string {
 	return posterURLByID(id)
 }
 
+func (g *ViewModelGenerator) backdropURL(manifest MediaManifest) string {
+	if manifest.Backdrop.HasBackdrop {
+		return Config.WebRoot + "/item/" + url.PathEscape(PrettyID(manifest.ID, manifest.ShortName)) + "/part/" + "backdrop"
+	}
+	return ""
+}
 func (g *ViewModelGenerator) shakaURL(manifest MediaManifest, id string) string {
 	if manifest.HasDash {
 		return shakaURL3(id, manifest.ShortName)
@@ -672,12 +691,13 @@ func (g *ViewModelGenerator) AssembleIndex(id string) (IndexViewModel, error) {
 
 	// 2. The view generator simply maps fields flatly without checking discriminators!
 	return IndexViewModel{
-		ID:        manifest.ID,
-		Title:     manifest.Title,
-		PosterURL: g.posterURL(id),
-		Overview:  manifest.Overview,
-		ShakaURL:  g.shakaURL(manifest, id),
-		Tags:      manifest.Tags,
+		ID:          manifest.ID,
+		Title:       manifest.Title,
+		PosterURL:   g.posterURL(id),
+		BackdropURL: g.backdropURL(manifest),
+		Overview:    manifest.Overview,
+		ShakaURL:    g.shakaURL(manifest, id),
+		Tags:        manifest.Tags,
 	}, nil
 }
 
@@ -743,6 +763,14 @@ func main() {
 		PosterResolver: posterResolver,
 	}
 
+	backdropResolver := &scrape.BackdropResolver{
+		MssCache: mssCache,
+	}
+
+	backdropServer := &scrape.BackdropServer{
+		BackdropResolver: backdropResolver,
+	}
+
 	dashResolver := &scrape.DashResolver{
 		MssCache: mssCache,
 	}
@@ -752,9 +780,10 @@ func main() {
 	}
 
 	orchestrator := &MetadataOrchestrator{
-		PosterResolver: posterResolver,
-		DashResolver:   dashResolver,
-		MssCache:       mssCache,
+		PosterResolver:   posterResolver,
+		BackdropResolver: backdropResolver,
+		DashResolver:     dashResolver,
+		MssCache:         mssCache,
 	}
 	viewModelGenerator := &ViewModelGenerator{
 		Orchestrator: orchestrator,
@@ -774,7 +803,7 @@ func main() {
 	mux.Handle(webRootURL.Path+"/view/html5/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemHtml5)))
 	mux.Handle(webRootURL.Path+"/view/shaka/{item}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(http.HandlerFunc(serveItemShaka)))
 
-	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, dashServer}))
+	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, backdropServer, dashServer}))
 
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(allRepos, viewModelGenerator)))
 

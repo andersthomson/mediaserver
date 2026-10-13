@@ -2,6 +2,9 @@ package scrape
 
 import (
 	"fmt"
+	"os"
+
+	"github.com/BurntSushi/toml"
 )
 
 type Msp struct {
@@ -85,4 +88,17 @@ func (t *TmdbT) UnmarshalTOML(in interface{}) error {
 		return nil
 	}
 	return fmt.Errorf("Inconsistent tmdb struct: %v", m)
+}
+
+func ReadMspFromFile(f string) (Msp, error) {
+	buf, err := os.ReadFile(f)
+	if err != nil {
+		return Msp{}, err
+	}
+	var res Msp
+	_, err = toml.Decode(string(buf), &res)
+	if err != nil {
+		return Msp{}, err
+	}
+	return res, nil
 }

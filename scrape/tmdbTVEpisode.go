@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	tmdb "github.com/cyruzin/golang-tmdb"
 )
 
 type TMDBTVEpisode struct {
@@ -83,8 +81,8 @@ func (i TMDBTVEpisode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == i.MediaURLPath():
 		i.MediaServer.ServeHTTP(w, r)
-	case r.URL.Path == i.BackdropURLPath():
-		i.BackdropServer.ServeHTTP(w, r)
+	//case r.URL.Path == i.BackdropURLPath():
+	//	i.BackdropServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
 		i.SubsServer.ServeHTTP(w, r)
 	default:
@@ -174,9 +172,9 @@ func scrapeAsTMDBTVEpisode(itm *TMDBTVEpisode, ffdata FFProbeRoot) bool {
 		//}
 	}
 	if p := getFirstString(&tvDetails.BackdropPath); p != nil {
-		if fname, err := TMDBImage(*p, tmdb.W500); err == nil {
-			itm.BackdropFile = fname
-		}
+		//if fname, err := TMDBImage(*p, tmdb.W500); err == nil {
+		//	itm.BackdropFile = fname
+		//}
 	}
 
 	for _, genre := range tvDetails.Genres {

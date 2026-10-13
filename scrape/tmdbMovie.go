@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	tmdb "github.com/cyruzin/golang-tmdb"
 )
 
 type TMDBMovie struct {
@@ -81,8 +79,8 @@ func (i TMDBMovie) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		i.DashServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), "/hls/"):
 		i.HLSServer.ServeHTTP(w, r)
-	case r.URL.Path == "/"+i.BackdropURLPath():
-		i.BackdropServer.ServeHTTP(w, r)
+	//case r.URL.Path == "/"+i.BackdropURLPath():
+	//	i.BackdropServer.ServeHTTP(w, r)
 	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
 		i.SubsServer.ServeHTTP(w, r)
 	default:
@@ -111,16 +109,16 @@ func extractTMDBMovieData(itm *TMDBMovie, tmdbId int) bool {
 		return false
 	}
 	//Given all the data, complete the itm record.
-	itm.title = movie.Title
-	itm.tags["Movie"] = []string{itm.title}
-	itm.overview = movie.Overview
-	if movie.BackdropPath != "" {
-		if fname, err := TMDBImage(movie.BackdropPath, tmdb.W1280); err == nil {
-			itm.BackdropFile = fname
-		}
-	} else {
-		Logger.Warn("Has no backdrop image", "id", tmdbId, "title", movie.Title)
-	}
+	//itm.title = movie.Title
+	//itm.tags["Movie"] = []string{itm.title}
+	//itm.overview = movie.Overview
+	//if movie.BackdropPath != "" {
+	//	if fname, err := TMDBImage(movie.BackdropPath, tmdb.W1280); err == nil {
+	//		itm.BackdropFile = fname
+	//	}
+	//} else {
+	//	Logger.Warn("Has no backdrop image", "id", tmdbId, "title", movie.Title)
+	//}
 
 	/*
 		for _, genre := range movie.Genres {

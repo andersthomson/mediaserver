@@ -21,20 +21,9 @@ func (p PosterServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID := val.(string)
 
-	val2 := ctx.Value("MssCacheCtx")
-	if val2 == nil {
-		slog.Error("Failed to find MssCacheCtx")
-		w.WriteHeader(500)
-		return
-	}
-	mssCache := val2.(*MssCache)
-
-	pr := &PosterResolver{
-		MssCache: mssCache,
-	}
-	metadata, err := pr.ResolvePosterState(itemID)
+	metadata, err := p.PosterResolver.ResolvePosterState(itemID)
 	if err != nil || !metadata.HasPoster {
-		slog.Warn("Poster route hit but no valid file mapped in cache parameters", "id", itemID)
+		slog.WarnContext(r.Context(), "Poster route hit but no valid file mapped in cache parameters", "id", itemID)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -42,9 +31,9 @@ func (p PosterServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	content, err := os.Open(metadata.LocalDiskPath)
 	if err != nil {
 		Logger.ErrorContext(r.Context(), "read of poster", "failed", err)
-		w.WriteHeader(404)
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	slog.Info("Serving poster", "id", itemID, "fromFile", metadata.LocalDiskPath)
+	slog.InfoContext(r.Context(), "Serving poster", "id", itemID, "fromFile", metadata.LocalDiskPath)
 	http.ServeContent(w, r, "", time.Time{}, content)
 }

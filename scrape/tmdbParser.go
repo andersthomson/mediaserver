@@ -10,6 +10,9 @@ func TmdbMoviePosterPath(t *tmdb.MovieDetails) string {
 	return t.PosterPath
 }
 
+func TmdbMovieBackdropPath(t *tmdb.MovieDetails) string {
+	return t.BackdropPath
+}
 func TmdbMovieTitle(t *tmdb.MovieDetails) string {
 	return t.Title
 }
