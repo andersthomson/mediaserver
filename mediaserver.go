@@ -278,12 +278,6 @@ const ItmId = "ItmId"
 func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	itm := r.PathValue("item")
-	ds := allRepos.DataSourceByPrettyID(itm)
-	if ds == nil {
-		errorHandler(ctx, w, r, http.StatusNotFound)
-		logger.WarnContext(ctx, "datasource unknown", "id", itm)
-		return
-	}
 	_, id, err := SplitPrettyID(itm)
 	if err != nil {
 		slog.Error("Failed to derive ID", "err", err)
@@ -311,16 +305,9 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hdlr := ds.(http.Handler)
-	hdlr.ServeHTTP(w, subRequest)
+	slog.Error("SHOULD NOT BE HERE")
+	w.WriteHeader(500)
 	return
-}
-
-func errorHandler(ctx context.Context, w http.ResponseWriter, r *http.Request, status int, args ...any) {
-	w.WriteHeader(status)
-	logger.With(
-		slog.String("url", r.URL.String()),
-		slog.Int("status", status)).InfoContext(ctx, "Http error", args...)
 }
 
 func addDir(dir string) {
@@ -1145,18 +1132,6 @@ func HandleCast(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
-}
-
-func tags(ds datasource.DataSource) string {
-	x, ok := ds.(Tagser)
-	if !ok {
-		return ""
-	}
-	var tags []string
-	for k, v := range x.Tags() {
-		tags = append(tags, "\t"+k+": "+strings.Join(v, ", "))
-	}
-	return strings.Join(tags, "\n")
 }
 
 func HandleHtml5(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
