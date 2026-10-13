@@ -579,6 +579,7 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 		res.Genres = scrape.TmdbMovieGenres(movieDetails)
 		res.Tags = make(map[string][]string)
 		res.Tags["genre"] = slices.Clone(res.Genres)
+		res.Tags["Movie"] = []string{res.Title}
 		res.Tagline = scrape.TmdbMovieTagline(movieDetails)
 		res.Overview = scrape.TmdbMovieOverview(movieDetails)
 	}
@@ -619,6 +620,8 @@ type IndexViewModel struct {
 	MediaURL      string
 	Plot          string
 	SeasonEpisode string
+	Season        string
+	Episode       string
 	Language      string
 	BackdropURL   string
 	EpisodeTitle  string
@@ -803,7 +806,7 @@ func HandleSearch(allRepos allReposT, viewModelGenerator *ViewModelGenerator) ht
 				res = append(res, ds)
 			}
 		}
-		sortSources(res)
+		//sortSources(res)
 		splits := SplitByGenre(res)
 		logger.InfoContext(r.Context(), "serving search", "SearchTerm", searchTerm, "num datasources", len(res))
 		//templ.Handler(Cards4Datasources(splits)).ServeHTTP(w, r)
@@ -1174,50 +1177,25 @@ func hasSetTag(dsTags map[string][]string, filterTags map[string]map[string]bool
 	}
 	return false
 }
-func sortSources(datasources []datasource.DataSource) {
-	title := func(c1, c2 datasource.DataSource) bool {
-		return datasource.TitleOrZero(c1) < datasource.TitleOrZero(c2)
-	}
-	showname := func(c1, c2 datasource.DataSource) bool {
-		c1T, ok := c1.(ShowNamer)
-		if !ok {
-			return false
-		}
-		c2T, ok := c2.(ShowNamer)
-		if !ok {
-			return false
-		}
-		return c1T.ShowName() < c2T.ShowName()
-	}
-	season := func(c1, c2 datasource.DataSource) bool {
-		c1T, ok := c1.(Seasoner)
-		if !ok {
-			return false
-		}
-		c2T, ok := c2.(Seasoner)
-		if !ok {
-			return false
-		}
-		return c1T.Season() < c2T.Season()
-	}
-	episode := func(c1, c2 datasource.DataSource) bool {
-		c1T, ok := c1.(Episoder)
-		if !ok {
-			return false
-		}
-		c2T, ok := c2.(Episoder)
-		if !ok {
-			return false
-		}
-		return c1T.Episode() < c2T.Episode()
-	}
 
-	// Simple use: Sort by title.
-	datasource.OrderedBy(showname, season, episode, title).Sort(datasources)
+func sortSources(ivms []IndexViewModel) {
+	title := func(c1, c2 IndexViewModel) int {
+		return cmp.Compare(c1.Title, c2.Title)
+	}
+	showname := func(c1, c2 IndexViewModel) int {
+		return cmp.Compare(c1.ShowName, c2.ShowName)
+	}
+	season := func(c1, c2 IndexViewModel) int {
+		return cmp.Compare(c1.Season, c2.Season)
+	}
+	episode := func(c1, c2 IndexViewModel) int {
+		return cmp.Compare(c1.Episode, c2.Episode)
+	}
+	slices.SortFunc(ivms, datasource.OrderedBy(showname, season, episode, title))
 }
 
 type ListItem struct {
-	Movie  *scrape.TMDBMovie
+	Movie  IndexViewModel
 	Marked bool
 }
 type Collection struct {
@@ -1235,7 +1213,7 @@ type groupedMovies struct {
 	MovieListItems []movieListItem
 }
 
-func groupMovies(dss []datasource.DataSource, r *http.Request) (*groupedMovies, []datasource.DataSource) {
+func groupMovies(ivms []IndexViewModel, r *http.Request) *groupedMovies {
 	queries := r.URL.Query()
 	markedMovies := make([]string, 0, len(queries))
 	for key, _ := range queries {
@@ -1248,33 +1226,28 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) (*groupedMovies, 
 	}
 
 	collections := make(map[string][]ListItem, 64)
-	titles := make([]ListItem, 0, len(dss))
-	others := make([]datasource.DataSource, 0, len(dss))
-	for _, ds := range dss {
-		if dsT, ok := ds.(*scrape.TMDBMovie); ok {
-			tags := dsT.Tags()
-			if collectionName, ok := tags["collection"]; ok {
-				if collections[collectionName[0]] == nil {
-					collections[collectionName[0]] = make([]ListItem, 0, 4)
-				}
-				collections[collectionName[0]] = append(collections[collectionName[0]], ListItem{
-					Movie:  dsT,
-					Marked: slices.Contains(markedMovies, dsT.Title()),
-				})
-			} else {
-				titles = append(titles, ListItem{
-					Movie:  dsT,
-					Marked: slices.Contains(markedMovies, dsT.Title()),
-				})
+	titles := make([]ListItem, 0, len(ivms))
+	for _, ivm := range ivms {
+		tags := ivm.Tags
+		if collectionName, ok := tags["collection"]; ok {
+			if collections[collectionName[0]] == nil {
+				collections[collectionName[0]] = make([]ListItem, 0, 4)
 			}
+			collections[collectionName[0]] = append(collections[collectionName[0]], ListItem{
+				Movie:  ivm,
+				Marked: slices.Contains(markedMovies, ivm.Title),
+			})
 		} else {
-			others = append(others, ds)
+			titles = append(titles, ListItem{
+				Movie:  ivm,
+				Marked: slices.Contains(markedMovies, ivm.Title),
+			})
 		}
 	}
 	//sort each collection
 	for _, v := range collections {
 		slices.SortFunc(v, func(a, b ListItem) int {
-			return cmp.Compare(a.Movie.Title(), b.Movie.Title())
+			return cmp.Compare(a.Movie.Title, b.Movie.Title)
 		})
 	}
 	res := &groupedMovies{}
@@ -1312,11 +1285,11 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) (*groupedMovies, 
 	slices.SortFunc(res.MovieListItems, func(a, b movieListItem) int {
 		switch {
 		case a.Title != nil && b.Title != nil:
-			return cmp.Compare(a.Title.Movie.Title(), b.Title.Movie.Title())
+			return cmp.Compare(a.Title.Movie.Title, b.Title.Movie.Title)
 		case a.Collection != nil && b.Title != nil:
-			return cmp.Compare(a.Collection.Name, b.Title.Movie.Title())
+			return cmp.Compare(a.Collection.Name, b.Title.Movie.Title)
 		case a.Title != nil && b.Collection != nil:
-			return cmp.Compare(a.Title.Movie.Title(), b.Collection.Name)
+			return cmp.Compare(a.Title.Movie.Title, b.Collection.Name)
 		case a.Collection != nil && b.Collection != nil:
 			return cmp.Compare(a.Collection.Name, b.Collection.Name)
 		}
@@ -1336,7 +1309,7 @@ func groupMovies(dss []datasource.DataSource, r *http.Request) (*groupedMovies, 
 			}
 		}
 	*/
-	return res, others
+	return res
 }
 
 func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
@@ -1353,13 +1326,21 @@ func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) htt
 		logger.InfoContext(ctx, "Serving idx", "url", r.URL.String())
 		//Find all tags
 		FilterTags := map[string]map[string]bool{}
+
+		var ivms []IndexViewModel
 		for _, ds := range dss {
 			viewModel, err := viewModelGenerator.AssembleIndex(ds.ID())
 			if err != nil {
-				slog.Error("Failed to assemble index", "err", err)
+				slog.Error("Failed to AssembleIndex", "err", err)
+				w.WriteHeader(500)
 				return
 			}
-			for k, v := range viewModel.Tags {
+
+			ivms = append(ivms, viewModel)
+		}
+
+		for _, ivm := range ivms {
+			for k, v := range ivm.Tags {
 				//if k == "dir" {
 				for _, vv := range v {
 					if FilterTags[k] == nil {
@@ -1373,6 +1354,7 @@ func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) htt
 
 		//	spew.Dump(r.Header)
 		queries := r.URL.Query()
+		slog.Info("Query string", "query", queries)
 		for key, value := range queries {
 			fmt.Printf("  %v ===== %v\n", key, value)
 			splits := strings.SplitN(key, ".", 2)
@@ -1382,8 +1364,9 @@ func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) htt
 				FilterTags[tag][val] = true
 			}
 		}
-		sortSources(dss)
-		movs, _ := groupMovies(dss, r)
+
+		sortSources(ivms)
+		movs := groupMovies(ivms, r)
 		type object struct {
 			Html5URL      string
 			ShakaURL      string
@@ -1404,16 +1387,10 @@ func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) htt
 			SubsLanguages []string
 		}
 
-		o := make([]object, 0, len(dss))
-		for _, ds := range dss {
-			viewModel, err := viewModelGenerator.AssembleIndex(ds.ID())
-			if err != nil {
-				slog.Error("Failed to AssembleIndex", "err", err)
-				w.WriteHeader(500)
-				return
-			}
+		o := make([]object, 0, len(ivms))
+		for _, viewModel := range ivms {
 			if hasSetTag(viewModel.Tags, FilterTags) {
-				dsObject := object{
+				Object := object{
 					Html5URL:      viewModel.Html5URL,
 					ShakaURL:      viewModel.ShakaURL,
 					HLSURL:        viewModel.HLSURL,
@@ -1431,7 +1408,7 @@ func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) htt
 					Tags:          viewModel.Tags,
 					SubsLanguages: viewModel.SubsLanguages,
 				}
-				o = append(o, dsObject)
+				o = append(o, Object)
 			}
 		}
 		type dataT struct {

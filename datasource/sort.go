@@ -1,72 +1,22 @@
 package datasource
 
-import (
-	"sort"
-)
+// cmpFunc is a 3-way comparison function generic over any type T.
+// It returns:
+//
+//	-1 if a < b
+//	 0 if a == b
+//	 1 if a > b
+type cmpFunc[T any] func(a, b T) int
 
-type lessFunc func(p1, p2 DataSource) bool
-
-// multiSorter implements the Sort interface, sorting the datasources within.
-type multiSorter struct {
-	datasources []DataSource
-	less        []lessFunc
-}
-
-// Sort sorts the argument slice according to the less functions passed to OrderedBy.
-func (ms *multiSorter) Sort(datasources []DataSource) {
-	ms.datasources = datasources
-	sort.Sort(ms)
-}
-
-// OrderedBy returns a Sorter that sorts using the less functions, in order.
-// Call its Sort method to sort the data.
-func OrderedBy(less ...lessFunc) *multiSorter {
-	return &multiSorter{
-		less: less,
-	}
-}
-
-// Len is part of sort.Interface.
-func (ms *multiSorter) Len() int {
-	return len(ms.datasources)
-}
-
-// Swap is part of sort.Interface.
-func (ms *multiSorter) Swap(i, j int) {
-	ms.datasources[i], ms.datasources[j] = ms.datasources[j], ms.datasources[i]
-}
-
-// Less is part of sort.Interface. It is implemented by looping along the
-// less functions until it finds a comparison that discriminates between
-// the two items (one is less than the other). Note that it can call the
-// less functions twice per call. We could change the functions to return
-// -1, 0, 1 and reduce the number of calls for greater efficiency: an
-// exercise for the reader.
-func (ms *multiSorter) Less(i, j int) bool {
-	p, q := ms.datasources[i], ms.datasources[j]
-	// Try all but the last comparison.
-	var k int
-	for k = 0; k < len(ms.less)-1; k++ {
-		less := ms.less[k]
-		switch {
-		case less(p, q):
-			// p < q, so we have a decision.
-			return true
-		case less(q, p):
-			// p > q, so we have a decision.
-			return false
+// OrderedBy chains multiple 3-way comparison functions into one.
+// It stops executing functions the moment a tie is broken.
+func OrderedBy[T any](comparators ...cmpFunc[T]) func(a, b T) int {
+	return func(a, b T) int {
+		for _, compare := range comparators {
+			if res := compare(a, b); res != 0 {
+				return res // Tie broken! Return -1 or 1 immediately.
+			}
 		}
-		// p == q; try the next comparison.
+		return 0 // All criteria found the elements to be perfectly identical.
 	}
-	// All comparisons to here said "equal", so just return whatever
-	// the final comparison reports.
-	return ms.less[k](p, q)
-}
-
-// Example_sortMultiKeys demonstrates a technique for sorting a struct type using different
-// sets of multiple fields in the comparison. We chain together "Less" functions, each of
-// which compares a single field.
-func do() {
-	// Closures that order the DataSource structure.
-
 }
