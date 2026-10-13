@@ -26,6 +26,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/andersthomson/mediaserver/datasource"
 	"github.com/andersthomson/mediaserver/scrape"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/felixge/httpsnoop"
 	slogctx "github.com/veqryn/slog-context"
 )
@@ -757,7 +758,7 @@ type IndexViewModel2 struct {
 	SearchURL     string
 }
 
-func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, query url.Values) (IndexViewModel2, error) {
+func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, enabledTags map[string][]string) (IndexViewModel2, error) {
 	webRootURL, err := url.Parse(Config.WebRoot)
 	if err != nil {
 		panic(err)
@@ -791,21 +792,17 @@ func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, query url.Value
 		}
 	}
 
-	//	spew.Dump(r.Header)
-	//slog.Info("Query string", "query", queries)
-	//FIXME shoudld be in the http handler...
-	for key, value := range query {
-		slog.Info("  %v ===== %v\n", key, value)
-		splits := strings.SplitN(key, ".", 2)
-		tag := splits[0]
-		val := splits[1]
-		if _, ok := FilterTags[tag][val]; ok {
-			FilterTags[tag][val] = true
+	spew.Dump(enabledTags)
+	for tag, vals := range enabledTags {
+		for _, val := range vals {
+			//F the value already exists, enable it (thus not accepting non-exisiting values)
+			if _, ok := FilterTags[tag][val]; ok {
+				FilterTags[tag][val] = true
+			}
 		}
 	}
-
 	sortSources(manifests)
-	movs := groupMovies(manifests, query)
+	movs := groupMovies(manifests, enabledTags)
 
 	o := make([]object, 0, len(manifests))
 	for _, manifest := range manifests {
@@ -1373,16 +1370,8 @@ type groupedMovies struct {
 	MovieListItems []movieListItem
 }
 
-func groupMovies(mms []MediaManifest, queries url.Values) *groupedMovies {
-	markedMovies := make([]string, 0, len(queries))
-	for key, _ := range queries {
-		splits := strings.SplitN(key, ".", 2)
-		tag := splits[0]
-		val := splits[1]
-		if tag == "Movie" {
-			markedMovies = append(markedMovies, val)
-		}
-	}
+func groupMovies(mms []MediaManifest, enabledTags map[string][]string) *groupedMovies {
+	markedMovies := enabledTags["Movie"]
 
 	collections := make(map[string][]ListItem, 64)
 	titles := make([]ListItem, 0, len(mms))
@@ -1475,8 +1464,16 @@ func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) htt
 		ctx := r.Context()
 
 		queries := r.URL.Query()
+		enabledTags := map[string][]string{}
+		for key, value := range queries {
+			slog.Info("  %v ===== %v\n", key, value)
+			splits := strings.SplitN(key, ".", 2)
+			tag := splits[0]
+			val := splits[1]
+			enabledTags[tag] = append(enabledTags[tag], val)
+		}
 
-		data, err := viewModelGenerator.AssembleIndex2(ctx, queries)
+		data, err := viewModelGenerator.AssembleIndex2(ctx, enabledTags)
 		if err != nil {
 			slog.Error("Failed to generate index vireModel", "err", err)
 			return
