@@ -1,6 +1,10 @@
 package scrape
 
-import "sync"
+import (
+	"maps"
+	"slices"
+	"sync"
+)
 
 type Playouts struct {
 	HasDASHManifest bool
@@ -81,4 +85,10 @@ func (m *MssCache) Dir(id string) (string, bool) {
 	defer m.Unlock()
 	itm, ok := m.mssDir[id]
 	return itm, ok
+}
+
+func (m *MssCache) AllIDs() []string {
+	m.Lock()
+	defer m.Unlock()
+	return slices.Collect(maps.Keys(m.m))
 }

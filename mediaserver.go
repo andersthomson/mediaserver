@@ -636,19 +636,6 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 	return res, nil
 }
 
-type CardViewModel struct {
-	ID          string
-	Title       string
-	PosterURL   string
-	Tagline     string
-	Genres      []string
-	Overview    string
-	DownloadURL string
-	CastURL     string
-	Html5URL    string
-	ShakaURL    string
-}
-
 type IndexViewModel struct {
 	ID            string
 	Title         string
@@ -692,44 +679,6 @@ func (g *ViewModelGenerator) shakaURL(manifest MediaManifest, id string) string 
 	return ""
 }
 
-func (g *ViewModelGenerator) AssembleCard(id string) (CardViewModel, error) {
-	// 1. Fetch the unified manifest package
-	manifest, err := g.Orchestrator.GetUnifiedManifest(id)
-	if err != nil {
-		return CardViewModel{}, err
-	}
-
-	// 2. The view generator simply maps fields flatly without checking discriminators!
-	return CardViewModel{
-		ID:        manifest.ID,
-		Title:     manifest.Title,
-		Tagline:   manifest.Tagline,
-		Genres:    manifest.Genres,
-		Overview:  manifest.Overview,
-		PosterURL: g.posterURL(id),
-		ShakaURL:  g.shakaURL(manifest, id),
-	}, nil
-}
-
-func (g *ViewModelGenerator) AssembleIndex(id string) (IndexViewModel, error) {
-	// 1. Fetch the unified manifest package
-	manifest, err := g.Orchestrator.GetUnifiedManifest(id)
-	if err != nil {
-		return IndexViewModel{}, err
-	}
-
-	// 2. The view generator simply maps fields flatly without checking discriminators!
-	return IndexViewModel{
-		ID:          manifest.ID,
-		Title:       manifest.Title,
-		PosterURL:   g.posterURL(id),
-		BackdropURL: g.backdropURL(manifest),
-		Overview:    manifest.Overview,
-		ShakaURL:    g.shakaURL(manifest, id),
-		Tags:        manifest.Tags,
-	}, nil
-}
-
 type object struct {
 	Html5URL      string
 	ShakaURL      string
@@ -763,7 +712,7 @@ func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, enabledTags map
 	if err != nil {
 		panic(err)
 	}
-	ids := allRepos.AllIDs()
+	ids := g.MssCache.AllIDs()
 	manifests := make([]MediaManifest, 0, len(ids))
 	for _, id := range ids {
 		manifest, err := g.Orchestrator.GetUnifiedManifest(id)
@@ -828,6 +777,69 @@ func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, enabledTags map
 	}, nil
 
 }
+
+type SearchCardViewModel struct {
+	ID          string
+	Title       string
+	PosterURL   string
+	Tagline     string
+	Genres      []string
+	Overview    string
+	DownloadURL string
+	CastURL     string
+	Html5URL    string
+	ShakaURL    string
+}
+
+type SearchViewModel map[string][]SearchCardViewModel
+
+func (g *ViewModelGenerator) AssembleSearchViewModel(ctx context.Context, searchTerm string) (SearchViewModel, error) {
+	ids := g.MssCache.AllIDs()
+	manifests := make([]MediaManifest, 0, len(ids))
+	for _, id := range ids {
+		manifest, err := g.Orchestrator.GetUnifiedManifest(id)
+		if err != nil {
+			return SearchViewModel{}, err
+		}
+		manifests = append(manifests, manifest)
+	}
+
+	var res []MediaManifest
+	for _, mFest := range manifests {
+		if strings.Contains(strings.ToLower(mFest.Title), searchTerm) {
+			res = append(res, mFest)
+			continue
+		}
+		if strings.Contains(strings.ToLower(mFest.Title), searchTerm) {
+			res = append(res, mFest)
+		}
+	}
+	sortSources(res)
+	splits := SplitByGenre(res)
+	logger.InfoContext(ctx, "serving search", "SearchTerm", searchTerm, "num datasources", len(res))
+	//templ.Handler(Cards4Datasources(splits)).ServeHTTP(w, r)
+
+	sID := map[string][]SearchCardViewModel{}
+	for genre, genreSlice := range splits {
+		for _, mFest := range genreSlice {
+			scvm := SearchCardViewModel{
+				Title:       mFest.Title,
+				PosterURL:   g.posterURL(mFest.ID),
+				Tagline:     mFest.Tagline,
+				Genres:      mFest.Genres,
+				Overview:    mFest.Overview,
+				DownloadURL: "",
+				CastURL:     "",
+				Html5URL:    "",
+				ShakaURL:    g.shakaURL(mFest, mFest.ID),
+			}
+
+			sID[genre] = append(sID[genre], scvm)
+		}
+	}
+	return sID, nil
+}
+
 func main() {
 	setupLogger()
 	var sessions *SessionStore
@@ -933,7 +945,7 @@ func main() {
 
 	mux.Handle(webRootURL.Path+"/item/{item}/part/{subPath...}", Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, backdropServer, dashServer}))
 
-	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(allRepos, viewModelGenerator)))
+	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(viewModelGenerator)))
 
 	mux.Handle(webRootURL.Path+"/search", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(allRepos, viewModelGenerator)))
 
@@ -949,49 +961,23 @@ func HandleSearch(allRepos allReposT, viewModelGenerator *ViewModelGenerator) ht
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Extract the 'search' value from the POST request
 		searchTerm := strings.ToLower(r.FormValue("search"))
-
-		// Join all matching rows and send back as the response
-		all := allRepos.AllDataSources()
-		res := make([]datasource.DataSource, 0, len(all))
-		for _, ds := range all {
-			if strings.Contains(strings.ToLower(datasource.TitleOrZero(ds)), searchTerm) {
-				res = append(res, ds)
-			}
-		}
-		for _, ds := range all {
-			if strings.Contains(strings.ToLower(datasource.ShortNameOrZero(ds)), searchTerm) {
-				res = append(res, ds)
-			}
-		}
-		//sortSources(res)
-		splits := SplitByGenre(res)
-		logger.InfoContext(r.Context(), "serving search", "SearchTerm", searchTerm, "num datasources", len(res))
-		//templ.Handler(Cards4Datasources(splits)).ServeHTTP(w, r)
-
-		sID := map[string][]CardViewModel{}
-		for key, genreSlice := range splits {
-			for _, ds := range genreSlice {
-				cvm, err := viewModelGenerator.AssembleCard(ds.ID())
-				if err != nil {
-					slog.Error("Failed to assemble card", "id", ds.ID())
-					continue
-				}
-				sID[key] = append(sID[key], cvm)
-			}
+		sID, err := viewModelGenerator.AssembleSearchViewModel(r.Context(), searchTerm)
+		if err != nil {
+			slog.Error("Failed to generate SearchViewModel", "err", err)
 		}
 		templ.Handler(Cards4IDs(sID)).ServeHTTP(w, r)
 	}
 }
 
-func SplitByGenre(dss []datasource.DataSource) map[string][]datasource.DataSource {
-	res := map[string][]datasource.DataSource{}
+func SplitByGenre(manifests []MediaManifest) map[string][]MediaManifest {
+	res := map[string][]MediaManifest{}
 
-	for _, ds := range dss {
-		for _, genre := range datasource.GenresOrZero(ds) {
-			res[genre] = append(res[genre], ds)
+	for _, mFest := range manifests {
+		for _, genre := range mFest.Genres {
+			res[genre] = append(res[genre], mFest)
 		}
-		if len(datasource.GenresOrZero(ds)) == 0 {
-			res["generic"] = append(res["generic"], ds)
+		if len(mFest.Genres) == 0 {
+			res["generic"] = append(res["generic"], mFest)
 		}
 	}
 	return res
@@ -1459,7 +1445,7 @@ func groupMovies(mms []MediaManifest, enabledTags map[string][]string) *groupedM
 	return res
 }
 
-func HandleIndex(allRepos allReposT, viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
+func HandleIndex(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 

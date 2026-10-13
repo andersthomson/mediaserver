@@ -58,7 +58,7 @@ templ CardLinks4ID(download, html5, cast, shaka string) {
 }
 
 
-templ Card4ID(cvm CardViewModel) {
+templ Card4ID(cvm SearchCardViewModel) {
         <div class="card">
         @CardPoster4ID(cvm.PosterURL)
         @CardTitle4ID(cvm.Title)
@@ -69,7 +69,7 @@ templ Card4ID(cvm CardViewModel) {
         </div>
 }
 
-templ Cards4IDs(splits map[string][]CardViewModel) {
+templ Cards4IDs(splits SearchViewModel) {
         for _, key := range slices.Sorted(maps.Keys(splits)) {
                 <b>{key}</b><br>
                 <div class="row-content">

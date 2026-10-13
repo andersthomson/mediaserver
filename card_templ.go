@@ -345,7 +345,7 @@ func CardLinks4ID(download, html5, cast, shaka string) templ.Component {
 	})
 }
 
-func Card4ID(cvm CardViewModel) templ.Component {
+func Card4ID(cvm SearchCardViewModel) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -402,7 +402,7 @@ func Card4ID(cvm CardViewModel) templ.Component {
 	})
 }
 
-func Cards4IDs(splits map[string][]CardViewModel) templ.Component {
+func Cards4IDs(splits SearchViewModel) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
