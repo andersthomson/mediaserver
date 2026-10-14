@@ -55,7 +55,7 @@ func (g GoogleIDP) IDPName() string {
 }
 
 func (g *GoogleIDP) LoginPageFragment(w http.ResponseWriter) {
-	fmt.Fprintf(w, "<a href=\""+g.idpRoot+"/"+g.IDPName()+"/login\">Login with Google</a><p>\n")
+	fmt.Fprint(w, "<a href=\""+g.idpRoot+"/"+g.IDPName()+"/login\">Login with Google</a><p>\n")
 
 }
 

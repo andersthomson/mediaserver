@@ -112,14 +112,14 @@ func (a *allReposT) Add(r repo) {
 
 func (a *allReposT) Delete(r repo) {
 	a.reposMu.Lock()
-	slices.DeleteFunc(a.repos, func(x repo) bool {
+	a.repos = slices.DeleteFunc(a.repos, func(x repo) bool {
 		return x == r
 	})
 	logger.Info("post delete", "var", a.repos)
 	a.reposMu.Unlock()
 }
 
-func (a allReposT) AllDataSources() []datasource.DataSource {
+func (a *allReposT) AllDataSources() []datasource.DataSource {
 	res := make([]datasource.DataSource, 0, 1024)
 	a.reposMu.Lock()
 	for _, r := range a.repos {
@@ -135,7 +135,7 @@ func (a allReposT) AllDataSources() []datasource.DataSource {
 	a.reposMu.Unlock()
 	return res
 }
-func (a allReposT) DataSourceByPrettyID(id string) datasource.DataSource {
+func (a *allReposT) DataSourceByPrettyID(id string) datasource.DataSource {
 	a.reposMu.Lock()
 	defer a.reposMu.Unlock()
 	for _, r := range a.repos {
@@ -150,7 +150,7 @@ func (a allReposT) DataSourceByPrettyID(id string) datasource.DataSource {
 	return nil
 }
 
-func (a allReposT) DataSourceByID(id string) datasource.DataSource {
+func (a *allReposT) DataSourceByID(id string) datasource.DataSource {
 	a.reposMu.Lock()
 	defer a.reposMu.Unlock()
 	for _, r := range a.repos {
@@ -165,7 +165,7 @@ func (a allReposT) DataSourceByID(id string) datasource.DataSource {
 	return nil
 }
 
-func (a allReposT) AllIDs() []string {
+func (a *allReposT) AllIDs() []string {
 	res := make([]string, 0, 1024)
 	a.reposMu.Lock()
 	for _, r := range a.repos {
@@ -1405,7 +1405,6 @@ func groupMovies(mms []MediaManifest, enabledTags map[string][]string) *groupedM
 		case a.Collection != nil && b.Collection != nil:
 			return cmp.Compare(a.Collection.Name, b.Collection.Name)
 		}
-		panic(45)
 		return 0
 	})
 	return res

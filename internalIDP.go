@@ -44,7 +44,7 @@ func (i *InternalIDP) ServeMux() *http.ServeMux {
 }
 
 func (i *InternalIDP) LoginPageFragment(w http.ResponseWriter) {
-	fmt.Fprintf(w, `Local login<p><form action="`+i.idpRoot+"/"+i.IDPName()+`/Authenticate" method="post">
+	fmt.Fprint(w, `Local login<p><form action="`+i.idpRoot+"/"+i.IDPName()+`/Authenticate" method="post">
     <label for="username">Username:</label>
     <input
       type="text"
