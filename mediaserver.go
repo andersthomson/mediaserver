@@ -669,8 +669,8 @@ func (g *ViewModelGenerator) AssembleShakaViewModel(ctx context.Context, id stri
 }
 
 type Html5ViewModel struct {
-	MediaURL      string
-	SubsURLs      []datasource.Subs
+	MediaURL string
+	//SubsURLs      []datasource.Subs
 	Title         string
 	SeasonEpisode string
 	Overview      string
@@ -684,8 +684,8 @@ func (g *ViewModelGenerator) AssembleHtml5ViewModel(ctx context.Context, id stri
 	}
 
 	data := Html5ViewModel{
-		MediaURL:      "",  //TODO
-		SubsURLs:      nil, //TODO
+		MediaURL: "", //TODO
+		//SubsURLs:      nil, //TODO
 		Title:         manifest.Title,
 		SeasonEpisode: g.seasonEpisode(manifest),
 		Overview:      manifest.Overview,
@@ -698,8 +698,8 @@ type CastViewModel struct {
 	PosterURL string
 	MediaURL  string
 	SubsURL   string
-	SubsURLs  []datasource.Subs
-	Tagline   string
+	//SubsURLs  []datasource.Subs
+	Tagline string
 }
 
 func (g *ViewModelGenerator) AssembleCastViewModel(ctx context.Context, id string) (CastViewModel, error) {

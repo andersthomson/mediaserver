@@ -12,7 +12,7 @@ type TMDBTVEpisode struct {
 	MediaServer
 	PosterServer
 	BackdropServer
-	SubsServer
+	//SubsServer
 	id           string
 	showName     string
 	title        string
@@ -83,8 +83,8 @@ func (i TMDBTVEpisode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		i.MediaServer.ServeHTTP(w, r)
 	//case r.URL.Path == i.BackdropURLPath():
 	//	i.BackdropServer.ServeHTTP(w, r)
-	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
-		i.SubsServer.ServeHTTP(w, r)
+	//case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
+	//	i.SubsServer.ServeHTTP(w, r)
 	default:
 		Logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
 		w.WriteHeader(404)
@@ -194,7 +194,7 @@ func NewTMDBTVEpisode(dir string, fname string, ffdata FFProbeRoot) (*TMDBTVEpis
 	res.id = res.deriveID(fname)
 	res.MediaFile = dir + "/" + fname
 
-	res.SubsServer.AddSubsFromMP4Filename(dir, fname)
+	//res.SubsServer.AddSubsFromMP4Filename(dir, fname)
 
 	/*
 		basename := strings.TrimSuffix(fname, ".mp4")

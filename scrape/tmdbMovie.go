@@ -13,7 +13,7 @@ type TMDBMovie struct {
 	MediaServer
 	DashServer
 	HLSServer
-	SubsServer
+	//SubsServer
 	PosterServer
 	BackdropServer
 	id        string
@@ -81,8 +81,8 @@ func (i TMDBMovie) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		i.HLSServer.ServeHTTP(w, r)
 	//case r.URL.Path == "/"+i.BackdropURLPath():
 	//	i.BackdropServer.ServeHTTP(w, r)
-	case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
-		i.SubsServer.ServeHTTP(w, r)
+	//case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
+	//	i.SubsServer.ServeHTTP(w, r)
 	default:
 		Logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
 		w.WriteHeader(404)
@@ -128,14 +128,14 @@ func extractTMDBMovieData(itm *TMDBMovie, tmdbId int) bool {
 
 	//itm.tagline = movie.Tagline
 
-	if movie.BelongsToCollection.ID != 0 {
-		collection, err := TMDBCollectionDetails(int(movie.BelongsToCollection.ID))
-		if err != nil {
-			Logger.Warn("TMDBTVMovie failed to fetch collection data. Skipping", "err", err)
-			return false
-		}
-		itm.tags["collection"] = []string{collection.Name}
-	}
+	//if movie.BelongsToCollection.ID != 0 {
+	//	collection, err := TMDBCollectionDetails(int(movie.BelongsToCollection.ID))
+	//	if err != nil {
+	//		Logger.Warn("TMDBTVMovie failed to fetch collection data. Skipping", "err", err)
+	//		return false
+	//	}
+	//	itm.tags["collection"] = []string{collection.Name}
+	//}
 	for _, lang := range iso639_1_Order {
 		if movie.MovieTranslationsAppend != nil {
 			if movie.MovieTranslationsAppend.Translations != nil {
@@ -177,7 +177,7 @@ func NewTMDBMovie(dir string, fname string, ffdata FFProbeRoot) (*TMDBMovie, boo
 	res.id = res.deriveID(fname)
 	res.MediaFile = dir + "/" + fname
 
-	res.SubsServer.AddSubsFromMP4Filename(dir, fname)
+	//res.SubsServer.AddSubsFromMP4Filename(dir, fname)
 
 	for idx := range ffdata.Streams {
 		if ffdata.Streams[idx].CodecType == "audio" {
@@ -218,7 +218,7 @@ func TMDBMovieFromMsp(caches []string, m Msp, dir string) (*TMDBMovie, bool) {
 		res.M3U8File = u
 	}
 	//FIXME: This is really a streaming MP4 property
-	res.SubsServer.AddSubsFromMP4Filename(caches[0]+"/"+res.ID()+"/mp4/", basename(m.ShortName+".mp4"))
+	//res.SubsServer.AddSubsFromMP4Filename(caches[0]+"/"+res.ID()+"/mp4/", basename(m.ShortName+".mp4"))
 
 	//FIXME: This is really a streaming MP4 property
 	res.language = m.Audio.Language
