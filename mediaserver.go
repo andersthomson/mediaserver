@@ -94,37 +94,20 @@ func ScanDir(dir string) []datasource.DataSource {
 	return res
 }
 
-func mediaURL(ds datasource.DataSource) string {
-	if p := datasource.MediaURLPathOrZero(ds); p == "" {
-		return ""
-	} else {
-		return Config.WebRoot + "/item/" + url.PathEscape(ds.ID()) + "/part/" + url.PathEscape(p)
-	}
+type PrettyID struct {
+	Id        string
+	ShortName string
 }
 
-func posterURLByID(id string) string {
-
-	pr := scrape.PosterResolver{
-		MssCache: mssCache,
-	}
-	meta, err := pr.ResolvePosterState(id)
-	if err != nil {
-		slog.Error("Poster resoution failed", "id", id, "err", err)
-		return ""
-	}
-	if !meta.HasPoster {
-		return ""
-	}
-	short, ok := mssCache.ShortName(id)
-	if !ok {
-		slog.Error("item has no shortName", "itemID", id)
-		return ""
-	}
-	return Config.WebRoot + "/item/" + url.PathEscape(PrettyID(id, short)) + "/part/" + "poster"
+func (p PrettyID) String() string {
+	return p.ShortName + "-" + p.Id
 }
 
-func PrettyID(id, shortName string) string {
-	return shortName + "-" + id
+func NewPrettyID(id, shortName string) PrettyID {
+	return PrettyID{
+		Id:        id,
+		ShortName: shortName,
+	}
 }
 
 type dataSourceServer struct {
@@ -482,32 +465,32 @@ type ViewModelGenerator struct {
 
 func (g *ViewModelGenerator) posterURL(manifest MediaManifest) string {
 	if manifest.Poster.HasPoster {
-		return Config.WebRoot + "/item/" + url.PathEscape(PrettyID(manifest.ID, manifest.ShortName)) + "/part/" + "poster"
+		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "poster"
 	}
 	return ""
 }
 
 func (g *ViewModelGenerator) backdropURL(manifest MediaManifest) string {
 	if manifest.Backdrop.HasBackdrop {
-		return Config.WebRoot + "/item/" + url.PathEscape(PrettyID(manifest.ID, manifest.ShortName)) + "/part/" + "backdrop"
+		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "backdrop"
 	}
 	return ""
 }
 func (g *ViewModelGenerator) shakaURL(manifest MediaManifest, id string) string {
 	if manifest.HasDash {
-		return Config.WebRoot + "/view/shaka/" + url.PathEscape(PrettyID(id, manifest.ShortName))
+		return Config.WebRoot + "/view/shaka/" + url.PathEscape(NewPrettyID(id, manifest.ShortName).String())
 	}
 	return ""
 }
 func (g *ViewModelGenerator) dashURL(manifest MediaManifest) string {
 	if manifest.HasDash {
-		return Config.WebRoot + "/item/" + url.PathEscape(PrettyID(manifest.ID, manifest.ShortName)) + "/part/" + "dash/manifest.mpd"
+		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "dash/manifest.mpd"
 	}
 	return ""
 }
 func (g *ViewModelGenerator) thumbnailsURL(manifest MediaManifest) string {
 	if manifest.HasDash {
-		return Config.WebRoot + "/item/" + url.PathEscape(PrettyID(manifest.ID, manifest.ShortName)) + "/part/" + "dash/thumbnails.vtt"
+		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "dash/thumbnails.vtt"
 	}
 	return ""
 }
