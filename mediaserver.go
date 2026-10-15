@@ -29,25 +29,6 @@ import (
 	slogctx "github.com/veqryn/slog-context"
 )
 
-type Tagser interface {
-	Tags() map[string][]string
-}
-
-type Seasoner interface {
-	Season() int
-}
-
-type Episoder interface {
-	Episode() int
-}
-type ShowNamer interface {
-	ShowName() string
-}
-
-type EpisodeTitler interface {
-	EpisodeTitle() string
-}
-
 // Global OAuth2 config
 var googleIDP *GoogleIDP
 var internalIDP *InternalIDP
