@@ -103,6 +103,29 @@ func (p PrettyID) String() string {
 	return p.ShortName + "-" + p.Id
 }
 
+func NewPrettyIDFromString(s string) (PrettyID, error) {
+	const uuidLen = 36
+
+	// A valid <randomchars>-<uuid> must be at least 38 chars long
+	// (minimum 1 char for random + 1 char for separator '-' + 36 chars for UUID)
+	if len(s) < uuidLen+2 {
+		return PrettyID{}, errors.New("string too short to contain random chars and a UUID")
+	}
+
+	// Calculate the exact split index right before the UUID
+	splitIdx := len(s) - uuidLen - 1
+
+	// Validate that the separator right before the UUID is a hyphen
+	if s[splitIdx] != '-' {
+		return PrettyID{}, errors.New("malformed format: missing hyphen separator before UUID")
+	}
+
+	shortName := s[:splitIdx]
+	id := s[len(s)-uuidLen:]
+
+	return NewPrettyID(id, shortName), nil
+}
+
 func NewPrettyID(id, shortName string) PrettyID {
 	return PrettyID{
 		Id:        id,
@@ -122,12 +145,12 @@ const ItmId = "ItmId"
 func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	itm := r.PathValue("item")
-	_, id, err := SplitPrettyID(itm)
+	prettyID, err := NewPrettyIDFromString(itm)
 	if err != nil {
 		slog.Error("Failed to derive ID", "err", err)
 		return
 	}
-	ctx = context.WithValue(ctx, ItmId, id)
+	ctx = context.WithValue(ctx, ItmId, prettyID.Id)
 	r = r.WithContext(ctx)
 
 	subRequest := r.Clone(r.Context())
@@ -346,29 +369,6 @@ func Chain(middlewares ...Middleware) Middleware {
 		}
 		return final
 	}
-}
-
-func SplitPrettyID(s string) (string, string, error) {
-	const uuidLen = 36
-
-	// A valid <randomchars>-<uuid> must be at least 38 chars long
-	// (minimum 1 char for random + 1 char for separator '-' + 36 chars for UUID)
-	if len(s) < uuidLen+2 {
-		return "", "", errors.New("string too short to contain random chars and a UUID")
-	}
-
-	// Calculate the exact split index right before the UUID
-	splitIdx := len(s) - uuidLen - 1
-
-	// Validate that the separator right before the UUID is a hyphen
-	if s[splitIdx] != '-' {
-		return "", "", errors.New("malformed format: missing hyphen separator before UUID")
-	}
-
-	shortName := s[:splitIdx]
-	id := s[len(s)-uuidLen:]
-
-	return shortName, id, nil
 }
 
 type MediaKind string
@@ -884,12 +884,12 @@ func HandleCast(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		pretty := r.PathValue("item")
-		_, id, err := SplitPrettyID(pretty)
+		prettyID, err := NewPrettyIDFromString(pretty)
 		if err != nil {
 			slog.Error("Failed to split prettyID", "prettyID", pretty, "err", err)
 			return
 		}
-		data, err := viewModelGenerator.AssembleCastViewModel(ctx, id)
+		data, err := viewModelGenerator.AssembleCastViewModel(ctx, prettyID.Id)
 		if err != nil {
 			slog.Error("Failed to assemble CastViewModel", "err", err)
 			return
@@ -984,12 +984,12 @@ func HandleHtml5(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		pretty := r.PathValue("item")
-		_, id, err := SplitPrettyID(pretty)
+		prettyID, err := NewPrettyIDFromString(pretty)
 		if err != nil {
 			slog.Error("Failed to split prettyID", "prettyID", pretty, "err", err)
 			return
 		}
-		data, err := viewModelGenerator.AssembleHtml5ViewModel(ctx, id)
+		data, err := viewModelGenerator.AssembleHtml5ViewModel(ctx, prettyID.Id)
 		if err != nil {
 			slog.Error("Failed to assemble Html5ViewModel", "err", err)
 			return
@@ -1048,12 +1048,12 @@ func HandleShaka(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		pretty := r.PathValue("item")
-		_, id, err := SplitPrettyID(pretty)
+		prettyID, err := NewPrettyIDFromString(pretty)
 		if err != nil {
 			slog.Error("Failed to split prettyID", "prettyID", pretty, "err", err)
 			return
 		}
-		data, err := viewModelGenerator.AssembleShakaViewModel(ctx, id)
+		data, err := viewModelGenerator.AssembleShakaViewModel(ctx, prettyID.Id)
 		if err != nil {
 			slog.Error("Failed to assemble ShakaViewModel", "err", err)
 			return
