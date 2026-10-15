@@ -19,7 +19,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -95,149 +94,11 @@ func ScanDir(dir string) []datasource.DataSource {
 	return res
 }
 
-type repo interface {
-	AllDataSources() []datasource.DataSource
-}
-type allReposT struct {
-	repos   []repo
-	reposMu sync.Mutex
-}
-
-func (a *allReposT) Add(r repo) {
-	a.reposMu.Lock()
-	a.repos = append(a.repos, r)
-	//logger.Info("allrepos now", "var", a.repos)
-	a.reposMu.Unlock()
-}
-
-func (a *allReposT) Delete(r repo) {
-	a.reposMu.Lock()
-	a.repos = slices.DeleteFunc(a.repos, func(x repo) bool {
-		return x == r
-	})
-	logger.Info("post delete", "var", a.repos)
-	a.reposMu.Unlock()
-}
-
-func (a *allReposT) AllDataSources() []datasource.DataSource {
-	res := make([]datasource.DataSource, 0, 1024)
-	a.reposMu.Lock()
-	for _, r := range a.repos {
-		if r != nil {
-			//logger.Warn("pulling", "xxx", r.AllDataSources())
-			//spew.Dump(r.AllDataSources())
-			if srcs := r.AllDataSources(); len(srcs) > 0 {
-				res = append(res, srcs...)
-			}
-		}
-	}
-	//logger.Info("all to be returned", "var", res)
-	a.reposMu.Unlock()
-	return res
-}
-func (a *allReposT) DataSourceByPrettyID(id string) datasource.DataSource {
-	a.reposMu.Lock()
-	defer a.reposMu.Unlock()
-	for _, r := range a.repos {
-		if r != nil {
-			for _, src := range r.AllDataSources() {
-				if src.PrettyID() == id {
-					return src
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func (a *allReposT) DataSourceByID(id string) datasource.DataSource {
-	a.reposMu.Lock()
-	defer a.reposMu.Unlock()
-	for _, r := range a.repos {
-		if r != nil {
-			for _, src := range r.AllDataSources() {
-				if src.ID() == id {
-					return src
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func (a *allReposT) AllIDs() []string {
-	res := make([]string, 0, 1024)
-	a.reposMu.Lock()
-	for _, r := range a.repos {
-		if r != nil {
-			//logger.Warn("pulling", "xxx", r.AllDataSources())
-			//spew.Dump(r.AllDataSources())
-			if srcs := r.AllDataSources(); len(srcs) > 0 {
-				for _, s := range srcs {
-					res = append(res, s.ID())
-				}
-			}
-		}
-	}
-	a.reposMu.Unlock()
-	return res
-}
-
-var allRepos allReposT
-
 func mediaURL(ds datasource.DataSource) string {
 	if p := datasource.MediaURLPathOrZero(ds); p == "" {
 		return ""
 	} else {
 		return Config.WebRoot + "/item/" + url.PathEscape(ds.ID()) + "/part/" + url.PathEscape(p)
-	}
-}
-
-func hlsURL(ds datasource.DataSource) string {
-	if h := datasource.HLSURLPathOrZero(ds); h == "" {
-		return ""
-	} else {
-		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + h
-	}
-}
-
-func dashURLByID(id string) string {
-	dr := scrape.DashResolver{
-		MssCache: mssCache,
-	}
-	meta, err := dr.ResolveDashState(id)
-	if err != nil {
-		slog.Error("Dash resoution failed", "id", id, "err", err)
-		return ""
-	}
-	if !meta.HasDash {
-		return ""
-	}
-	short, ok := mssCache.ShortName(id)
-	if !ok {
-		slog.Error("item has no shortName", "itemID", id)
-		return ""
-	}
-	return Config.WebRoot + "/item/" + url.PathEscape(PrettyID(id, short)) + "/part/" + "dash/manifest.mpd"
-}
-
-func castURL(ds datasource.DataSource) string {
-	return Config.WebRoot + "/view/cast/" + url.PathEscape(ds.ID())
-}
-
-func html5URL(ds datasource.DataSource) string {
-	return Config.WebRoot + "/view/html5/" + url.PathEscape(ds.ID())
-}
-
-func shakaURL(ds datasource.DataSource) string {
-	return Config.WebRoot + "/view/shaka/" + url.PathEscape(ds.PrettyID())
-}
-
-func backdropURL(ds datasource.DataSource) string {
-	if p := datasource.BackdropURLPathOrZero(ds); p == "" {
-		return ""
-	} else {
-		return Config.WebRoot + "/item/" + url.PathEscape(ds.PrettyID()) + "/part/" + url.PathEscape(p)
 	}
 }
 
@@ -315,7 +176,6 @@ func addDir(dir string) {
 		dir: dir,
 	}
 	dr.Refresh()
-	allRepos.Add(&dr)
 }
 
 func recurseDir(dir string) {
@@ -620,8 +480,11 @@ type ViewModelGenerator struct {
 	MssCache     *scrape.MssCache
 }
 
-func (g *ViewModelGenerator) posterURL(id string) string {
-	return posterURLByID(id)
+func (g *ViewModelGenerator) posterURL(manifest MediaManifest) string {
+	if manifest.Poster.HasPoster {
+		return Config.WebRoot + "/item/" + url.PathEscape(PrettyID(manifest.ID, manifest.ShortName)) + "/part/" + "poster"
+	}
+	return ""
 }
 
 func (g *ViewModelGenerator) backdropURL(manifest MediaManifest) string {
@@ -740,7 +603,7 @@ func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, enabledTags map
 		if hasSetTag(manifest.Tags, FilterTags) {
 			Object := object{
 				Title:       manifest.Title,
-				PosterURL:   g.posterURL(manifest.ID),
+				PosterURL:   g.posterURL(manifest),
 				BackdropURL: g.backdropURL(manifest),
 				Overview:    manifest.Overview,
 				ShakaURL:    g.shakaURL(manifest, manifest.ID),
@@ -806,7 +669,7 @@ func (g *ViewModelGenerator) AssembleSearchViewModel(ctx context.Context, search
 		for _, mFest := range genreSlice {
 			scvm := SearchCardViewModel{
 				Title:       mFest.Title,
-				PosterURL:   g.posterURL(mFest.ID),
+				PosterURL:   g.posterURL(mFest),
 				Tagline:     mFest.Tagline,
 				Genres:      mFest.Genres,
 				Overview:    mFest.Overview,
@@ -885,7 +748,7 @@ func (g *ViewModelGenerator) AssembleCastViewModel(ctx context.Context, id strin
 	data := CastViewModel{
 		Title:     manifest.Title,
 		MediaURL:  "", //TODO
-		PosterURL: g.posterURL(manifest.ID),
+		PosterURL: g.posterURL(manifest),
 		Tagline:   manifest.Tagline,
 	}
 	return data, nil
