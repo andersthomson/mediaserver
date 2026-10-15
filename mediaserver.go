@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,9 +36,8 @@ var internalIDP *InternalIDP
 
 var logger *slog.Logger
 var Config config
-var mssCache *scrape.MssCache
 
-func ScanDir(dir string) []datasource.DataSource {
+func ScanDir(mssCache *scrape.MssCache, dir string) []datasource.DataSource {
 	//slog.Info("Scanning", "dir", dir)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -158,26 +158,32 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-func addDir(dir string) {
+type directoryRepo struct {
+	dsLck    sync.Mutex
+	ds       []datasource.DataSource
+	dir      string
+	mssCache *scrape.MssCache
+}
+
+func (d *directoryRepo) Refresh() {
+	go func() {
+		for {
+			i := ScanDir(d.mssCache, d.dir)
+			d.dsLck.Lock()
+			d.ds = i
+			d.dsLck.Unlock()
+			time.Sleep(time.Hour)
+		}
+	}()
+}
+func addDir(mssCache *scrape.MssCache, dir string) {
 	dr := directoryRepo{
-		dir: dir,
+		dir:      dir,
+		mssCache: mssCache,
 	}
 	dr.Refresh()
 }
 
-func recurseDir(dir string) {
-	addDir(dir)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		//panic(err)
-		return
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			recurseDir(path.Join(dir, e.Name()))
-		}
-	}
-}
 func setupLogger() {
 	/*
 		baseHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -730,7 +736,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	mssCache = scrape.NewMssCache()
+	mssCache := scrape.NewMssCache()
 
 	IDPRoot := webRootURL.Path + "/auth"
 	idpManager := NewIDPManager()
@@ -758,19 +764,7 @@ func main() {
 	}()
 
 	for _, d := range Config.Directories {
-		/*if d.Method == "faNotify" {
-			dr := NewFaNotifyDirectoryRepo(d.Name, d.Recursive)
-			dr.Refresh()
-			allRepos.Add(dr)
-
-		} else {
-		*/
-		if d.Recursive {
-			recurseDir(d.Name)
-		} else {
-			addDir(d.Name)
-		}
-		//}
+		addDir(mssCache, d.Name)
 	}
 	posterResolver := &scrape.PosterResolver{
 		MssCache: mssCache,
