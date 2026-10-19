@@ -78,7 +78,10 @@ func DownloadFile(filepath string, url string) error {
 	_, err = io.Copy(out, resp.Body)
 	return err
 }
-
+func fileExists(fname string) bool {
+	_, err := os.Stat(fname)
+	return err == nil
+}
 func TMDBImage(key string, size string) (string, error) {
 	fname := fmt.Sprintf("image-%s-%s", size, key)
 	res, err, _ := sf.Do(fname, func() (any, error) {

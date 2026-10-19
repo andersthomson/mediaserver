@@ -37,44 +37,6 @@ var internalIDP *InternalIDP
 var logger *slog.Logger
 var Config config
 
-func ScanDir(mssCache *scrape.MssCache, dir string) []datasource.DataSource {
-	//slog.Info("Scanning", "dir", dir)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		logger.Warn("ScanDir/os.ReadDir failed", "dir", dir, "err", err)
-		return nil
-	}
-	res := make([]datasource.DataSource, 0, len(entries))
-	for _, entry := range entries {
-		mssDir := filepath.Join(dir, entry.Name(), "dash")
-		jsonFile, err := os.Open(filepath.Join(mssDir, "mediaserver.mss"))
-		// if we os.Open returns an error then handle it
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-		defer jsonFile.Close()
-		byteValue, err := io.ReadAll(jsonFile)
-		if err != nil {
-			fmt.Println("Error reading file:", err)
-			continue
-		}
-		var mss scrape.Mss
-		err = json.Unmarshal(byteValue, &mss)
-		if err != nil {
-			fmt.Println("Error unmarshalling JSON:", err)
-			continue
-		}
-		mssCache.Add(mssDir, mss)
-
-		if itm, ok := scrape.StreamAssetFromMss(dir, mss); itm != nil && ok {
-			res = append(res, itm)
-			fmt.Printf("Scraped StreamAsset %s\n", filepath.Join(dir, entry.Name()))
-		}
-	}
-	return res
-}
-
 type PrettyID struct {
 	Id        string
 	ShortName string
@@ -156,32 +118,6 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	slog.Error("SHOULD NOT BE HERE")
 	w.WriteHeader(500)
 	return
-}
-
-type directoryRepo struct {
-	dsLck    sync.Mutex
-	ds       []datasource.DataSource
-	dir      string
-	mssCache *scrape.MssCache
-}
-
-func (d *directoryRepo) Refresh() {
-	go func() {
-		for {
-			i := ScanDir(d.mssCache, d.dir)
-			d.dsLck.Lock()
-			d.ds = i
-			d.dsLck.Unlock()
-			time.Sleep(time.Hour)
-		}
-	}()
-}
-func addDir(mssCache *scrape.MssCache, dir string) {
-	dr := directoryRepo{
-		dir:      dir,
-		mssCache: mssCache,
-	}
-	dr.Refresh()
 }
 
 func MssCacheAddFile(mssCache *scrape.MssCache, path string) {
