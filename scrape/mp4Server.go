@@ -6,18 +6,18 @@ import (
 	"time"
 )
 
-type MediaServer struct {
+type MP4Server struct {
 	MediaFile string
 }
 
-func (m MediaServer) MediaURLPath() string {
+func (m MP4Server) MediaURLPath() string {
 	if m.MediaFile != "" {
 		return "media"
 	}
 	return ""
 }
 
-func (m MediaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (m MP4Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	content, err := os.Open(m.MediaFile)
 	if err != nil {
 		Logger.ErrorContext(r.Context(), "read of media", "failed", err)
