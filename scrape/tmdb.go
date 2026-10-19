@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"time"
 
 	tmdb "github.com/cyruzin/golang-tmdb"
@@ -19,9 +18,8 @@ import (
 
 var sf singleflight.Group
 var cachePath = "./.tmdb/"
-var iso639_1_Order []string
 
-func TmdbInit(apiKey string, cacheDir string, iso639_1_order []string) (*tmdb.Client, error) {
+func TmdbInit(apiKey string, cacheDir string) (*tmdb.Client, error) {
 	tmdbClient, err := tmdb.InitV4(apiKey)
 	if err != nil {
 		panic(err)
@@ -50,7 +48,6 @@ func TmdbInit(apiKey string, cacheDir string, iso639_1_order []string) (*tmdb.Cl
 	tmdbClient.GetBaseURL()
 	tmdbClient.SetClientAutoRetry()
 	cachePath = cacheDir
-	iso639_1_Order = slices.Clone(iso639_1_order)
 	os.Mkdir(cachePath, 0700)
 	return tmdbClient, nil
 }

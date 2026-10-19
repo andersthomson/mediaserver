@@ -764,7 +764,7 @@ func main() {
 	var sessions *SessionStore
 	rand.Seed(time.Now().UnixNano())
 	Config.ReadFromFile("config")
-	tmdbClient, err := scrape.TmdbInit(Config.Tmdb.ApiKey, Config.Tmdb.CacheDir, Config.Tmdb.Iso6391Order)
+	tmdbClient, err := scrape.TmdbInit(Config.Tmdb.ApiKey, Config.Tmdb.CacheDir)
 	if err != nil {
 		slog.Error("Failed to initn tmdb client", "err", err)
 		os.Exit(1)
