@@ -34,7 +34,7 @@ func (pr *PosterResolver) ResolvePosterState(id string) (PosterMetadata, error) 
 		return PosterMetadata{HasPoster: false}, fmt.Errorf("No posterpath found")
 	}
 
-	localFilename, err := TMDBImage(posterPath, "w500")
+	localFilename, err := pr.TmdbCache.Image(posterPath, "w500")
 	if err != nil {
 		return PosterMetadata{HasPoster: false}, fmt.Errorf("image fetch breakdown: %w", err)
 	}

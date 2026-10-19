@@ -16,9 +16,6 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-var sf singleflight.Group
-var cachePath = "./.tmdb/"
-
 func TmdbInit(apiKey string, cacheDir string) (*tmdb.Client, error) {
 	tmdbClient, err := tmdb.InitV4(apiKey)
 	if err != nil {
@@ -47,8 +44,6 @@ func TmdbInit(apiKey string, cacheDir string) (*tmdb.Client, error) {
 	tmdbClient.SetClientConfig(httpclient)
 	tmdbClient.GetBaseURL()
 	tmdbClient.SetClientAutoRetry()
-	cachePath = cacheDir
-	os.Mkdir(cachePath, 0700)
 	return tmdbClient, nil
 }
 func DownloadFile(filepath string, url string) error {
@@ -80,18 +75,23 @@ func fileExists(fname string) bool {
 }
 
 type TmdbCache struct {
+	sf     singleflight.Group
 	Client *tmdb.Client
+	Path   string
 }
 
-func TMDBImage(key string, size string) (string, error) {
+func (t *TmdbCache) Image(key string, size string) (string, error) {
 	fname := fmt.Sprintf("image-%s-%s", size, key)
-	res, err, _ := sf.Do(fname, func() (any, error) {
-		fnameLong := filepath.Join(cachePath, url.PathEscape(fname))
+	res, err, _ := t.sf.Do(fname, func() (any, error) {
+		fnameLong := filepath.Join(t.Path, url.PathEscape(fname))
 		if fileExists(fnameLong) {
 			return fnameLong, nil
 		}
 		u := tmdb.GetImageURL(key, size)
 		slog.Info("TMDB fetch", "type", "file", "url", u, "key", key, "size", size)
+		if err := os.Mkdir(t.Path, 0700); err != nil {
+			return nil, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
+		}
 		if err := DownloadFile(fnameLong, u); err != nil {
 			slog.Error("Download failed", "source", "tmdb", "err", err)
 			return "", err
@@ -103,9 +103,9 @@ func TMDBImage(key string, size string) (string, error) {
 
 func (t *TmdbCache) CollectionDetails(id int) (*tmdb.CollectionDetails, error) {
 	fname := fmt.Sprintf("Collection-%d", id)
-	res, err, _ := sf.Do(fname, func() (any, error) {
+	res, err, _ := t.sf.Do(fname, func() (any, error) {
 		var resp *tmdb.CollectionDetails
-		fnameLong := filepath.Join(cachePath, fname)
+		fnameLong := filepath.Join(t.Path, fname)
 		body, err := os.ReadFile(fnameLong)
 		if err == nil {
 			var collection tmdb.CollectionDetails
@@ -128,6 +128,9 @@ func (t *TmdbCache) CollectionDetails(id int) (*tmdb.CollectionDetails, error) {
 		if err != nil {
 			return resp, err
 		}
+		if err := os.Mkdir(t.Path, 0700); err != nil {
+			return nil, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
+		}
 		if os.WriteFile(fnameLong, body, 0644) != nil {
 			return resp, err
 		}
@@ -138,9 +141,9 @@ func (t *TmdbCache) CollectionDetails(id int) (*tmdb.CollectionDetails, error) {
 
 func (t *TmdbCache) MovieDetails(id int) (*tmdb.MovieDetails, error) {
 	fname := fmt.Sprintf("Movie-%d", id)
-	res, err, _ := sf.Do(fname, func() (any, error) {
+	res, err, _ := t.sf.Do(fname, func() (any, error) {
 		var resp *tmdb.MovieDetails
-		fnameLong := filepath.Join(cachePath, fname)
+		fnameLong := filepath.Join(t.Path, fname)
 		body, err := os.ReadFile(fnameLong)
 		if err == nil {
 			var movie tmdb.MovieDetails
@@ -163,6 +166,9 @@ func (t *TmdbCache) MovieDetails(id int) (*tmdb.MovieDetails, error) {
 		if err != nil {
 			return resp, err
 		}
+		if err := os.Mkdir(t.Path, 0700); err != nil {
+			return nil, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
+		}
 		if os.WriteFile(fnameLong, body, 0644) != nil {
 			return resp, err
 		}
@@ -173,9 +179,9 @@ func (t *TmdbCache) MovieDetails(id int) (*tmdb.MovieDetails, error) {
 
 func (t *TmdbCache) TVDetails(id int) (*tmdb.TVDetails, error) {
 	fname := fmt.Sprintf("TVDetails-%d", id)
-	res, err, _ := sf.Do(fname, func() (any, error) {
+	res, err, _ := t.sf.Do(fname, func() (any, error) {
 		var resp *tmdb.TVDetails
-		fnameLong := filepath.Join(cachePath, fname)
+		fnameLong := filepath.Join(t.Path, fname)
 		body, err := os.ReadFile(fnameLong)
 		if err == nil {
 			var tvDetails tmdb.TVDetails
@@ -198,6 +204,9 @@ func (t *TmdbCache) TVDetails(id int) (*tmdb.TVDetails, error) {
 		if err != nil {
 			return resp, err
 		}
+		if err := os.Mkdir(t.Path, 0700); err != nil {
+			return nil, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
+		}
 		if os.WriteFile(fnameLong, body, 0644) != nil {
 			return nil, err
 		}
@@ -208,9 +217,9 @@ func (t *TmdbCache) TVDetails(id int) (*tmdb.TVDetails, error) {
 
 func (t *TmdbCache) TVSeasonDetails(id int, seasonNumber int) (*tmdb.TVSeasonDetails, error) {
 	fname := fmt.Sprintf("TVSeasonDetails-%d-%d", id, seasonNumber)
-	res, err, _ := sf.Do(fname, func() (any, error) {
+	res, err, _ := t.sf.Do(fname, func() (any, error) {
 		var resp *tmdb.TVSeasonDetails
-		fnameLong := filepath.Join(cachePath, fname)
+		fnameLong := filepath.Join(t.Path, fname)
 		body, err := os.ReadFile(fnameLong)
 		if err == nil {
 			var tvSeasonDetails tmdb.TVSeasonDetails
@@ -233,6 +242,9 @@ func (t *TmdbCache) TVSeasonDetails(id int, seasonNumber int) (*tmdb.TVSeasonDet
 		if err != nil {
 			return resp, err
 		}
+		if err := os.Mkdir(t.Path, 0700); err != nil {
+			return nil, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
+		}
 		if os.WriteFile(fnameLong, body, 0644) != nil {
 			return resp, err
 		}
@@ -243,9 +255,9 @@ func (t *TmdbCache) TVSeasonDetails(id int, seasonNumber int) (*tmdb.TVSeasonDet
 
 func (t *TmdbCache) TVEpisodeDetails(id int, seasonNumber int, episodeNumber int) (*tmdb.TVEpisodeDetails, error) {
 	fname := fmt.Sprintf("TVEpisodeDetails-%d-%d-%d", id, seasonNumber, episodeNumber)
-	res, err, _ := sf.Do(fname, func() (any, error) {
+	res, err, _ := t.sf.Do(fname, func() (any, error) {
 		var resp *tmdb.TVEpisodeDetails
-		fnameLong := filepath.Join(cachePath, fname)
+		fnameLong := filepath.Join(t.Path, fname)
 		body, err := os.ReadFile(fnameLong)
 		if err == nil {
 			var tvEpisodeDetails tmdb.TVEpisodeDetails
@@ -267,6 +279,9 @@ func (t *TmdbCache) TVEpisodeDetails(id int, seasonNumber int, episodeNumber int
 		body, err = json.MarshalIndent(resp, "", "    ")
 		if err != nil {
 			return resp, err
+		}
+		if err := os.Mkdir(t.Path, 0700); err != nil {
+			return nil, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
 		}
 		if os.WriteFile(fnameLong, body, 0644) != nil {
 			return resp, err

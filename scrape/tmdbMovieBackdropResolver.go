@@ -34,7 +34,7 @@ func (pr *BackdropResolver) ResolveBackdropState(id string) (BackdropMetadata, e
 		return BackdropMetadata{HasBackdrop: false}, fmt.Errorf("No posterpath found")
 	}
 
-	localFilename, err := TMDBImage(backdropPath, "w500")
+	localFilename, err := pr.TmdbCache.Image(backdropPath, "w500")
 	if err != nil {
 		return BackdropMetadata{HasBackdrop: false}, fmt.Errorf("image fetch breakdown: %w", err)
 	}

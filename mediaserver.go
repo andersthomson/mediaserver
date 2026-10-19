@@ -816,6 +816,7 @@ func main() {
 	}
 	tmdbCache := &scrape.TmdbCache{
 		Client: tmdbClient,
+		Path:   Config.Tmdb.CacheDir,
 	}
 
 	sDirs.StartMonitor(context.TODO())
