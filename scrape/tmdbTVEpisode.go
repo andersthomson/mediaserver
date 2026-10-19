@@ -9,7 +9,7 @@ import (
 )
 
 type TMDBTVEpisode struct {
-	MediaServer
+	//MediaServer
 	PosterServer
 	BackdropServer
 	//SubsServer
@@ -79,8 +79,8 @@ func (_ TMDBTVEpisode) derivePlot(fname string, dir string) string {
 func (i TMDBTVEpisode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	Logger.Info("tmdbtvepisode serving", "Url", r.URL.String())
 	switch {
-	case r.URL.Path == i.MediaURLPath():
-		i.MediaServer.ServeHTTP(w, r)
+	//case r.URL.Path == i.MediaURLPath():
+	//	i.MediaServer.ServeHTTP(w, r)
 	//case r.URL.Path == i.BackdropURLPath():
 	//	i.BackdropServer.ServeHTTP(w, r)
 	//case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
@@ -192,7 +192,7 @@ func NewTMDBTVEpisode(dir string, fname string, ffdata FFProbeRoot) (*TMDBTVEpis
 		return nil, false
 	}
 	res.id = res.deriveID(fname)
-	res.MediaFile = dir + "/" + fname
+	//res.MediaFile = dir + "/" + fname
 
 	//res.SubsServer.AddSubsFromMP4Filename(dir, fname)
 
