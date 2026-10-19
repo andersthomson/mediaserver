@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -102,84 +101,87 @@ func getFirstString(strings ...*string) *string {
 }
 
 func scrapeAsTMDBTVEpisode(itm *TMDBTVEpisode, ffdata FFProbeRoot) bool {
-	if ffdata.Format.Tags.TmdbSeries == "" {
-		return false
-	}
-	id, err := strconv.Atoi(ffdata.Format.Tags.TmdbSeries)
-	if err != nil {
-		Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.TmdbSeries", ffdata.Format.Tags.TmdbSeries)
-		return false
-	}
-	episode, err := strconv.Atoi(ffdata.Format.Tags.Episode_id)
-	if err != nil {
-		Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.Episode_id", ffdata.Format.Tags.Episode_id)
-		return false
-	}
-	season, err := strconv.Atoi(ffdata.Format.Tags.Season)
-	if err != nil {
-		Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.Season", ffdata.Format.Tags.Season)
-		return false
-	}
-	tvEpisodeDetails, err := TMDBTVEpisodeDetails(id, season, episode)
-	if err != nil {
-		Logger.Warn("TMDBTVEpisodeDetails failed. Skipping", "err", err)
-		return false
-	}
-	tvSeasonDetails, err := TMDBTVSeasonDetails(id, season)
-	if err != nil {
-		Logger.Warn("TMDBTVSeasonDetails failed. Skipping", "err", err)
-		return false
-	}
-	tvDetails, err := TMDBTVDetails(id)
-	if err != nil {
-		Logger.Warn("TMDBTVDetails failed. Skipping", "err", err)
-		return false
-	}
-	//Given all the data, complete the itm record.
-	itm.showName = tvDetails.Name
-	itm.tagline = tvDetails.Tagline
-	itm.tags["TV Show"] = []string{itm.showName}
-	for _, lang := range iso639_1_Order {
-		if tvEpisodeDetails == nil {
-			panic(66)
+	/*
+		if ffdata.Format.Tags.TmdbSeries == "" {
+			return false
 		}
-		if tvEpisodeDetails.TVEpisodeTranslationsAppend != nil {
-			for _, translation := range tvEpisodeDetails.Translations.Translations {
-				//logger.Info("trans", translation.Iso639_1, "lang", lang)
-				if translation.Iso639_1 == lang {
-					if translation.Data.Overview != "" && itm.overview == "" {
-						itm.overview = translation.Data.Overview
-						//logger.Info("hit", itm.overview)
-					}
-					if translation.Data.Name != "" && itm.title == "" {
-						itm.title = translation.Data.Name
-						//logger.Info("hit", itm.title)
-					}
-					if translation.Data.Tagline != "" && itm.tagline == "" {
-						itm.tagline = translation.Data.Tagline
-						//logger.Info("hit", itm.title)
+		id, err := strconv.Atoi(ffdata.Format.Tags.TmdbSeries)
+		if err != nil {
+			Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.TmdbSeries", ffdata.Format.Tags.TmdbSeries)
+			return false
+		}
+		episode, err := strconv.Atoi(ffdata.Format.Tags.Episode_id)
+		if err != nil {
+			Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.Episode_id", ffdata.Format.Tags.Episode_id)
+			return false
+		}
+		season, err := strconv.Atoi(ffdata.Format.Tags.Season)
+		if err != nil {
+			Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.Season", ffdata.Format.Tags.Season)
+			return false
+		}*/
+	//tvEpisodeDetails, err := TMDBTVEpisodeDetails(id, season, episode)
+	//if err != nil {
+	//	Logger.Warn("TMDBTVEpisodeDetails failed. Skipping", "err", err)
+	//	return false
+	//}
+	//tvSeasonDetails, err := TMDBTVSeasonDetails(id, season)
+	//if err != nil {
+	//	Logger.Warn("TMDBTVSeasonDetails failed. Skipping", "err", err)
+	//	return false
+	//}
+	//tvDetails, err := TMDBTVDetails(id)
+	/*
+		if err != nil {
+			Logger.Warn("TMDBTVDetails failed. Skipping", "err", err)
+			return false
+		}
+		//Given all the data, complete the itm record.
+		itm.showName = tvDetails.Name
+		itm.tagline = tvDetails.Tagline
+		itm.tags["TV Show"] = []string{itm.showName}
+		for _, lang := range iso639_1_Order {
+			if tvEpisodeDetails == nil {
+				panic(66)
+			}
+			if tvEpisodeDetails.TVEpisodeTranslationsAppend != nil {
+				for _, translation := range tvEpisodeDetails.Translations.Translations {
+					//logger.Info("trans", translation.Iso639_1, "lang", lang)
+					if translation.Iso639_1 == lang {
+						if translation.Data.Overview != "" && itm.overview == "" {
+							itm.overview = translation.Data.Overview
+							//logger.Info("hit", itm.overview)
+						}
+						if translation.Data.Name != "" && itm.title == "" {
+							itm.title = translation.Data.Name
+							//logger.Info("hit", itm.title)
+						}
+						if translation.Data.Tagline != "" && itm.tagline == "" {
+							itm.tagline = translation.Data.Tagline
+							//logger.Info("hit", itm.title)
+						}
 					}
 				}
 			}
 		}
-	}
-	itm.episode = episode
-	itm.season = season
-	if p := getFirstString(&tvEpisodeDetails.StillPath, &tvSeasonDetails.PosterPath); p != nil {
-		//if fname, err := TMDBImage(*p, tmdb.W500); err == nil {
-		//FIXME separate poster server for TV....
-		//itm.PosterFile = fname
-		//}
-	}
-	if p := getFirstString(&tvDetails.BackdropPath); p != nil {
-		//if fname, err := TMDBImage(*p, tmdb.W500); err == nil {
-		//	itm.BackdropFile = fname
-		//}
-	}
+		itm.episode = episode
+		itm.season = season
+		if p := getFirstString(&tvEpisodeDetails.StillPath, &tvSeasonDetails.PosterPath); p != nil {
+			//if fname, err := TMDBImage(*p, tmdb.W500); err == nil {
+			//FIXME separate poster server for TV....
+			//itm.PosterFile = fname
+			//}
+		}
+		if p := getFirstString(&tvDetails.BackdropPath); p != nil {
+			//if fname, err := TMDBImage(*p, tmdb.W500); err == nil {
+			//	itm.BackdropFile = fname
+			//}
+		}
 
-	for _, genre := range tvDetails.Genres {
-		itm.tags["genre"] = append(itm.tags["genre"], strings.TrimSpace(genre.Name))
-	}
+		for _, genre := range tvDetails.Genres {
+			itm.tags["genre"] = append(itm.tags["genre"], strings.TrimSpace(genre.Name))
+		}
+	*/
 	return true
 }
 

@@ -13,7 +13,8 @@ type BackdropMetadata struct {
 }
 
 type BackdropResolver struct {
-	MssCache *MssCache
+	MssCache  *MssCache
+	TmdbCache *TmdbCache
 }
 
 // ResolveBackdropState handles all your heavy cache, API, and image fetching logic in ONE place.
@@ -23,7 +24,7 @@ func (pr *BackdropResolver) ResolveBackdropState(id string) (BackdropMetadata, e
 		return BackdropMetadata{HasBackdrop: false}, fmt.Errorf("Id %s not i mss cache", id)
 	}
 
-	movieDetails, err := TMDBMovieDetails(movieID)
+	movieDetails, err := pr.TmdbCache.MovieDetails(movieID)
 	if err != nil {
 		return BackdropMetadata{HasBackdrop: false}, fmt.Errorf("tmdb breakdown: %w", err)
 	}

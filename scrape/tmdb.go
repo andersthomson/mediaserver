@@ -18,13 +18,11 @@ import (
 )
 
 var sf singleflight.Group
-var tmdbClient *tmdb.Client
 var cachePath = "./.tmdb/"
 var iso639_1_Order []string
 
-func TmdbInit(apiKey string, cacheDir string, iso639_1_order []string) {
-	var err error
-	tmdbClient, err = tmdb.InitV4(apiKey)
+func TmdbInit(apiKey string, cacheDir string, iso639_1_order []string) (*tmdb.Client, error) {
+	tmdbClient, err := tmdb.InitV4(apiKey)
 	if err != nil {
 		panic(err)
 	}
@@ -54,6 +52,7 @@ func TmdbInit(apiKey string, cacheDir string, iso639_1_order []string) {
 	cachePath = cacheDir
 	iso639_1_Order = slices.Clone(iso639_1_order)
 	os.Mkdir(cachePath, 0700)
+	return tmdbClient, nil
 }
 func DownloadFile(filepath string, url string) error {
 
@@ -82,6 +81,11 @@ func fileExists(fname string) bool {
 	_, err := os.Stat(fname)
 	return err == nil
 }
+
+type TmdbCache struct {
+	Client *tmdb.Client
+}
+
 func TMDBImage(key string, size string) (string, error) {
 	fname := fmt.Sprintf("image-%s-%s", size, key)
 	res, err, _ := sf.Do(fname, func() (any, error) {
@@ -100,7 +104,7 @@ func TMDBImage(key string, size string) (string, error) {
 	return res.(string), err
 }
 
-func TMDBCollectionDetails(id int) (*tmdb.CollectionDetails, error) {
+func (t *TmdbCache) CollectionDetails(id int) (*tmdb.CollectionDetails, error) {
 	fname := fmt.Sprintf("Collection-%d", id)
 	res, err, _ := sf.Do(fname, func() (any, error) {
 		var resp *tmdb.CollectionDetails
@@ -119,7 +123,7 @@ func TMDBCollectionDetails(id int) (*tmdb.CollectionDetails, error) {
 			"append_to_response": "images,translations",
 		}
 		slog.Info("TMDB fetch", "type", "CollectionDetails", "id", id)
-		resp, err = tmdbClient.GetCollectionDetails(id, options)
+		resp, err = t.Client.GetCollectionDetails(id, options)
 		if err != nil {
 			return resp, err
 		}
@@ -135,7 +139,7 @@ func TMDBCollectionDetails(id int) (*tmdb.CollectionDetails, error) {
 	return res.(*tmdb.CollectionDetails), err
 }
 
-func TMDBMovieDetails(id int) (*tmdb.MovieDetails, error) {
+func (t *TmdbCache) MovieDetails(id int) (*tmdb.MovieDetails, error) {
 	fname := fmt.Sprintf("Movie-%d", id)
 	res, err, _ := sf.Do(fname, func() (any, error) {
 		var resp *tmdb.MovieDetails
@@ -154,7 +158,7 @@ func TMDBMovieDetails(id int) (*tmdb.MovieDetails, error) {
 			"append_to_response": "images,translations",
 		}
 		slog.Info("TMDB fetch", "type", "MovieDetails", "id", id)
-		resp, err = tmdbClient.GetMovieDetails(id, options)
+		resp, err = t.Client.GetMovieDetails(id, options)
 		if err != nil {
 			return resp, err
 		}
@@ -170,7 +174,7 @@ func TMDBMovieDetails(id int) (*tmdb.MovieDetails, error) {
 	return res.(*tmdb.MovieDetails), err
 }
 
-func TMDBTVDetails(id int) (*tmdb.TVDetails, error) {
+func (t *TmdbCache) TVDetails(id int) (*tmdb.TVDetails, error) {
 	fname := fmt.Sprintf("TVDetails-%d", id)
 	res, err, _ := sf.Do(fname, func() (any, error) {
 		var resp *tmdb.TVDetails
@@ -189,7 +193,7 @@ func TMDBTVDetails(id int) (*tmdb.TVDetails, error) {
 			"append_to_response": "images,translations",
 		}
 		slog.Info("TMDB fetch", "type", "TVDetails", "id", id)
-		resp, err = tmdbClient.GetTVDetails(id, options)
+		resp, err = t.Client.GetTVDetails(id, options)
 		if err != nil {
 			return resp, err
 		}
@@ -205,7 +209,7 @@ func TMDBTVDetails(id int) (*tmdb.TVDetails, error) {
 	return res.(*tmdb.TVDetails), err
 }
 
-func TMDBTVSeasonDetails(id int, seasonNumber int) (*tmdb.TVSeasonDetails, error) {
+func (t *TmdbCache) TVSeasonDetails(id int, seasonNumber int) (*tmdb.TVSeasonDetails, error) {
 	fname := fmt.Sprintf("TVSeasonDetails-%d-%d", id, seasonNumber)
 	res, err, _ := sf.Do(fname, func() (any, error) {
 		var resp *tmdb.TVSeasonDetails
@@ -224,7 +228,7 @@ func TMDBTVSeasonDetails(id int, seasonNumber int) (*tmdb.TVSeasonDetails, error
 			"append_to_response": "images,translations",
 		}
 		slog.Info("TMDB fetch", "type", "TVSeasonDetails", "id", id, "season", seasonNumber)
-		resp, err = tmdbClient.GetTVSeasonDetails(id, seasonNumber, options)
+		resp, err = t.Client.GetTVSeasonDetails(id, seasonNumber, options)
 		if err != nil {
 			return resp, err
 		}
@@ -240,7 +244,7 @@ func TMDBTVSeasonDetails(id int, seasonNumber int) (*tmdb.TVSeasonDetails, error
 	return res.(*tmdb.TVSeasonDetails), err
 }
 
-func TMDBTVEpisodeDetails(id int, seasonNumber int, episodeNumber int) (*tmdb.TVEpisodeDetails, error) {
+func (t *TmdbCache) TVEpisodeDetails(id int, seasonNumber int, episodeNumber int) (*tmdb.TVEpisodeDetails, error) {
 	fname := fmt.Sprintf("TVEpisodeDetails-%d-%d-%d", id, seasonNumber, episodeNumber)
 	res, err, _ := sf.Do(fname, func() (any, error) {
 		var resp *tmdb.TVEpisodeDetails
@@ -259,7 +263,7 @@ func TMDBTVEpisodeDetails(id int, seasonNumber int, episodeNumber int) (*tmdb.TV
 			"append_to_response": "images,translations",
 		}
 		slog.Info("TMDB fetch", "type", "TVEpisodeDetails", "id", id, "season", seasonNumber, "episode", episodeNumber)
-		resp, err = tmdbClient.GetTVEpisodeDetails(id, seasonNumber, episodeNumber, options)
+		resp, err = t.Client.GetTVEpisodeDetails(id, seasonNumber, episodeNumber, options)
 		if err != nil {
 			return resp, err
 		}

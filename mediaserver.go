@@ -424,6 +424,7 @@ type MetadataOrchestrator struct {
 	BackdropResolver *scrape.BackdropResolver
 	DashResolver     *scrape.DashResolver
 	MssCache         *scrape.MssCache
+	TmdbCache        *scrape.TmdbCache
 }
 
 func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, error) {
@@ -442,7 +443,7 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 	}
 	if tmdbMovieID, ok := m.MssCache.MovieId(id); ok {
 		res.Kind = KindMovie
-		movieDetails, err := scrape.TMDBMovieDetails(tmdbMovieID)
+		movieDetails, err := m.TmdbCache.MovieDetails(tmdbMovieID)
 		if err != nil {
 			return MediaManifest{}, fmt.Errorf("tmdb breakdown: %w", err)
 		}
@@ -454,7 +455,7 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 		res.Tagline = scrape.TmdbMovieTagline(movieDetails)
 		res.Overview = scrape.TmdbMovieOverview(movieDetails)
 		if cid := scrape.TmdbMovieCollectionID(movieDetails); cid != 0 {
-			collectionDetails, err := scrape.TMDBCollectionDetails(cid)
+			collectionDetails, err := m.TmdbCache.CollectionDetails(cid)
 			if err != nil {
 				return MediaManifest{}, fmt.Errorf("tmdb breakdown: %w", err)
 			}
@@ -763,7 +764,11 @@ func main() {
 	var sessions *SessionStore
 	rand.Seed(time.Now().UnixNano())
 	Config.ReadFromFile("config")
-	scrape.TmdbInit(Config.Tmdb.ApiKey, Config.Tmdb.CacheDir, Config.Tmdb.Iso6391Order)
+	tmdbClient, err := scrape.TmdbInit(Config.Tmdb.ApiKey, Config.Tmdb.CacheDir, Config.Tmdb.Iso6391Order)
+	if err != nil {
+		slog.Error("Failed to initn tmdb client", "err", err)
+		os.Exit(1)
+	}
 	sessions = NewSessionStoreFromFile(Config.SessionFile)
 
 	webRootURL, err := url.Parse(Config.WebRoot)
@@ -809,9 +814,14 @@ func main() {
 			panic(err)
 		}
 	}
+	tmdbCache := &scrape.TmdbCache{
+		Client: tmdbClient,
+	}
+
 	sDirs.StartMonitor(context.TODO())
 	posterResolver := &scrape.PosterResolver{
-		MssCache: mssCache,
+		MssCache:  mssCache,
+		TmdbCache: tmdbCache,
 	}
 
 	posterServer := &scrape.PosterServer{
@@ -819,7 +829,8 @@ func main() {
 	}
 
 	backdropResolver := &scrape.BackdropResolver{
-		MssCache: mssCache,
+		MssCache:  mssCache,
+		TmdbCache: tmdbCache,
 	}
 
 	backdropServer := &scrape.BackdropServer{
@@ -839,6 +850,7 @@ func main() {
 		BackdropResolver: backdropResolver,
 		DashResolver:     dashResolver,
 		MssCache:         mssCache,
+		TmdbCache:        tmdbCache,
 	}
 	viewModelGenerator := &ViewModelGenerator{
 		Orchestrator: orchestrator,

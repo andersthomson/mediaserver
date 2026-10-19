@@ -13,7 +13,8 @@ type PosterMetadata struct {
 }
 
 type PosterResolver struct {
-	MssCache *MssCache
+	MssCache  *MssCache
+	TmdbCache *TmdbCache
 }
 
 // ResolvePosterState handles all your heavy cache, API, and image fetching logic in ONE place.
@@ -23,7 +24,7 @@ func (pr *PosterResolver) ResolvePosterState(id string) (PosterMetadata, error) 
 		return PosterMetadata{HasPoster: false}, fmt.Errorf("Id %s not i mss cache", id)
 	}
 
-	movieDetails, err := TMDBMovieDetails(movieID)
+	movieDetails, err := pr.TmdbCache.MovieDetails(movieID)
 	if err != nil {
 		return PosterMetadata{HasPoster: false}, fmt.Errorf("tmdb breakdown: %w", err)
 	}
