@@ -44,6 +44,13 @@ func (m *MssCache) Add(dir string, mss Mss) {
 	m.Unlock()
 }
 
+func (m *MssCache) Remove(id string) {
+	m.Lock()
+	delete(m.m, id)
+	delete(m.mssDir, id)
+	m.Unlock()
+}
+
 func (m *MssCache) MovieId(id string) (int, bool) {
 	m.Lock()
 	defer m.Unlock()

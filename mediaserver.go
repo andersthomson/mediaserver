@@ -184,6 +184,105 @@ func addDir(mssCache *scrape.MssCache, dir string) {
 	dr.Refresh()
 }
 
+func MssCacheAddFile(mssCache *scrape.MssCache, path string) {
+	dir := filepath.Dir(path)
+	name := filepath.Base(path)
+	if name != "mediaserver.mss" {
+		return
+	}
+
+	jsonFile, err := os.Open(path)
+	// if os.Open returns an error then handle it
+	if err != nil {
+		slog.Error("Open failed", "err", err)
+		return
+	}
+	defer jsonFile.Close()
+	byteValue, err := io.ReadAll(jsonFile)
+	if err != nil {
+		slog.Error("Error reading file", "path", path, "err", err)
+		return
+	}
+	var mss scrape.Mss
+	err = json.Unmarshal(byteValue, &mss)
+	if err != nil {
+		slog.Error("Error unmarshalling JSON", "err", err)
+		return
+	}
+	mssCache.Add(dir, mss)
+}
+
+func MssCacheRemoveFile(mssCache *scrape.MssCache, path string) {
+	//Expect a path of the firm /a/b/c/shortName-id/dash/mediaserver.mss
+	if filepath.Base(path) != "mediaserver.mss" {
+		return
+	}
+	name := filepath.Dir(path) //gets ..../'dash'
+	name = filepath.Dir(name)  //gets ..../'shortname-id'
+	name = filepath.Base(name) //gets 'shortname-id'
+	prettyId, err := NewPrettyIDFromString(name)
+	if err != nil {
+		slog.Error("Failed to derive a prettyId from string", "path", path, "err", err)
+		return
+	}
+	mssCache.Remove(prettyId.Id)
+}
+
+type SourceDirectories struct {
+	sync.Mutex
+	WT       *WatcherThingy
+	MssCache *scrape.MssCache
+}
+
+func NewSourceDirectories(wt *WatcherThingy, mssCache *scrape.MssCache) *SourceDirectories {
+	s := &SourceDirectories{}
+	s.WT = wt
+	s.MssCache = mssCache
+	return s
+}
+func (s *SourceDirectories) Add(dir string) error {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	s.Lock()
+	defer s.Unlock()
+
+	if err := s.WT.addWatchRecursive(absDir); err != nil {
+		return fmt.Errorf("Failed to add watch dir=%s err=%w", err, absDir, err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("os.ReadDir failed dir=%s err=%w", dir, err)
+	}
+	for _, entry := range entries {
+		mssName := filepath.Join(dir, entry.Name(), "dash/mediaserver.mss")
+		MssCacheAddFile(s.MssCache, mssName)
+	}
+	return nil
+}
+
+func (s *SourceDirectories) StartMonitor(ctx context.Context) {
+	go func() {
+		ch := s.WT.Events()
+		for {
+			select {
+			case ce := <-ch:
+				fmt.Printf("GOT %v\n", ce)
+				switch ce.Event {
+				case "CLOSE":
+					MssCacheAddFile(s.MssCache, ce.Path)
+				case "REMOVE":
+					MssCacheRemoveFile(s.MssCache, ce.Path)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+		slog.Info("Exiting filesystem polling loop")
+	}()
+}
+
 func setupLogger() {
 	/*
 		baseHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -763,9 +862,19 @@ func main() {
 		os.Exit(0)
 	}()
 
-	for _, d := range Config.Directories {
-		addDir(mssCache, d.Name)
+	wt, err := NewWatcherThingy()
+	if err != nil {
+		panic(err)
 	}
+	sDirs := NewSourceDirectories(wt, mssCache)
+	for _, d := range Config.Directories {
+		//addDir(mssCache, d.Name)
+		err = sDirs.Add(d.Name)
+		if err != nil {
+			panic(err)
+		}
+	}
+	sDirs.StartMonitor(context.TODO())
 	posterResolver := &scrape.PosterResolver{
 		MssCache: mssCache,
 	}
@@ -817,9 +926,8 @@ func main() {
 
 	mux.Handle("GET "+path.Join(webRootURL.Path, "/item/{item}/part/{subPath...}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, backdropServer, dashServer}))
 
+	mux.Handle("POST "+path.Join(webRootURL.Path, "/search"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(viewModelGenerator)))
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(viewModelGenerator)))
-
-	mux.Handle("GET "+path.Join(webRootURL.Path, "/search"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(viewModelGenerator)))
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Started", "Listening at", listenaddr)
