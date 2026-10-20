@@ -139,7 +139,7 @@ func (t *TmdbCache) CollectionDetails(id int) (*tmdb.CollectionDetails, error) {
 	return res.(*tmdb.CollectionDetails), err
 }
 
-func (t *TmdbCache) MovieDetails(id int) (*tmdb.MovieDetails, error) {
+func (t *TmdbCache) MovieDetails(id MovieID) (*tmdb.MovieDetails, error) {
 	fname := fmt.Sprintf("Movie-%d", id)
 	res, err, _ := t.sf.Do(fname, func() (any, error) {
 		var resp *tmdb.MovieDetails
@@ -158,7 +158,7 @@ func (t *TmdbCache) MovieDetails(id int) (*tmdb.MovieDetails, error) {
 			"append_to_response": "images,translations",
 		}
 		slog.Info("TMDB fetch", "type", "MovieDetails", "id", id)
-		resp, err = t.Client.GetMovieDetails(id, options)
+		resp, err = t.Client.GetMovieDetails(int(id), options)
 		if err != nil {
 			return resp, err
 		}

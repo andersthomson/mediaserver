@@ -51,7 +51,7 @@ func (m *MssCache) Remove(id string) {
 	m.Unlock()
 }
 
-func (m *MssCache) MovieId(id string) (int, bool) {
+func (m *MssCache) MovieId(id string) (MovieID, bool) {
 	m.Lock()
 	defer m.Unlock()
 	itm, ok := m.m[id]
@@ -64,7 +64,7 @@ func (m *MssCache) MovieId(id string) (int, bool) {
 	if itm.Tmdb.MovieId == nil {
 		return 0, false
 	}
-	return *itm.Tmdb.MovieId, true
+	return MovieID(*itm.Tmdb.MovieId), true
 }
 
 func (m *MssCache) ShortName(id string) (string, bool) {
