@@ -3,6 +3,8 @@ package scrape
 import (
 	"fmt"
 	"path"
+
+	tmdb "github.com/cyruzin/golang-tmdb"
 )
 
 // BackdropMetadata tracks the definitive outcome of evaluating a movie record.
@@ -12,9 +14,18 @@ type BackdropMetadata struct {
 	TargetBackdropFile string // The file name token exposed to the web router
 }
 
+type BackdropStateTmdbSource interface {
+	Image(backdropPath string, size string) (string, error)
+	MovieDetails(movieID MovieID) (*tmdb.MovieDetails, error)
+}
+
+type BackdropStateMssSource interface {
+	MovieId(string) (MovieID, bool)
+}
+
 type BackdropResolver struct {
-	MssCache  *MssCache
-	TmdbCache *TmdbCache
+	MssCache  BackdropStateMssSource
+	TmdbCache BackdropStateTmdbSource
 }
 
 // ResolveBackdropState handles all your heavy cache, API, and image fetching logic in ONE place.

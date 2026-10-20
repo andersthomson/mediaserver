@@ -3,6 +3,8 @@ package scrape
 import (
 	"fmt"
 	"path"
+
+	tmdb "github.com/cyruzin/golang-tmdb"
 )
 
 // PosterMetadata tracks the definitive outcome of evaluating a movie record.
@@ -12,9 +14,18 @@ type PosterMetadata struct {
 	TargetPosterFile string // The file name token exposed to the web router
 }
 
+type PosterResolverTmdbSource interface {
+	Image(posterPath string, size string) (string, error)
+	MovieDetails(MovieID) (*tmdb.MovieDetails, error)
+}
+
+type PosterResolverMssSource interface {
+	MovieId(id string) (MovieID, bool)
+}
+
 type PosterResolver struct {
-	MssCache  *MssCache
-	TmdbCache *TmdbCache
+	MssCache  PosterResolverMssSource
+	TmdbCache PosterResolverTmdbSource
 }
 
 // ResolvePosterState handles all your heavy cache, API, and image fetching logic in ONE place.

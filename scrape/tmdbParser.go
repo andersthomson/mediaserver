@@ -31,6 +31,6 @@ func TmdbMovieOverview(t *tmdb.MovieDetails) string {
 	return t.Overview
 }
 
-func TmdbMovieCollectionID(t *tmdb.MovieDetails) int {
-	return int(t.BelongsToCollection.ID)
+func TmdbMovieCollectionID(t *tmdb.MovieDetails) CollectionID {
+	return CollectionID(t.BelongsToCollection.ID)
 }

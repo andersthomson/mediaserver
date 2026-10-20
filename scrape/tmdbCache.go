@@ -101,7 +101,7 @@ func (t *TmdbCache) Image(key string, size string) (string, error) {
 	return res.(string), err
 }
 
-func (t *TmdbCache) CollectionDetails(id int) (*tmdb.CollectionDetails, error) {
+func (t *TmdbCache) CollectionDetails(id CollectionID) (*tmdb.CollectionDetails, error) {
 	fname := fmt.Sprintf("Collection-%d", id)
 	res, err, _ := t.sf.Do(fname, func() (any, error) {
 		var resp *tmdb.CollectionDetails
@@ -120,7 +120,7 @@ func (t *TmdbCache) CollectionDetails(id int) (*tmdb.CollectionDetails, error) {
 			"append_to_response": "images,translations",
 		}
 		slog.Info("TMDB fetch", "type", "CollectionDetails", "id", id)
-		resp, err = t.Client.GetCollectionDetails(id, options)
+		resp, err = t.Client.GetCollectionDetails(int(id), options)
 		if err != nil {
 			return resp, err
 		}
