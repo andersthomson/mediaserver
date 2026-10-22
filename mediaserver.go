@@ -561,7 +561,7 @@ type object struct {
 	MP4URL   string
 	ShakaURL string
 	//HLSURL        string
-	CastURL       string
+	//CastURL       string
 	PosterURL     string
 	BackdropURL   string
 	Title         string
@@ -575,7 +575,7 @@ type object struct {
 	BackingStruct string
 	SubsLanguages []string
 }
-type IndexViewModel2 struct {
+type IndexViewModel struct {
 	User          string
 	GroupedMovies *groupedMovies
 	FilterTags    map[string]map[string]bool
@@ -584,7 +584,7 @@ type IndexViewModel2 struct {
 	SearchURL     string
 }
 
-func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, enabledTags map[string][]string) (IndexViewModel2, error) {
+func (g *ViewModelGenerator) AssembleIndex(ctx context.Context, enabledTags map[string][]string) (IndexViewModel, error) {
 	webRootURL, err := url.Parse(Config.WebRoot)
 	if err != nil {
 		panic(err)
@@ -594,7 +594,7 @@ func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, enabledTags map
 	for _, id := range ids {
 		manifest, err := g.Orchestrator.GetUnifiedManifest(id)
 		if err != nil {
-			return IndexViewModel2{}, err
+			return IndexViewModel{}, err
 		}
 		manifests = append(manifests, manifest)
 	}
@@ -645,7 +645,7 @@ func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, enabledTags map
 			o = append(o, Object)
 		}
 	}
-	return IndexViewModel2{
+	return IndexViewModel{
 		User:          ctx.Value(userCtxKey{}).(User).UserID(),
 		GroupedMovies: movs,
 		FilterTags:    FilterTags,
@@ -1220,7 +1220,7 @@ func HandleIndex(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 			enabledTags[tag] = append(enabledTags[tag], val)
 		}
 
-		data, err := viewModelGenerator.AssembleIndex2(ctx, enabledTags)
+		data, err := viewModelGenerator.AssembleIndex(ctx, enabledTags)
 		if err != nil {
 			slog.Error("Failed to generate index vireModel", "err", err)
 			return
