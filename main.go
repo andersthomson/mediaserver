@@ -121,6 +121,7 @@ func main() {
 		TmdbCache:        tmdbCache,
 	}
 	viewModelGenerator := &ViewModelGenerator{
+		WebRoot:      Config.WebRoot,
 		Orchestrator: orchestrator,
 		MssCache:     mssCache,
 	}

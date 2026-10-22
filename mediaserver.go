@@ -488,53 +488,54 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 }
 
 type ViewModelGenerator struct {
+	WebRoot      string
 	Orchestrator *MetadataOrchestrator
 	MssCache     *scrape.MssCache
 }
 
 func (g *ViewModelGenerator) posterURL(manifest MediaManifest) string {
 	if manifest.Poster.HasPoster {
-		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "poster"
+		return g.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "poster"
 	}
 	return ""
 }
 
 func (g *ViewModelGenerator) backdropURL(manifest MediaManifest) string {
 	if manifest.Backdrop.HasBackdrop {
-		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "backdrop"
+		return g.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "backdrop"
 	}
 	return ""
 }
 func (g *ViewModelGenerator) shakaURL(manifest MediaManifest, id string) string {
 	if manifest.HasDash {
-		return Config.WebRoot + "/view/shaka/" + url.PathEscape(NewPrettyID(id, manifest.ShortName).String())
+		return g.WebRoot + "/view/shaka/" + url.PathEscape(NewPrettyID(id, manifest.ShortName).String())
 	}
 	return ""
 }
 
 func (g *ViewModelGenerator) html5URL(manifest MediaManifest) string {
 	if manifest.HasMP4 {
-		return Config.WebRoot + "/view/html5/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String())
+		return g.WebRoot + "/view/html5/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String())
 	}
 	return ""
 }
 
 func (g *ViewModelGenerator) mp4URL(manifest MediaManifest) string {
 	if manifest.HasMP4 {
-		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "mp4/media.mp4"
+		return g.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "mp4/media.mp4"
 	}
 	return ""
 }
 
 func (g *ViewModelGenerator) dashURL(manifest MediaManifest) string {
 	if manifest.HasDash {
-		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "dash/manifest.mpd"
+		return g.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "dash/manifest.mpd"
 	}
 	return ""
 }
 func (g *ViewModelGenerator) thumbnailsURL(manifest MediaManifest) string {
 	if manifest.HasDash {
-		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "dash/thumbnails.vtt"
+		return g.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "dash/thumbnails.vtt"
 	}
 	return ""
 }
@@ -581,7 +582,7 @@ type IndexViewModel struct {
 }
 
 func (g *ViewModelGenerator) AssembleIndex(ctx context.Context, enabledTags map[string][]string) (IndexViewModel, error) {
-	webRootURL, err := url.Parse(Config.WebRoot)
+	webRootURL, err := url.Parse(g.WebRoot)
 	if err != nil {
 		panic(err)
 	}
