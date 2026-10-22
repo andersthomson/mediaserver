@@ -25,10 +25,6 @@ import (
 	slogctx "github.com/veqryn/slog-context"
 )
 
-// Global OAuth2 config
-var googleIDP *GoogleIDP
-var internalIDP *InternalIDP
-
 var logger *slog.Logger
 var Config config
 

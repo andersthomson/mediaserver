@@ -501,7 +501,7 @@ func aac2cEncodingStrategy(args shared.EncodeStreamArgs) []shared.FFMpegArg {
 		//FIXME: Keep mono as mono. Dont upsample
 		shared.NewFFMpegArg(shared.KindString, "-ac"), shared.NewFFMpegArg(shared.KindString, "2"),
 		//"-af", "aresample=async=1",
-		shared.NewFFMpegArg(shared.KindString, "-af"), shared.NewFFMpegArg(shared.KindString, "aresample=async=1:comp_duration=1:max_soft_comp=0.05"),
+		shared.NewFFMpegArg(shared.KindString, "-af"), shared.NewFFMpegArg(shared.KindString, "atrim=start=0.612,asetpts=PTS-STARTPTS,aresample=async=1:comp_duration=1:max_soft_comp=0.05"),
 	}
 }
 
