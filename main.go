@@ -105,10 +105,18 @@ func main() {
 		DashResolver: dashResolver,
 	}
 
+	mp4Resolver := &scrape.MP4Resolver{
+		MssCache: mssCache,
+	}
+
+	mp4Server := &scrape.MP4Server{
+		MP4Resolver: mp4Resolver,
+	}
 	orchestrator := &MetadataOrchestrator{
 		PosterResolver:   posterResolver,
 		BackdropResolver: backdropResolver,
 		DashResolver:     dashResolver,
+		MP4Resolver:      mp4Resolver,
 		MssCache:         mssCache,
 		TmdbCache:        tmdbCache,
 	}
@@ -131,7 +139,7 @@ func main() {
 	mux.Handle("GET "+path.Join(webRootURL.Path, "/view/html5/{item}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleHtml5(viewModelGenerator)))
 	mux.Handle("GET "+path.Join(webRootURL.Path, "/view/shaka/{item}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleShaka(viewModelGenerator)))
 
-	mux.Handle("GET "+path.Join(webRootURL.Path, "/item/{item}/part/{subPath...}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, backdropServer, dashServer}))
+	mux.Handle("GET "+path.Join(webRootURL.Path, "/item/{item}/part/{subPath...}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, backdropServer, dashServer, mp4Server}))
 
 	mux.Handle("POST "+path.Join(webRootURL.Path, "/search"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(viewModelGenerator)))
 	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(viewModelGenerator)))

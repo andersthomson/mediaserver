@@ -9,7 +9,7 @@ type Mss struct {
 type Playouts struct {
 	HasDASHManifest bool
 	HasHLSMaster    bool
-	MasMP4          bool
+	HasMP4          bool
 }
 
 type Tmdb struct {

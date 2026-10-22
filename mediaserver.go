@@ -76,6 +76,7 @@ type dataSourceServer struct {
 	PosterServer   *scrape.PosterServer
 	BackdropServer *scrape.BackdropServer
 	DashServer     *scrape.DashServer
+	MP4Server      *scrape.MP4Server
 }
 
 const ItmId = "ItmId"
@@ -405,6 +406,7 @@ type MediaManifest struct {
 	Tagline    string
 	Overview   string
 	HasDash    bool
+	HasMP4     bool
 	ShowName   string
 	Season     int
 	Episode    int
@@ -412,6 +414,7 @@ type MediaManifest struct {
 	Poster     scrape.PosterMetadata
 	Backdrop   scrape.BackdropMetadata
 	Dash       scrape.DashMetadata
+	MP4        scrape.MP4Metadata
 	Tags       map[string][]string
 }
 
@@ -419,6 +422,7 @@ type MetadataOrchestrator struct {
 	PosterResolver   *scrape.PosterResolver
 	BackdropResolver *scrape.BackdropResolver
 	DashResolver     *scrape.DashResolver
+	MP4Resolver      *scrape.MP4Resolver
 	MssCache         *scrape.MssCache
 	TmdbCache        *scrape.TmdbCache
 }
@@ -437,6 +441,8 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 	if !ok {
 		return MediaManifest{}, fmt.Errorf("ID %s not in msscache", id)
 	}
+	res.HasMP4, ok = m.MssCache.HasMP4(id)
+
 	if tmdbMovieID, ok := m.MssCache.MovieId(id); ok {
 		res.Kind = KindMovie
 		movieDetails, err := m.TmdbCache.MovieDetails(tmdbMovieID)
@@ -473,6 +479,11 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 	if err != nil {
 		return MediaManifest{}, fmt.Errorf("orchestrator dash matching crash: %w", err)
 	}
+
+	res.MP4, err = m.MP4Resolver.ResolveMP4State(id)
+	if err != nil {
+		return MediaManifest{}, fmt.Errorf("orchestrator mp4 matching crash: %w", err)
+	}
 	return res, nil
 }
 
@@ -500,6 +511,21 @@ func (g *ViewModelGenerator) shakaURL(manifest MediaManifest, id string) string 
 	}
 	return ""
 }
+
+func (g *ViewModelGenerator) html5URL(manifest MediaManifest) string {
+	if manifest.HasDash {
+		return Config.WebRoot + "/view/html5/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String())
+	}
+	return ""
+}
+
+func (g *ViewModelGenerator) mp4URL(manifest MediaManifest) string {
+	if manifest.HasMP4 {
+		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "media.mp4"
+	}
+	return ""
+}
+
 func (g *ViewModelGenerator) dashURL(manifest MediaManifest) string {
 	if manifest.HasDash {
 		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "dash/manifest.mpd"
@@ -527,11 +553,11 @@ func (g *ViewModelGenerator) seasonEpisode(manifest MediaManifest) string {
 }
 
 type object struct {
-	Html5URL      string
-	ShakaURL      string
-	HLSURL        string
+	Html5URL string
+	MP4URL   string
+	ShakaURL string
+	//HLSURL        string
 	CastURL       string
-	MediaURL      string
 	PosterURL     string
 	BackdropURL   string
 	Title         string
@@ -608,6 +634,8 @@ func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, enabledTags map
 				BackdropURL: g.backdropURL(manifest),
 				Overview:    manifest.Overview,
 				ShakaURL:    g.shakaURL(manifest, manifest.ID),
+				Html5URL:    g.html5URL(manifest),
+				MP4URL:      g.mp4URL(manifest),
 				Tags:        manifest.Tags,
 			}
 			o = append(o, Object)

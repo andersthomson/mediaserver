@@ -1,28 +1,36 @@
 package scrape
 
 import (
+	"log/slog"
 	"net/http"
-	"os"
-	"time"
 )
 
 type MP4Server struct {
-	MediaFile string
+	MP4Resolver *MP4Resolver
 }
 
-func (m MP4Server) MediaURLPath() string {
-	if m.MediaFile != "" {
-		return "media"
+func (d MP4Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	val := ctx.Value("ItmId")
+	if val == nil {
+		slog.Error("Failed to find itmid")
+		w.WriteHeader(500)
+		return
 	}
-	return ""
-}
+	itemID := val.(string)
 
-func (m MP4Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	content, err := os.Open(m.MediaFile)
+	state, err := d.MP4Resolver.ResolveMP4State(itemID)
 	if err != nil {
-		Logger.ErrorContext(r.Context(), "read of media", "failed", err)
+		slog.Error("MP4Server failed to resolve mp4 state", "err", err)
+		w.WriteHeader(500)
+		return
+	}
+	if !state.HasMP4 {
+		slog.Info("MP4Server called, but item has no mp4", "itemid", itemID)
 		w.WriteHeader(404)
 		return
 	}
-	http.ServeContent(w, r, "foo.mp4", time.Time{}, content)
+
+	Logger.Info("MP4Server", "Serving File", state.FilePath, "r.URL", r.URL, "Range", r.Header.Get("Range"))
+	http.ServeFile(w, r, state.FilePath)
 }

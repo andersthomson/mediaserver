@@ -59,6 +59,16 @@ func (m *MssCache) ShortName(id string) (string, bool) {
 	return itm.ShortName, true
 }
 
+func (m *MssCache) HasMP4(id string) (bool, bool) {
+	m.Lock()
+	defer m.Unlock()
+	itm, ok := m.m[id]
+	if !ok {
+		return false, false
+	}
+	return itm.Playouts.HasMP4, true
+}
+
 func (m *MssCache) HasDashManifest(id string) (bool, bool) {
 	m.Lock()
 	defer m.Unlock()
