@@ -21,9 +21,16 @@ func (d *MP4Resolver) ResolveMP4State(id string) (MP4Metadata, error) {
 	if !ok {
 		return MP4Metadata{HasMP4: false}, fmt.Errorf("[MP4Resolver] MssCache has no directory record for id %s", id)
 	}
-	_, ok = d.MssCache.HasMP4(id)
+	has, ok := d.MssCache.HasMP4(id)
 	if !ok {
-		return MP4Metadata{HasMP4: false}, nil
+		return MP4Metadata{HasMP4: false}, fmt.Errorf("[MP4Resolver] MssCache has record for id %s", id)
+	}
+
+	if !has {
+		return MP4Metadata{
+			HasMP4:   false,
+			FilePath: "",
+		}, nil
 	}
 
 	filePath := filepath.Join(dir, "media.mp4")

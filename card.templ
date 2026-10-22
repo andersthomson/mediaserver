@@ -40,11 +40,8 @@ templ CardOverview4ID(overview string) {
 	}
 }
 
-templ CardLinks4ID(download, html5, cast, shaka string) {
+templ CardLinks4ID(html5, cast, shaka string) {
 	<div id="navigation">
-	if download != "" {
-		<a href={ templ.SafeURL(download) }>&lt;Download&gt;</a>
-	}
 	if html5 != "" {
 		<a href={ templ.SafeURL(html5) }>&lt;Play in browser&gt;</a>
 	}
@@ -65,7 +62,7 @@ templ Card4ID(cvm SearchCardViewModel) {
 	@CardGenres4ID(cvm.Genres)
 	@CardTagline4ID(cvm.Tagline)
 	@CardOverview4ID(cvm.Overview)
-	@CardLinks4ID(cvm.DownloadURL,cvm.Html5URL,cvm.CastURL,cvm.ShakaURL)
+	@CardLinks4ID(cvm.Html5URL,cvm.CastURL,cvm.ShakaURL)
         </div>
 }
 

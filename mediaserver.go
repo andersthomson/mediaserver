@@ -102,6 +102,10 @@ func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.PosterServer.ServeHTTP(w, subRequest)
 		return
 	}
+	if strings.HasPrefix(subRequest.URL.Path, "/mp4/") {
+		p.MP4Server.ServeHTTP(w, subRequest)
+		return
+	}
 	if subRequest.URL.Path == "/backdrop" {
 		p.BackdropServer.ServeHTTP(w, subRequest)
 		return
@@ -513,7 +517,7 @@ func (g *ViewModelGenerator) shakaURL(manifest MediaManifest, id string) string 
 }
 
 func (g *ViewModelGenerator) html5URL(manifest MediaManifest) string {
-	if manifest.HasDash {
+	if manifest.HasMP4 {
 		return Config.WebRoot + "/view/html5/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String())
 	}
 	return ""
@@ -521,7 +525,7 @@ func (g *ViewModelGenerator) html5URL(manifest MediaManifest) string {
 
 func (g *ViewModelGenerator) mp4URL(manifest MediaManifest) string {
 	if manifest.HasMP4 {
-		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "media.mp4"
+		return Config.WebRoot + "/item/" + url.PathEscape(NewPrettyID(manifest.ID, manifest.ShortName).String()) + "/part/" + "mp4/media.mp4"
 	}
 	return ""
 }
@@ -653,16 +657,16 @@ func (g *ViewModelGenerator) AssembleIndex2(ctx context.Context, enabledTags map
 }
 
 type SearchCardViewModel struct {
-	ID          string
-	Title       string
-	PosterURL   string
-	Tagline     string
-	Genres      []string
-	Overview    string
-	DownloadURL string
-	CastURL     string
-	Html5URL    string
-	ShakaURL    string
+	ID        string
+	Title     string
+	PosterURL string
+	Tagline   string
+	Genres    []string
+	Overview  string
+	MP4URL    string
+	CastURL   string
+	Html5URL  string
+	ShakaURL  string
 }
 
 type SearchViewModel map[string][]SearchCardViewModel
@@ -697,15 +701,15 @@ func (g *ViewModelGenerator) AssembleSearchViewModel(ctx context.Context, search
 	for genre, genreSlice := range splits {
 		for _, mFest := range genreSlice {
 			scvm := SearchCardViewModel{
-				Title:       mFest.Title,
-				PosterURL:   g.posterURL(mFest),
-				Tagline:     mFest.Tagline,
-				Genres:      mFest.Genres,
-				Overview:    mFest.Overview,
-				DownloadURL: "",
-				CastURL:     "",
-				Html5URL:    "",
-				ShakaURL:    g.shakaURL(mFest, mFest.ID),
+				Title:     mFest.Title,
+				PosterURL: g.posterURL(mFest),
+				Tagline:   mFest.Tagline,
+				Genres:    mFest.Genres,
+				Overview:  mFest.Overview,
+				MP4URL:    g.mp4URL(mFest),
+				CastURL:   "",
+				Html5URL:  g.html5URL(mFest),
+				ShakaURL:  g.shakaURL(mFest, mFest.ID),
 			}
 
 			sID[genre] = append(sID[genre], scvm)
@@ -734,7 +738,7 @@ func (g *ViewModelGenerator) AssembleShakaViewModel(ctx context.Context, id stri
 }
 
 type Html5ViewModel struct {
-	MediaURL string
+	MP4URL string
 	//SubsURLs      []datasource.Subs
 	Title         string
 	SeasonEpisode string
@@ -749,7 +753,7 @@ func (g *ViewModelGenerator) AssembleHtml5ViewModel(ctx context.Context, id stri
 	}
 
 	data := Html5ViewModel{
-		MediaURL: "", //TODO
+		MP4URL: g.mp4URL(manifest),
 		//SubsURLs:      nil, //TODO
 		Title:         manifest.Title,
 		SeasonEpisode: g.seasonEpisode(manifest),
@@ -946,10 +950,7 @@ func HandleHtml5(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
                 </head>
                 <body>
     <video id="video" controls>
-        <source src="{{.MediaURL}}" type="video/mp4">
-        {{ range .SubsURLs }}
-                <track src="{{.URL}}" kind="subtitles" srclang="{{.Language}}" label="{{.Language}}">
-        {{ end }}
+        <source src="{{.MP4URL}}" type="video/mp4">
         Your browser does not support the video tag.
     </video>
     <p>
@@ -959,9 +960,6 @@ func HandleHtml5(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 {{ if .Overview }}
         Overview: {{ .Overview}}<br>
 {{ end }}
-{{ if .Plot }}
-    Plot {{.Plot}}<br>
- {{ end }}
     </body>
     </html>
 `
