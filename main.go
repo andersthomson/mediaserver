@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
+	tmdb "github.com/cyruzin/golang-tmdb"
 )
 
 type Application struct {
@@ -61,40 +62,82 @@ func main() {
 		internalIDP := NewInternalIDP(logger, Config.WebRoot, IDPRoot)
 		idpManager.Register(internalIDP)
 	}
-	/*
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		go func() {
-			sig := <-sigChan // Block until a signal is received
-			fmt.Printf("\nReceived signal: %v\n", sig)
-			if maxDur, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
-				sessions.PruneOldSessions(maxDur)
-			}
-			b := sessions.ToJson()
-			if err := os.WriteFile(Config.SessionFile, b, 0644); err != nil {
-				logger.Error("Failed to write sessionfile", "err", err)
-			}
-			os.Exit(0)
-		}()
-	*/
 	wt, err := NewWatcherThingy()
 	if err != nil {
 		panic(err)
 	}
 	sDirs := NewSourceDirectories(wt, mssCache)
 	for _, d := range Config.Directories {
-		//addDir(mssCache, d.Name)
 		err = sDirs.Add(d.Name)
 		if err != nil {
 			panic(err)
 		}
 	}
+	sDirs.StartMonitor(context.TODO())
+
+	app := BuildApp(tmdbClient, mssCache, sessions, webRootURL.Path, idpManager)
+
+	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
+	logger.Info("Starting", "Listening at", listenaddr)
+	// 3. Define the explicit HTTP server
+	srv := &http.Server{
+		Addr:    listenaddr,
+		Handler: app.Router,
+	}
+
+	// 4. Create an error channel to catch immediate boot errors (e.g., port already in use)
+	serverErrors := make(chan error, 1)
+
+	// 5. Fire up the server inside a background goroutine so it doesn't block main
+	go func() {
+		logger.Info("HTTP server listening", "address", listenaddr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { // Filter out normal close errors
+			serverErrors <- err
+		}
+	}()
+
+	// 6. Block the main thread here and wait for EITHER a fatal boot error OR a Ctrl+C signal
+	select {
+	case err := <-serverErrors:
+		fmt.Printf("Fatal server startup error: %v", err)
+
+	case <-ctx.Done(): // Ctrl+C or kill signal was intercepted
+		logger.Info("Shutdown signal received. Starting graceful offboarding...")
+
+		// 7. Give the in-flight web requests 5 seconds to wrap up cleanly before pulling the plug
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Info("HTTP server forced to close", "err", err)
+			_ = srv.Close() // Hard close the network sockets if it times out
+		}
+	}
+
+	// 8. THE FLUSH ZONE: Now that the server is completely dark and traffic has stopped,
+	// execute your synchronous disk sync safely.
+	logger.Info("HTTP server completely stopped. Syncing data structures to disk...")
+	/*if maxDur, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
+		sessions.PruneOldSessions(maxDur)
+	}
+	b := sessions.ToJson()
+	if err := os.WriteFile(Config.SessionFile, b, 0644); err != nil {
+		logger.Error("Failed to write sessionfile", "err", err)
+	}*/
+	if err := sessions.Flush(); err != nil {
+		logger.Error("Critical: Error flushing data during exit: %v", err)
+		os.Exit(1)
+	}
+
+	logger.Info("Application exited cleanly.")
+}
+
+func BuildApp(tmdbClient *tmdb.Client, mssCache *scrape.MssCache, sessions *SessionStore, webRootURLPath string, idpManager *IDPManager) *Application {
 	tmdbCache := &scrape.TmdbCache{
 		Client: tmdbClient,
 		Path:   Config.Tmdb.CacheDir,
 	}
 
-	sDirs.StartMonitor(context.TODO())
 	posterResolver := &scrape.PosterResolver{
 		MssCache:  mssCache,
 		TmdbCache: tmdbCache,
@@ -151,7 +194,7 @@ func main() {
 
 	app := Application{
 		Sessions:           sessions,
-		WebRootURLPath:     webRootURL.Path,
+		WebRootURLPath:     webRootURLPath,
 		ViewModelGenerator: viewModelGenerator,
 		DataSourceServer:   dataSourceServer,
 		IDPManager:         idpManager,
@@ -159,60 +202,7 @@ func main() {
 	}
 
 	app.routes()
-
-	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
-	logger.Info("Starting", "Listening at", listenaddr)
-	// 3. Define the explicit HTTP server
-	srv := &http.Server{
-		Addr:    listenaddr,
-		Handler: app.Router,
-	}
-
-	// 4. Create an error channel to catch immediate boot errors (e.g., port already in use)
-	serverErrors := make(chan error, 1)
-
-	// 5. Fire up the server inside a background goroutine so it doesn't block main
-	go func() {
-		logger.Info("HTTP server listening", "address", listenaddr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { // Filter out normal close errors
-			serverErrors <- err
-		}
-	}()
-
-	// 6. Block the main thread here and wait for EITHER a fatal boot error OR a Ctrl+C signal
-	select {
-	case err := <-serverErrors:
-		fmt.Printf("Fatal server startup error: %v", err)
-
-	case <-ctx.Done(): // Ctrl+C or kill signal was intercepted
-		logger.Info("Shutdown signal received. Starting graceful offboarding...")
-
-		// 7. Give the in-flight web requests 5 seconds to wrap up cleanly before pulling the plug
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.Info("HTTP server forced to close", "err", err)
-			_ = srv.Close() // Hard close the network sockets if it times out
-		}
-	}
-
-	// 8. THE FLUSH ZONE: Now that the server is completely dark and traffic has stopped,
-	// execute your synchronous disk sync safely.
-	logger.Info("HTTP server completely stopped. Syncing data structures to disk...")
-	/*if maxDur, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
-		sessions.PruneOldSessions(maxDur)
-	}
-	b := sessions.ToJson()
-	if err := os.WriteFile(Config.SessionFile, b, 0644); err != nil {
-		logger.Error("Failed to write sessionfile", "err", err)
-	}*/
-	if err := sessions.Flush(); err != nil {
-		logger.Error("Critical: Error flushing data during exit: %v", err)
-		os.Exit(1)
-	}
-
-	logger.Info("Application exited cleanly.")
+	return &app
 }
 
 func (app *Application) routes() {
