@@ -67,7 +67,7 @@ func NewPrettyID(id, shortName string) PrettyID {
 	}
 }
 
-type dataSourceServer struct {
+type DataSourceServer struct {
 	PosterServer   *scrape.PosterServer
 	BackdropServer *scrape.BackdropServer
 	DashServer     *scrape.DashServer
@@ -76,7 +76,7 @@ type dataSourceServer struct {
 
 const ItmId = "ItmId"
 
-func (p *dataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (p *DataSourceServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	itm := r.PathValue("item")
 	prettyID, err := NewPrettyIDFromString(itm)

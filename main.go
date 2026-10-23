@@ -20,7 +20,10 @@ import (
 
 type Application struct {
 	WebRootURLPath     string
+	Sessions           *SessionStore
+	DataSourceServer   *DataSourceServer
 	ViewModelGenerator *ViewModelGenerator
+	IDPManager         *IDPManager
 	Router             *http.ServeMux
 }
 
@@ -132,33 +135,23 @@ func main() {
 		MssCache:     mssCache,
 	}
 
+	dataSourceServer := &DataSourceServer{
+		PosterServer:   posterServer,
+		BackdropServer: backdropServer,
+		DashServer:     dashServer,
+		MP4Server:      mp4Server,
+	}
+
 	app := Application{
+		Sessions:           sessions,
 		WebRootURLPath:     webRootURL.Path,
 		ViewModelGenerator: viewModelGenerator,
+		DataSourceServer:   dataSourceServer,
+		IDPManager:         idpManager,
 		Router:             http.NewServeMux(),
 	}
 
-	//mux.Handle(webRootURL.Path+"/auth/google/login", Chain(LoggingMiddleware)(http.HandlerFunc(googleIDP.googleLoginHandler)))
-	//mux.Handle(webRootURL.Path+"/auth/google/callback", Chain(LoggingMiddleware)(http.HandlerFunc(googleIDP.googleOAuthCallbackHandler)))
-
-	//mux.Handle(webRootURL.Path+"/auth/google/", http.StripPrefix(webRootURL.Path+"/auth/google", googleIDP.ServeMux()))
-	//mux.Handle(app.WebRootURLPath+"/auth/internalIDP/", http.StripPrefix(webRootURL.Path+"/auth/internalIDP", internalIDP.ServeMux()))
-
-	authMW := AuthMiddleware(logger)
-	logMW := LoggingMiddleware(logger)
-	sessMW := SessionStoreToContext(sessions)
-
-	app.Router.Handle(app.WebRootURLPath+"/auth/", http.StripPrefix(webRootURL.Path+"/auth", idpManager.ServeMux()))
-	app.Router.Handle(app.WebRootURLPath+"/auth/login", Chain(logMW)(idpManager))
-
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "view/cast/{item}"), Chain(logMW, sessMW, authMW, CORS)(HandleCast(app.ViewModelGenerator)))
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/html5/{item}"), Chain(logMW, sessMW, authMW, CORS)(HandleHtml5(app.ViewModelGenerator)))
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/shaka/{item}"), Chain(logMW, sessMW, authMW, CORS)(HandleShaka(app.ViewModelGenerator)))
-
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/item/{item}/part/{subPath...}"), Chain(logMW, sessMW, CORS)(&dataSourceServer{posterServer, backdropServer, dashServer, mp4Server}))
-
-	app.Router.Handle("POST "+path.Join(app.WebRootURLPath, "/search"), Chain(logMW, sessMW, authMW, CORS)(HandleSearch(app.ViewModelGenerator)))
-	app.Router.Handle(app.WebRootURLPath+"/", Chain(logMW, sessMW, authMW, CORS)(HandleIndex(app.ViewModelGenerator)))
+	app.routes()
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Started", "Listening at", listenaddr)
@@ -166,4 +159,22 @@ func main() {
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	}
+}
+
+func (app *Application) routes() {
+	logMW := LoggingMiddleware(logger)
+	sessMW := SessionStoreToContext(app.Sessions)
+	authMW := AuthMiddleware(logger)
+
+	app.Router.Handle(app.WebRootURLPath+"/auth/", http.StripPrefix(app.WebRootURLPath+"/auth", app.IDPManager.ServeMux()))
+	app.Router.Handle(app.WebRootURLPath+"/auth/login", Chain(logMW)(app.IDPManager))
+
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "view/cast/{item}"), Chain(logMW, sessMW, authMW, CORS)(HandleCast(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/html5/{item}"), Chain(logMW, sessMW, authMW, CORS)(HandleHtml5(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/shaka/{item}"), Chain(logMW, sessMW, authMW, CORS)(HandleShaka(app.ViewModelGenerator)))
+
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/item/{item}/part/{subPath...}"), Chain(logMW, sessMW, CORS)(app.DataSourceServer))
+
+	app.Router.Handle("POST "+path.Join(app.WebRootURLPath, "/search"), Chain(logMW, sessMW, authMW, CORS)(HandleSearch(app.ViewModelGenerator)))
+	app.Router.Handle(app.WebRootURLPath+"/", Chain(logMW, sessMW, authMW, CORS)(HandleIndex(app.ViewModelGenerator)))
 }
