@@ -138,7 +138,7 @@ func MssCacheAddFile(mssCache *scrape.MssCache, path string) {
 	var mss scrape.Mss
 	err = json.Unmarshal(byteValue, &mss)
 	if err != nil {
-		slog.Error("Error unmarshalling JSON", "err", err)
+		slog.Error("Error unmarshalling JSON", "path", path, "err", err)
 		return
 	}
 	mssCache.Add(dir, mss)
