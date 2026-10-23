@@ -145,18 +145,20 @@ func main() {
 	//mux.Handle(app.WebRootURLPath+"/auth/internalIDP/", http.StripPrefix(webRootURL.Path+"/auth/internalIDP", internalIDP.ServeMux()))
 
 	authMW := AuthMiddleware(logger)
+	logMW := LoggingMiddleware(logger)
+	sessMW := SessionStoreToContext(sessions)
 
 	app.Router.Handle(app.WebRootURLPath+"/auth/", http.StripPrefix(webRootURL.Path+"/auth", idpManager.ServeMux()))
-	app.Router.Handle(app.WebRootURLPath+"/auth/login", Chain(LoggingMiddleware(logger))(idpManager))
+	app.Router.Handle(app.WebRootURLPath+"/auth/login", Chain(logMW)(idpManager))
 
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "view/cast/{item}"), Chain(LoggingMiddleware(logger), SessionStoreToContext(sessions), authMW, CORS)(HandleCast(app.ViewModelGenerator)))
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/html5/{item}"), Chain(LoggingMiddleware(logger), SessionStoreToContext(sessions), authMW, CORS)(HandleHtml5(app.ViewModelGenerator)))
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/shaka/{item}"), Chain(LoggingMiddleware(logger), SessionStoreToContext(sessions), authMW, CORS)(HandleShaka(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "view/cast/{item}"), Chain(logMW, sessMW, authMW, CORS)(HandleCast(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/html5/{item}"), Chain(logMW, sessMW, authMW, CORS)(HandleHtml5(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/shaka/{item}"), Chain(logMW, sessMW, authMW, CORS)(HandleShaka(app.ViewModelGenerator)))
 
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/item/{item}/part/{subPath...}"), Chain(LoggingMiddleware(logger), SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, backdropServer, dashServer, mp4Server}))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/item/{item}/part/{subPath...}"), Chain(logMW, sessMW, CORS)(&dataSourceServer{posterServer, backdropServer, dashServer, mp4Server}))
 
-	app.Router.Handle("POST "+path.Join(app.WebRootURLPath, "/search"), Chain(LoggingMiddleware(logger), SessionStoreToContext(sessions), authMW, CORS)(HandleSearch(app.ViewModelGenerator)))
-	app.Router.Handle(app.WebRootURLPath+"/", Chain(LoggingMiddleware(logger), SessionStoreToContext(sessions), authMW, CORS)(HandleIndex(app.ViewModelGenerator)))
+	app.Router.Handle("POST "+path.Join(app.WebRootURLPath, "/search"), Chain(logMW, sessMW, authMW, CORS)(HandleSearch(app.ViewModelGenerator)))
+	app.Router.Handle(app.WebRootURLPath+"/", Chain(logMW, sessMW, authMW, CORS)(HandleIndex(app.ViewModelGenerator)))
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Started", "Listening at", listenaddr)

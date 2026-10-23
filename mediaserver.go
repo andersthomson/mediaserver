@@ -68,7 +68,6 @@ func NewPrettyID(id, shortName string) PrettyID {
 }
 
 type dataSourceServer struct {
-	mssCache       *scrape.MssCache
 	PosterServer   *scrape.PosterServer
 	BackdropServer *scrape.BackdropServer
 	DashServer     *scrape.DashServer
