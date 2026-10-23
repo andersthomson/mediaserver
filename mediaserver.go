@@ -279,42 +279,44 @@ func SessionStoreToContext(sessions *SessionStore) func(next http.Handler) http.
 	}
 }
 
-func AuthMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		sessionID, err := getSessionCookie(r)
-		if err != nil {
-			logger.Error("No session cookie", "err", err)
-			http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
-			return
-		}
-		sessions := SessionStoreFromContext(ctx)
-		if sessions == nil {
-			logger.Error("No sessionStore in context")
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		se, hasSession := sessions.GetSessionEntry(sessionID)
-		if !hasSession {
-			http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
-			return
-		}
-		if maxAge, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
-			if maxAge.Abs() > 0 && se.LastUsed.Add(maxAge).Before(time.Now()) {
-				sessions.DeleteSessionEntry(sessionID)
+func AuthMiddleware(logger *slog.Logger) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			sessionID, err := getSessionCookie(r)
+			if err != nil {
+				logger.Error("No session cookie", "err", err)
 				http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
 				return
 			}
-		}
-		//We are good! Proceed to use the session
-		sessions.TouchLastUsed(sessionID)
-		// Add user data to the request context
-		ctx = context.WithValue(ctx, userCtxKey{}, se.User)
-		logger.InfoContext(ctx, "Has Session", "userID", se.User.UserID(), "idp", se.User.IDProvider())
-		//Write the to session log (per user data)
-		se.Logger.Info("Serving", "url", r.URL.String(), "range", r.Header.Get("Range"))
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+			sessions := SessionStoreFromContext(ctx)
+			if sessions == nil {
+				logger.Error("No sessionStore in context")
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			se, hasSession := sessions.GetSessionEntry(sessionID)
+			if !hasSession {
+				http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
+				return
+			}
+			if maxAge, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
+				if maxAge.Abs() > 0 && se.LastUsed.Add(maxAge).Before(time.Now()) {
+					sessions.DeleteSessionEntry(sessionID)
+					http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
+					return
+				}
+			}
+			//We are good! Proceed to use the session
+			sessions.TouchLastUsed(sessionID)
+			// Add user data to the request context
+			ctx = context.WithValue(ctx, userCtxKey{}, se.User)
+			logger.InfoContext(ctx, "Has Session", "userID", se.User.UserID(), "idp", se.User.IDProvider())
+			//Write the to session log (per user data)
+			se.Logger.Info("Serving", "url", r.URL.String(), "range", r.Header.Get("Range"))
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }
 
 func GetUserSession(r *http.Request) (User, bool) {
