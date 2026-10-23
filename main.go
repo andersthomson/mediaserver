@@ -18,6 +18,12 @@ import (
 	"github.com/andersthomson/mediaserver/scrape"
 )
 
+type Application struct {
+	WebRootURLPath     string
+	ViewModelGenerator *ViewModelGenerator
+	Router             *http.ServeMux
+}
+
 func main() {
 	setupLogger()
 	var sessions *SessionStore
@@ -39,11 +45,11 @@ func main() {
 	IDPRoot := webRootURL.Path + "/auth"
 	idpManager := NewIDPManager()
 	if slices.Contains(Config.IDProviders, "GoogleOAuth") {
-		googleIDP := NewGoogleIDP(sessions, Config.GoogleOAuth.ClientID, Config.GoogleOAuth.ClientSecret, Config.WebRoot, IDPRoot)
+		googleIDP := NewGoogleIDP(logger, sessions, Config.GoogleOAuth.ClientID, Config.GoogleOAuth.ClientSecret, Config.WebRoot, IDPRoot)
 		idpManager.Register(googleIDP)
 	}
 	if slices.Contains(Config.IDProviders, "InternalIDP") {
-		internalIDP := NewInternalIDP(Config.WebRoot, IDPRoot)
+		internalIDP := NewInternalIDP(logger, Config.WebRoot, IDPRoot)
 		idpManager.Register(internalIDP)
 	}
 	sigChan := make(chan os.Signal, 1)
@@ -126,28 +132,32 @@ func main() {
 		MssCache:     mssCache,
 	}
 
-	mux := http.NewServeMux()
+	app := Application{
+		WebRootURLPath:     webRootURL.Path,
+		ViewModelGenerator: viewModelGenerator,
+		Router:             http.NewServeMux(),
+	}
 
 	//mux.Handle(webRootURL.Path+"/auth/google/login", Chain(LoggingMiddleware)(http.HandlerFunc(googleIDP.googleLoginHandler)))
 	//mux.Handle(webRootURL.Path+"/auth/google/callback", Chain(LoggingMiddleware)(http.HandlerFunc(googleIDP.googleOAuthCallbackHandler)))
 
 	//mux.Handle(webRootURL.Path+"/auth/google/", http.StripPrefix(webRootURL.Path+"/auth/google", googleIDP.ServeMux()))
-	//mux.Handle(webRootURL.Path+"/auth/internalIDP/", http.StripPrefix(webRootURL.Path+"/auth/internalIDP", internalIDP.ServeMux()))
-	mux.Handle(webRootURL.Path+"/auth/", http.StripPrefix(webRootURL.Path+"/auth", idpManager.ServeMux()))
-	mux.Handle(webRootURL.Path+"/auth/login", Chain(LoggingMiddleware)(idpManager))
+	//mux.Handle(app.WebRootURLPath+"/auth/internalIDP/", http.StripPrefix(webRootURL.Path+"/auth/internalIDP", internalIDP.ServeMux()))
+	app.Router.Handle(app.WebRootURLPath+"/auth/", http.StripPrefix(webRootURL.Path+"/auth", idpManager.ServeMux()))
+	app.Router.Handle(app.WebRootURLPath+"/auth/login", Chain(LoggingMiddleware(logger))(idpManager))
 
-	mux.Handle("GET "+path.Join(webRootURL.Path, "view/cast/{item}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleCast(viewModelGenerator)))
-	mux.Handle("GET "+path.Join(webRootURL.Path, "/view/html5/{item}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleHtml5(viewModelGenerator)))
-	mux.Handle("GET "+path.Join(webRootURL.Path, "/view/shaka/{item}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleShaka(viewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "view/cast/{item}"), Chain(LoggingMiddleware(logger), SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleCast(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/html5/{item}"), Chain(LoggingMiddleware(logger), SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleHtml5(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/shaka/{item}"), Chain(LoggingMiddleware(logger), SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleShaka(app.ViewModelGenerator)))
 
-	mux.Handle("GET "+path.Join(webRootURL.Path, "/item/{item}/part/{subPath...}"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, backdropServer, dashServer, mp4Server}))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/item/{item}/part/{subPath...}"), Chain(LoggingMiddleware(logger), SessionStoreToContext(sessions), CORS)(&dataSourceServer{mssCache, posterServer, backdropServer, dashServer, mp4Server}))
 
-	mux.Handle("POST "+path.Join(webRootURL.Path, "/search"), Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(viewModelGenerator)))
-	mux.Handle(webRootURL.Path+"/", Chain(LoggingMiddleware, SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(viewModelGenerator)))
+	app.Router.Handle("POST "+path.Join(app.WebRootURLPath, "/search"), Chain(LoggingMiddleware(logger), SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleSearch(app.ViewModelGenerator)))
+	app.Router.Handle(app.WebRootURLPath+"/", Chain(LoggingMiddleware(logger), SessionStoreToContext(sessions), AuthMiddleware, CORS)(HandleIndex(app.ViewModelGenerator)))
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Started", "Listening at", listenaddr)
-	err = http.ListenAndServe(listenaddr, mux)
+	err = http.ListenAndServe(listenaddr, app.Router)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 	}

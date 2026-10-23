@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 
@@ -22,11 +23,12 @@ func (i InternalIDPUser) IDProvider() string {
 }
 
 type InternalIDP struct {
+	logger                    *slog.Logger
 	postAuthenticateTargetURL string
 	idpRoot                   string
 }
 
-func NewInternalIDP(postAuthenticateTargetURL string, idpRoot string) *InternalIDP {
+func NewInternalIDP(logger *slog.Logger, postAuthenticateTargetURL string, idpRoot string) *InternalIDP {
 	return &InternalIDP{
 		postAuthenticateTargetURL: postAuthenticateTargetURL,
 		idpRoot:                   idpRoot,
@@ -39,7 +41,7 @@ func (i InternalIDP) IDPName() string {
 
 func (i *InternalIDP) ServeMux() *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.Handle("/Authenticate", Chain(LoggingMiddleware)(i))
+	mux.Handle("/Authenticate", Chain(LoggingMiddleware(i.logger))(i))
 	return mux
 }
 

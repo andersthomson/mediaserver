@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 
@@ -32,9 +33,10 @@ type GoogleIDP struct {
 	oauthConfig               *oauth2.Config
 	postAuthenticateTargetURL string
 	idpRoot                   string
+	logger                    *slog.Logger
 }
 
-func NewGoogleIDP(sessionStore *SessionStore, oauthClientID string, oauthClientSecret string, postAuthenticateTargetURL string, IDPRoot string) *GoogleIDP {
+func NewGoogleIDP(logger *slog.Logger, sessionStore *SessionStore, oauthClientID string, oauthClientSecret string, postAuthenticateTargetURL string, IDPRoot string) *GoogleIDP {
 	oauthConfig := &oauth2.Config{
 		ClientID:     oauthClientID,
 		ClientSecret: oauthClientSecret,
@@ -43,6 +45,7 @@ func NewGoogleIDP(sessionStore *SessionStore, oauthClientID string, oauthClientS
 		Endpoint:     google.Endpoint,
 	}
 	return &GoogleIDP{
+		logger:                    logger,
 		sessionStore:              sessionStore,
 		oauthConfig:               oauthConfig,
 		postAuthenticateTargetURL: postAuthenticateTargetURL,
@@ -61,8 +64,8 @@ func (g *GoogleIDP) LoginPageFragment(w http.ResponseWriter) {
 
 func (g *GoogleIDP) ServeMux() *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.Handle("/login", Chain(LoggingMiddleware)(http.HandlerFunc(g.googleLoginHandler)))
-	mux.Handle("/callback", Chain(LoggingMiddleware)(http.HandlerFunc(g.googleOAuthCallbackHandler)))
+	mux.Handle("/login", Chain(LoggingMiddleware(g.logger))(http.HandlerFunc(g.googleLoginHandler)))
+	mux.Handle("/callback", Chain(LoggingMiddleware(g.logger))(http.HandlerFunc(g.googleOAuthCallbackHandler)))
 	return mux
 }
 

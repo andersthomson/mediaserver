@@ -243,20 +243,22 @@ func xSnoopingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func LoggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		ctx := r.Context()
-		reqid := NewRequestid()
-		ctx = slogctx.Append(ctx, "reqid", reqid)
-		//ctx = slogctx.Append(ctx, "agent", r.Header.Get("User-Agent"))
-		logger.InfoContext(ctx, "start req",
-			"clientAddr", r.Header.Get("X-Forwarded-For"),
-			"Agent", r.Header.Get("User-Agent"),
-			"URL", r.URL.String())
-		m := httpsnoop.CaptureMetrics(next, w, r.WithContext(ctx))
-		logger.InfoContext(ctx, "end req", "code", m.Code, "url", r.URL, "range", r.Header.Get("Range"), "time", time.Since(start))
-	})
+func LoggingMiddleware(logger *slog.Logger) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			ctx := r.Context()
+			reqid := NewRequestid()
+			ctx = slogctx.Append(ctx, "reqid", reqid)
+			//ctx = slogctx.Append(ctx, "agent", r.Header.Get("User-Agent"))
+			logger.InfoContext(ctx, "start req",
+				"clientAddr", r.Header.Get("X-Forwarded-For"),
+				"Agent", r.Header.Get("User-Agent"),
+				"URL", r.URL.String())
+			m := httpsnoop.CaptureMetrics(next, w, r.WithContext(ctx))
+			logger.InfoContext(ctx, "end req", "code", m.Code, "url", r.URL, "range", r.Header.Get("Range"), "time", time.Since(start))
+		})
+	}
 }
 
 func SessionStoreFromContext(ctx context.Context) *SessionStore {
