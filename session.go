@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"math/rand"
@@ -51,6 +52,7 @@ func NewSessionEntry(u User) SessionEntry {
 }
 
 type SessionStore struct {
+	BackingPath string
 	sync.RWMutex
 	m map[string]SessionEntry
 }
@@ -68,7 +70,19 @@ func NewSessionStoreFromFile(fname string) *SessionStore {
 
 	}
 	s.FromJson(buf)
+	s.BackingPath = fname
 	return s
+}
+
+func (s *SessionStore) Flush() error {
+	b := s.ToJson() //Has its own locking
+	s.Lock()
+	fname := s.BackingPath
+	s.Unlock()
+	if err := os.WriteFile(fname, b, 0644); err != nil {
+		logger.Error("Failed to write sessionfile", "err", err)
+	}
+	return nil
 }
 
 func (s *SessionStore) PruneOldSessions(olderthan time.Duration) {
@@ -77,6 +91,24 @@ func (s *SessionStore) PruneOldSessions(olderthan time.Duration) {
 	for k, v := range s.m {
 		if v.LastUsed.Add(olderthan).Before(time.Now()) {
 			delete(s.m, k)
+		}
+	}
+}
+
+func (s *SessionStore) StartPeriodicPruning(ctx context.Context, olderThan time.Duration, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// The context was canceled (e.g., Ctrl+C pressed). Stop processing.
+			slog.Info("[SessionStore] Shutdown signal received")
+			return
+		case <-ticker.C:
+			// Perform your normal application work here
+			slog.Info("[SessionStore] Doing periodic data updates...")
+			s.PruneOldSessions(olderThan)
 		}
 	}
 }

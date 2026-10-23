@@ -28,6 +28,9 @@ type Application struct {
 }
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop() // Restores default OS signal behavior if called twice
+
 	setupLogger()
 	var sessions *SessionStore
 	rand.Seed(time.Now().UnixNano())
@@ -38,6 +41,9 @@ func main() {
 		os.Exit(1)
 	}
 	sessions = NewSessionStoreFromFile(Config.SessionFile)
+	if maxDur, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
+		go sessions.StartPeriodicPruning(ctx, maxDur, 5*time.Second)
+	}
 
 	webRootURL, err := url.Parse(Config.WebRoot)
 	if err != nil {
@@ -55,21 +61,22 @@ func main() {
 		internalIDP := NewInternalIDP(logger, Config.WebRoot, IDPRoot)
 		idpManager.Register(internalIDP)
 	}
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		sig := <-sigChan // Block until a signal is received
-		fmt.Printf("\nReceived signal: %v\n", sig)
-		if maxDur, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
-			sessions.PruneOldSessions(maxDur)
-		}
-		b := sessions.ToJson()
-		if err := os.WriteFile(Config.SessionFile, b, 0644); err != nil {
-			logger.Error("Failed to write sessionfile", "err", err)
-		}
-		os.Exit(0)
-	}()
-
+	/*
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			sig := <-sigChan // Block until a signal is received
+			fmt.Printf("\nReceived signal: %v\n", sig)
+			if maxDur, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
+				sessions.PruneOldSessions(maxDur)
+			}
+			b := sessions.ToJson()
+			if err := os.WriteFile(Config.SessionFile, b, 0644); err != nil {
+				logger.Error("Failed to write sessionfile", "err", err)
+			}
+			os.Exit(0)
+		}()
+	*/
 	wt, err := NewWatcherThingy()
 	if err != nil {
 		panic(err)
@@ -154,11 +161,58 @@ func main() {
 	app.routes()
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
-	logger.Info("Started", "Listening at", listenaddr)
-	err = http.ListenAndServe(listenaddr, app.Router)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+	logger.Info("Starting", "Listening at", listenaddr)
+	// 3. Define the explicit HTTP server
+	srv := &http.Server{
+		Addr:    listenaddr,
+		Handler: app.Router,
 	}
+
+	// 4. Create an error channel to catch immediate boot errors (e.g., port already in use)
+	serverErrors := make(chan error, 1)
+
+	// 5. Fire up the server inside a background goroutine so it doesn't block main
+	go func() {
+		logger.Info("HTTP server listening", "address", listenaddr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { // Filter out normal close errors
+			serverErrors <- err
+		}
+	}()
+
+	// 6. Block the main thread here and wait for EITHER a fatal boot error OR a Ctrl+C signal
+	select {
+	case err := <-serverErrors:
+		fmt.Printf("Fatal server startup error: %v", err)
+
+	case <-ctx.Done(): // Ctrl+C or kill signal was intercepted
+		logger.Info("Shutdown signal received. Starting graceful offboarding...")
+
+		// 7. Give the in-flight web requests 5 seconds to wrap up cleanly before pulling the plug
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Info("HTTP server forced to close", "err", err)
+			_ = srv.Close() // Hard close the network sockets if it times out
+		}
+	}
+
+	// 8. THE FLUSH ZONE: Now that the server is completely dark and traffic has stopped,
+	// execute your synchronous disk sync safely.
+	logger.Info("HTTP server completely stopped. Syncing data structures to disk...")
+	/*if maxDur, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
+		sessions.PruneOldSessions(maxDur)
+	}
+	b := sessions.ToJson()
+	if err := os.WriteFile(Config.SessionFile, b, 0644); err != nil {
+		logger.Error("Failed to write sessionfile", "err", err)
+	}*/
+	if err := sessions.Flush(); err != nil {
+		logger.Error("Critical: Error flushing data during exit: %v", err)
+		os.Exit(1)
+	}
+
+	logger.Info("Application exited cleanly.")
 }
 
 func (app *Application) routes() {
