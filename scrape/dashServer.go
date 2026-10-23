@@ -9,13 +9,14 @@ import (
 
 type DashServer struct {
 	DashResolver *DashResolver
+	Logger       *slog.Logger
 }
 
 func (d DashServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	val := ctx.Value("ItmId")
 	if val == nil {
-		slog.Error("Failed to find itmid")
+		d.Logger.Error("Failed to find itmid")
 		w.WriteHeader(500)
 		return
 	}
@@ -23,17 +24,17 @@ func (d DashServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	state, err := d.DashResolver.ResolveDashState(itemID)
 	if err != nil {
-		slog.Error("DasherServer failed to resolve dash state", "err", err)
+		d.Logger.Error("DasherServer failed to resolve dash state", "err", err)
 		w.WriteHeader(500)
 		return
 	}
 	if !state.HasDash {
-		slog.Info("Dasher server called, but item has no dash manifest", "itemid", itemID)
+		d.Logger.Info("Dasher server called, but item has no dash manifest", "itemid", itemID)
 		w.WriteHeader(404)
 		return
 	}
 
-	Logger.Info("DashServer", "Serving File", state.ManifestPath, "r.URL", r.URL, "Range", r.Header.Get("Range"))
+	d.Logger.Info("DashServer", "Serving File", state.ManifestPath, "r.URL", r.URL, "Range", r.Header.Get("Range"))
 	//We expect r.URL.Path to host e.g. "/dash/manifest.mpd"
 	splits := strings.SplitN(r.URL.Path, "/", 3)
 	r.URL.Path = splits[2]

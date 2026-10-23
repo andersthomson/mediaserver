@@ -145,6 +145,7 @@ func BuildApp(tmdbClient *tmdb.Client, mssCache *scrape.MssCache, sessions *Sess
 
 	posterServer := &scrape.PosterServer{
 		PosterResolver: posterResolver,
+		Logger:         logger,
 	}
 
 	backdropResolver := &scrape.BackdropResolver{
@@ -154,6 +155,7 @@ func BuildApp(tmdbClient *tmdb.Client, mssCache *scrape.MssCache, sessions *Sess
 
 	backdropServer := &scrape.BackdropServer{
 		BackdropResolver: backdropResolver,
+		Logger:           logger,
 	}
 
 	dashResolver := &scrape.DashResolver{
@@ -162,6 +164,7 @@ func BuildApp(tmdbClient *tmdb.Client, mssCache *scrape.MssCache, sessions *Sess
 
 	dashServer := &scrape.DashServer{
 		DashResolver: dashResolver,
+		Logger:       logger,
 	}
 
 	mp4Resolver := &scrape.MP4Resolver{
@@ -170,6 +173,7 @@ func BuildApp(tmdbClient *tmdb.Client, mssCache *scrape.MssCache, sessions *Sess
 
 	mp4Server := &scrape.MP4Server{
 		MP4Resolver: mp4Resolver,
+		Logger:      logger,
 	}
 	orchestrator := &MetadataOrchestrator{
 		PosterResolver:   posterResolver,

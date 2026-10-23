@@ -76,7 +76,7 @@ func (_ TMDBTVEpisode) derivePlot(fname string, dir string) string {
 }
 
 func (i TMDBTVEpisode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	Logger.Info("tmdbtvepisode serving", "Url", r.URL.String())
+	//Logger.Info("tmdbtvepisode serving", "Url", r.URL.String())
 	switch {
 	//case r.URL.Path == i.MediaURLPath():
 	//	i.MediaServer.ServeHTTP(w, r)
@@ -85,7 +85,7 @@ func (i TMDBTVEpisode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	//case strings.HasPrefix(r.URL.String(), i.SubsURLPath()):
 	//	i.SubsServer.ServeHTTP(w, r)
 	default:
-		Logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
+		//Logger.ErrorContext(r.Context(), "Unsupported URLPathFragment", "URLPathFrag", r.URL.Path)
 		w.WriteHeader(404)
 		return
 	}
@@ -107,33 +107,33 @@ func scrapeAsTMDBTVEpisode(itm *TMDBTVEpisode, ffdata FFProbeRoot) bool {
 		}
 		id, err := strconv.Atoi(ffdata.Format.Tags.TmdbSeries)
 		if err != nil {
-			Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.TmdbSeries", ffdata.Format.Tags.TmdbSeries)
+			//Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.TmdbSeries", ffdata.Format.Tags.TmdbSeries)
 			return false
 		}
 		episode, err := strconv.Atoi(ffdata.Format.Tags.Episode_id)
 		if err != nil {
-			Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.Episode_id", ffdata.Format.Tags.Episode_id)
+			//Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.Episode_id", ffdata.Format.Tags.Episode_id)
 			return false
 		}
 		season, err := strconv.Atoi(ffdata.Format.Tags.Season)
 		if err != nil {
-			Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.Season", ffdata.Format.Tags.Season)
+			//Logger.Warn("Unexpected MP4 tag. Skipping", "ffdata.Format.Tags.Season", ffdata.Format.Tags.Season)
 			return false
 		}*/
 	//tvEpisodeDetails, err := TMDBTVEpisodeDetails(id, season, episode)
 	//if err != nil {
-	//	Logger.Warn("TMDBTVEpisodeDetails failed. Skipping", "err", err)
+	//	//Logger.Warn("TMDBTVEpisodeDetails failed. Skipping", "err", err)
 	//	return false
 	//}
 	//tvSeasonDetails, err := TMDBTVSeasonDetails(id, season)
 	//if err != nil {
-	//	Logger.Warn("TMDBTVSeasonDetails failed. Skipping", "err", err)
+	//	//Logger.Warn("TMDBTVSeasonDetails failed. Skipping", "err", err)
 	//	return false
 	//}
 	//tvDetails, err := TMDBTVDetails(id)
 	/*
 		if err != nil {
-			Logger.Warn("TMDBTVDetails failed. Skipping", "err", err)
+			//Logger.Warn("TMDBTVDetails failed. Skipping", "err", err)
 			return false
 		}
 		//Given all the data, complete the itm record.
@@ -203,12 +203,12 @@ func NewTMDBTVEpisode(dir string, fname string, ffdata FFProbeRoot) (*TMDBTVEpis
 		target := filepath.Join(dir, basename+"-poster.jpg")
 		if fileExists(target) {
 			res.PosterFile = target
-			Logger.Info("", "source", "filename", "posterfile", res.PosterFile)
+			//Logger.Info("", "source", "filename", "posterfile", res.PosterFile)
 		}
 	*/
 	if ffdata.Format.Tags.Grouping != "" {
 		res.tags["grouping"] = append(res.tags["grouping"], strings.TrimSpace(ffdata.Format.Tags.Grouping))
-		Logger.Info("", "source", "mp4 Format.Tags.Grouping", "grouping", ffdata.Format.Tags.Grouping)
+		//Logger.Info("", "source", "mp4 Format.Tags.Grouping", "grouping", ffdata.Format.Tags.Grouping)
 	}
 	res.tags["dir"] = append(res.tags["dir"], filepath.Base(dir))
 	res.tags["fulldir"] = append(res.tags["fulldir"], (dir))

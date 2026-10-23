@@ -215,13 +215,8 @@ func (s *SourceDirectories) StartMonitor(ctx context.Context) {
 }
 
 func setupLogger() {
-	/*
-		baseHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			//AddSource: true,
-		})*/
 	customHandler := slogctx.NewHandler(slog.Default().Handler(), nil)
 	logger = slog.New(customHandler)
-	scrape.Logger = slog.New(customHandler)
 }
 
 func BruteLoggingMiddleware(next http.Handler) http.Handler {
