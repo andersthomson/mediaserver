@@ -34,9 +34,10 @@ type GoogleIDP struct {
 	postAuthenticateTargetURL string
 	idpRoot                   string
 	logger                    *slog.Logger
+	AllowedUsers              []string
 }
 
-func NewGoogleIDP(logger *slog.Logger, sessionStore *SessionStore, oauthClientID string, oauthClientSecret string, postAuthenticateTargetURL string, IDPRoot string) *GoogleIDP {
+func NewGoogleIDP(logger *slog.Logger, sessionStore *SessionStore, oauthClientID string, oauthClientSecret string, postAuthenticateTargetURL string, IDPRoot string, allowedUsers []string) *GoogleIDP {
 	oauthConfig := &oauth2.Config{
 		ClientID:     oauthClientID,
 		ClientSecret: oauthClientSecret,
@@ -50,6 +51,7 @@ func NewGoogleIDP(logger *slog.Logger, sessionStore *SessionStore, oauthClientID
 		oauthConfig:               oauthConfig,
 		postAuthenticateTargetURL: postAuthenticateTargetURL,
 		idpRoot:                   IDPRoot,
+		AllowedUsers:              allowedUsers,
 	}
 }
 
@@ -109,7 +111,7 @@ func (g *GoogleIDP) googleOAuthCallbackHandler(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Failed to decode userinfo: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if !slices.Contains(Config.GoogleOAuth.AllowedUsers, returnedUser.Email) {
+	if !slices.Contains(g.AllowedUsers, returnedUser.Email) {
 		http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
 		g.logger.Warn("User not authorized", "user", returnedUser)
 		return

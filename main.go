@@ -64,7 +64,7 @@ func main() {
 	IDPRoot := webRootURL.Path + "/auth"
 	idpManager := NewIDPManager()
 	if slices.Contains(Config.IDProviders, "GoogleOAuth") {
-		googleIDP := NewGoogleIDP(logger, sessions, Config.GoogleOAuth.ClientID, Config.GoogleOAuth.ClientSecret, Config.WebRoot, IDPRoot)
+		googleIDP := NewGoogleIDP(logger, sessions, Config.GoogleOAuth.ClientID, Config.GoogleOAuth.ClientSecret, Config.WebRoot, IDPRoot, Config.GoogleOAuth.AllowedUsers)
 		idpManager.Register(googleIDP)
 	}
 	if slices.Contains(Config.IDProviders, "InternalIDP") {
