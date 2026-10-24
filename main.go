@@ -221,7 +221,7 @@ func BuildApp(logger *slog.Logger, tmdbClient *tmdb.Client, mssCache *scrape.Mss
 
 func (app *Application) routes() {
 	logMW := LoggingMiddleware(app.Logger)
-	authMW := AuthMiddleware(app.Logger, app.Sessions)
+	authMW := AuthMiddleware(app.Logger, app.Sessions, Config.WebRoot+"/auth/login")
 	corsMW := CORS(app.Logger)
 
 	app.Router.Handle(app.WebRootURLPath+"/auth/", http.StripPrefix(app.WebRootURLPath+"/auth", app.IDPManager.ServeMux()))

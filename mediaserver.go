@@ -240,25 +240,26 @@ func LoggingMiddleware(logger *slog.Logger) func(next http.Handler) http.Handler
 	}
 }
 
-func AuthMiddleware(logger *slog.Logger, sessions *SessionStore) func(next http.Handler) http.Handler {
+func AuthMiddleware(logger *slog.Logger, sessions *SessionStore, redirectTargetURL string) func(next http.Handler) http.Handler {
+	//redirectTargetURL =  Config.WebRoot+"/auth/login"
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			sessionID, err := getSessionCookie(r)
 			if err != nil {
 				logger.Error("No session cookie", "err", err)
-				http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
+				http.Redirect(w, r, redirectTargetURL, http.StatusFound)
 				return
 			}
 			se, hasSession := sessions.GetSessionEntry(sessionID)
 			if !hasSession {
-				http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
+				http.Redirect(w, r, redirectTargetURL, http.StatusFound)
 				return
 			}
 			if maxAge, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
 				if maxAge.Abs() > 0 && se.LastUsed.Add(maxAge).Before(time.Now()) {
 					sessions.DeleteSessionEntry(sessionID)
-					http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
+					http.Redirect(w, r, redirectTargetURL, http.StatusFound)
 					return
 				}
 			}
