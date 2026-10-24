@@ -52,18 +52,20 @@ func NewSessionEntry(u User) SessionEntry {
 }
 
 type SessionStore struct {
+	logger      *slog.Logger
 	BackingPath string
 	sync.RWMutex
 	m map[string]SessionEntry
 }
 
-func NewSessionStore() *SessionStore {
+func NewSessionStore(logger *slog.Logger) *SessionStore {
 	return &SessionStore{
-		m: make(map[string]SessionEntry, 16),
+		m:      make(map[string]SessionEntry, 16),
+		logger: logger,
 	}
 }
-func NewSessionStoreFromFile(fname string) *SessionStore {
-	s := NewSessionStore()
+func NewSessionStoreFromFile(logger *slog.Logger, fname string) *SessionStore {
+	s := NewSessionStore(logger)
 	buf, err := os.ReadFile(fname)
 	if err != nil {
 		return s
@@ -80,7 +82,7 @@ func (s *SessionStore) Flush() error {
 	fname := s.BackingPath
 	s.Unlock()
 	if err := os.WriteFile(fname, b, 0644); err != nil {
-		logger.Error("Failed to write sessionfile", "err", err)
+		s.logger.Error("Failed to write sessionfile", "err", err)
 	}
 	return nil
 }
@@ -146,7 +148,7 @@ func (s *SessionStore) TouchLastUsed(sessionID string) {
 	s.Lock()
 	se, ok := s.m[sessionID]
 	if !ok {
-		logger.Warn("Session to touch does not exist in SessionStore: " + sessionID)
+		s.logger.Warn("Session to touch does not exist in SessionStore: " + sessionID)
 	}
 	se.LastUsed = time.Now()
 	s.m[sessionID] = se

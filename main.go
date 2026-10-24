@@ -17,6 +17,7 @@ import (
 
 	"github.com/andersthomson/mediaserver/scrape"
 	tmdb "github.com/cyruzin/golang-tmdb"
+	slogctx "github.com/veqryn/slog-context"
 )
 
 type Application struct {
@@ -26,13 +27,20 @@ type Application struct {
 	ViewModelGenerator *ViewModelGenerator
 	IDPManager         *IDPManager
 	Router             *http.ServeMux
+	Logger             *slog.Logger
+}
+
+func setupLogger() *slog.Logger {
+	customHandler := slogctx.NewHandler(slog.Default().Handler(), nil)
+	logger := slog.New(customHandler)
+	return logger
 }
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop() // Restores default OS signal behavior if called twice
 
-	setupLogger()
+	logger := setupLogger()
 	var sessions *SessionStore
 	rand.Seed(time.Now().UnixNano())
 	Config.ReadFromFile("config")
@@ -41,7 +49,7 @@ func main() {
 		slog.Error("Failed to initn tmdb client", "err", err)
 		os.Exit(1)
 	}
-	sessions = NewSessionStoreFromFile(Config.SessionFile)
+	sessions = NewSessionStoreFromFile(logger, Config.SessionFile)
 	if maxDur, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
 		go sessions.StartPeriodicPruning(ctx, maxDur, 15*time.Minute)
 	}
@@ -75,7 +83,7 @@ func main() {
 	}
 	sDirs.StartMonitor(context.TODO())
 
-	app := BuildApp(tmdbClient, mssCache, sessions, webRootURL.Path, idpManager)
+	app := BuildApp(logger, tmdbClient, mssCache, sessions, webRootURL.Path, idpManager)
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Starting", "Listening at", listenaddr)
@@ -132,7 +140,7 @@ func main() {
 	logger.Info("Application exited cleanly.")
 }
 
-func BuildApp(tmdbClient *tmdb.Client, mssCache *scrape.MssCache, sessions *SessionStore, webRootURLPath string, idpManager *IDPManager) *Application {
+func BuildApp(logger *slog.Logger, tmdbClient *tmdb.Client, mssCache *scrape.MssCache, sessions *SessionStore, webRootURLPath string, idpManager *IDPManager) *Application {
 	tmdbCache := &scrape.TmdbCache{
 		Client: tmdbClient,
 		Path:   Config.Tmdb.CacheDir,
@@ -203,6 +211,7 @@ func BuildApp(tmdbClient *tmdb.Client, mssCache *scrape.MssCache, sessions *Sess
 		DataSourceServer:   dataSourceServer,
 		IDPManager:         idpManager,
 		Router:             http.NewServeMux(),
+		Logger:             logger,
 	}
 
 	app.routes()
@@ -210,19 +219,20 @@ func BuildApp(tmdbClient *tmdb.Client, mssCache *scrape.MssCache, sessions *Sess
 }
 
 func (app *Application) routes() {
-	logMW := LoggingMiddleware(logger)
+	logMW := LoggingMiddleware(app.Logger)
 	sessMW := SessionStoreToContext(app.Sessions)
-	authMW := AuthMiddleware(logger)
+	authMW := AuthMiddleware(app.Logger)
+	corsMW := CORS(app.Logger)
 
 	app.Router.Handle(app.WebRootURLPath+"/auth/", http.StripPrefix(app.WebRootURLPath+"/auth", app.IDPManager.ServeMux()))
 	app.Router.Handle(app.WebRootURLPath+"/auth/login", Chain(logMW)(app.IDPManager))
 
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "view/cast/{item}"), Chain(logMW, sessMW, authMW, CORS)(HandleCast(app.ViewModelGenerator)))
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/html5/{item}"), Chain(logMW, sessMW, authMW, CORS)(HandleHtml5(app.ViewModelGenerator)))
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/shaka/{item}"), Chain(logMW, sessMW, authMW, CORS)(HandleShaka(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "view/cast/{item}"), Chain(logMW, sessMW, authMW, corsMW)(HandleCast(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/html5/{item}"), Chain(logMW, sessMW, authMW, corsMW)(HandleHtml5(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/shaka/{item}"), Chain(logMW, sessMW, authMW, corsMW)(HandleShaka(app.ViewModelGenerator)))
 
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/item/{item}/part/{subPath...}"), Chain(logMW, sessMW, CORS)(app.DataSourceServer))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/item/{item}/part/{subPath...}"), Chain(logMW, sessMW, corsMW)(app.DataSourceServer))
 
-	app.Router.Handle("POST "+path.Join(app.WebRootURLPath, "/search"), Chain(logMW, sessMW, authMW, CORS)(HandleSearch(app.ViewModelGenerator)))
-	app.Router.Handle(app.WebRootURLPath+"/", Chain(logMW, sessMW, authMW, CORS)(HandleIndex(app.ViewModelGenerator)))
+	app.Router.Handle("POST "+path.Join(app.WebRootURLPath, "/search"), Chain(logMW, sessMW, authMW, corsMW)(HandleSearch(app.ViewModelGenerator)))
+	app.Router.Handle(app.WebRootURLPath+"/", Chain(logMW, sessMW, authMW, corsMW)(HandleIndex(app.ViewModelGenerator)))
 }

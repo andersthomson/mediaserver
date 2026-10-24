@@ -25,7 +25,6 @@ import (
 	slogctx "github.com/veqryn/slog-context"
 )
 
-var logger *slog.Logger
 var Config config
 
 type PrettyID struct {
@@ -214,27 +213,13 @@ func (s *SourceDirectories) StartMonitor(ctx context.Context) {
 	}()
 }
 
-func setupLogger() {
-	customHandler := slogctx.NewHandler(slog.Default().Handler(), nil)
-	logger = slog.New(customHandler)
-}
-
-func BruteLoggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		ctx := r.Context()
-		reqid := NewRequestid()
-		ctx = slogctx.Append(ctx, "Brutereqid", reqid)
-		logger.InfoContext(ctx, "Brute Started", "URL", r.URL.Path)
-		next.ServeHTTP(w, r.WithContext(ctx))
-		logger.InfoContext(ctx, "Brute Completed", "URL", r.URL.Path, "time", time.Since(start))
-	})
-}
-func xSnoopingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		m := httpsnoop.CaptureMetrics(next, w, r)
-		logger.Info("Snoop", "Code", m.Code, "URL", r.URL)
-	})
+func xSnoopingMiddleware(logger *slog.Logger) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			m := httpsnoop.CaptureMetrics(next, w, r)
+			logger.Info("Snoop", "Code", m.Code, "URL", r.URL)
+		})
+	}
 }
 
 func LoggingMiddleware(logger *slog.Logger) func(next http.Handler) http.Handler {
@@ -313,26 +298,6 @@ func AuthMiddleware(logger *slog.Logger) func(next http.Handler) http.Handler {
 	}
 }
 
-func GetUserSession(r *http.Request) (User, bool) {
-	sessionID, err := getSessionCookie(r)
-	if err != nil {
-		logger.Info("No session cookie", "err", err)
-		return nil, false
-	}
-	sessions := SessionStoreFromContext(r.Context())
-	if sessions == nil {
-		return nil, false
-	}
-	sessions.RLock()
-	u, ok := sessions.m[sessionID]
-	sessions.RUnlock()
-	if !ok {
-		logger.Info("Invalid session")
-		return nil, false
-	}
-	return u.User, true
-}
-
 type userCtxKey struct{}
 
 func setSessionCookie(w http.ResponseWriter, sessionID string) {
@@ -355,21 +320,23 @@ func getSessionCookie(r *http.Request) (string, error) {
 	return c.Value, nil
 }
 
-func CORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		//w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
+func CORS(logger *slog.Logger) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			//w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
 
-		// Handle preflight request quickly
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		logger.InfoContext(r.Context(), "Adding cors")
-		next.ServeHTTP(w, r)
-	})
+			// Handle preflight request quickly
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			logger.InfoContext(r.Context(), "Adding cors")
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // Middleware defines a function to process middleware.
@@ -489,6 +456,7 @@ type ViewModelGenerator struct {
 	WebRoot      string
 	Orchestrator *MetadataOrchestrator
 	MssCache     *scrape.MssCache
+	Logger       *slog.Logger
 }
 
 func (g *ViewModelGenerator) posterURL(manifest MediaManifest) string {
@@ -689,7 +657,7 @@ func (g *ViewModelGenerator) AssembleSearchViewModel(ctx context.Context, search
 	}
 	sortSources(res)
 	splits := SplitByGenre(res)
-	logger.InfoContext(ctx, "serving search", "SearchTerm", searchTerm, "num datasources", len(res))
+	g.Logger.InfoContext(ctx, "serving search", "SearchTerm", searchTerm, "num datasources", len(res))
 	//templ.Handler(Cards4Datasources(splits)).ServeHTTP(w, r)
 
 	sID := map[string][]SearchCardViewModel{}
@@ -902,7 +870,7 @@ func HandleCast(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 		_ = html2templ
 		templ := template.Must(template.New("foo").Parse(html2templ))
 		if err := templ.Execute(w, data); err != nil {
-			logger.WarnContext(ctx, "Temaplate error", "err", err)
+			//logger.WarnContext(ctx, "Temaplate error", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
@@ -960,7 +928,7 @@ func HandleHtml5(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 `
 		templ := template.Must(template.New("foo").Parse(htmltempl))
 		if err := templ.Execute(w, data); err != nil {
-			logger.WarnContext(ctx, "Template error", "err", err)
+			//logger.WarnContext(ctx, "Template error", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
@@ -1044,7 +1012,7 @@ func HandleShaka(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 
 		templ := template.Must(template.New("foo").Parse(htmltempl))
 		if err := templ.Execute(w, data); err != nil {
-			logger.WarnContext(ctx, "Template error", "err", err)
+			//logger.WarnContext(ctx, "Template error", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
@@ -1220,7 +1188,7 @@ func HandleIndex(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 			slog.Error("Failed to generate index vireModel", "err", err)
 			return
 		}
-		logger.InfoContext(ctx, "Serving idx", "url", r.URL.String())
+		//logger.InfoContext(ctx, "Serving idx", "url", r.URL.String())
 		htmltempl := `<!DOCTYPE html>
 	<html lang="en" dir="ltr">
 		<head>
@@ -1425,7 +1393,7 @@ NADA
 `
 		templ := template.Must(template.New("foo").Parse(htmltempl))
 		if err := templ.Execute(w, data); err != nil {
-			logger.Warn("template error", "err", err)
+			//logger.Warn("template error", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}

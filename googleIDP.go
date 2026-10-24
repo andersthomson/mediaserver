@@ -71,7 +71,7 @@ func (g *GoogleIDP) ServeMux() *http.ServeMux {
 
 func (g *GoogleIDP) googleLoginHandler(w http.ResponseWriter, r *http.Request) {
 	url := g.oauthConfig.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-	logger.Info("Returing redirect", "url", url)
+	g.logger.Info("Returing redirect", "url", url)
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
@@ -79,7 +79,7 @@ func (g *GoogleIDP) googleOAuthCallbackHandler(w http.ResponseWriter, r *http.Re
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		http.Error(w, "Missing code", http.StatusBadRequest)
-		logger.Info("Missing code")
+		g.logger.Info("Missing code")
 		return
 	}
 
@@ -111,7 +111,7 @@ func (g *GoogleIDP) googleOAuthCallbackHandler(w http.ResponseWriter, r *http.Re
 	}
 	if !slices.Contains(Config.GoogleOAuth.AllowedUsers, returnedUser.Email) {
 		http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
-		logger.Warn("User not authorized", "user", returnedUser)
+		g.logger.Warn("User not authorized", "user", returnedUser)
 		return
 	}
 	// Create a new session
@@ -127,7 +127,7 @@ func (g *GoogleIDP) googleOAuthCallbackHandler(w http.ResponseWriter, r *http.Re
 		FamilyName:  returnedUser.FamilyName,
 	}
 	g.sessionStore.AddSessionEntry(sessionID, NewSessionEntry(user))
-	logger.Info("Session created for", "user", returnedUser, "session", sessionID)
+	g.logger.Info("Session created for", "user", returnedUser, "session", sessionID)
 
 	http.Redirect(w, r, g.postAuthenticateTargetURL, http.StatusFound)
 }

@@ -79,7 +79,7 @@ func (i *InternalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	sessions := SessionStoreFromContext(ctx)
 	if sessions == nil {
-		logger.Error("No sessionStore in context")
+		i.logger.Error("No sessionStore in context")
 		http.Error(w, "No sessionStore in context", http.StatusInternalServerError)
 		return
 	}
@@ -90,7 +90,7 @@ func (i *InternalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !slices.Contains(Config.InternalIDP, u) {
 		http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
-		logger.WarnContext(ctx, "User not found", "user", username, "password", password)
+		i.logger.WarnContext(ctx, "User not found", "user", username, "password", password)
 		return
 	}
 	sessionID := randomString(32)
@@ -102,7 +102,7 @@ func (i *InternalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Username:    username,
 	}
 	sessions.Add(sessionID, user)
-	logger.Info("Session created for", "user", username, "session", sessionID)
-	logger.Info("Redirecting to", "URL", i.postAuthenticateTargetURL)
+	i.logger.Info("Session created for", "user", username, "session", sessionID)
+	i.logger.Info("Redirecting to", "URL", i.postAuthenticateTargetURL)
 	http.Redirect(w, r, i.postAuthenticateTargetURL, http.StatusFound)
 }
