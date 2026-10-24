@@ -23,6 +23,7 @@ import (
 type Application struct {
 	WebRootURLPath     string
 	Sessions           *SessionStore
+	MaxSessionAge      time.Duration
 	DataSourceServer   *DataSourceServer
 	ViewModelGenerator *ViewModelGenerator
 	IDPManager         *IDPManager
@@ -83,7 +84,16 @@ func main() {
 	}
 	sDirs.StartMonitor(context.TODO())
 
-	app := BuildApp(logger, tmdbClient, mssCache, sessions, webRootURL.Path, idpManager)
+	maxSessionAgeDur, err := time.ParseDuration(Config.MaxSessionAge)
+	if err != nil {
+		panic(err)
+	}
+	if maxSessionAgeDur <= 0 {
+		fmt.Printf("Too small duration: %v\n", maxSessionAgeDur)
+		os.Exit(1)
+	}
+
+	app := BuildApp(logger, tmdbClient, mssCache, sessions, maxSessionAgeDur, webRootURL.Path, idpManager)
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Starting", "Listening at", listenaddr)
@@ -140,7 +150,7 @@ func main() {
 	logger.Info("Application exited cleanly.")
 }
 
-func BuildApp(logger *slog.Logger, tmdbClient *tmdb.Client, mssCache *scrape.MssCache, sessions *SessionStore, webRootURLPath string, idpManager *IDPManager) *Application {
+func BuildApp(logger *slog.Logger, tmdbClient *tmdb.Client, mssCache *scrape.MssCache, sessions *SessionStore, maxSessionAge time.Duration, webRootURLPath string, idpManager *IDPManager) *Application {
 	tmdbCache := &scrape.TmdbCache{
 		Client: tmdbClient,
 		Path:   Config.Tmdb.CacheDir,
@@ -207,6 +217,7 @@ func BuildApp(logger *slog.Logger, tmdbClient *tmdb.Client, mssCache *scrape.Mss
 
 	app := Application{
 		Sessions:           sessions,
+		MaxSessionAge:      maxSessionAge,
 		WebRootURLPath:     webRootURLPath,
 		ViewModelGenerator: viewModelGenerator,
 		DataSourceServer:   dataSourceServer,
@@ -221,7 +232,7 @@ func BuildApp(logger *slog.Logger, tmdbClient *tmdb.Client, mssCache *scrape.Mss
 
 func (app *Application) routes() {
 	logMW := LoggingMiddleware(app.Logger)
-	authMW := AuthMiddleware(app.Logger, app.Sessions, Config.WebRoot+"/auth/login")
+	authMW := AuthMiddleware(app.Logger, app.Sessions, Config.WebRoot+"/auth/login", app.MaxSessionAge)
 	corsMW := CORS(app.Logger)
 
 	app.Router.Handle(app.WebRootURLPath+"/auth/", http.StripPrefix(app.WebRootURLPath+"/auth", app.IDPManager.ServeMux()))

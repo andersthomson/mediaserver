@@ -240,7 +240,7 @@ func LoggingMiddleware(logger *slog.Logger) func(next http.Handler) http.Handler
 	}
 }
 
-func AuthMiddleware(logger *slog.Logger, sessions *SessionStore, redirectTargetURL string) func(next http.Handler) http.Handler {
+func AuthMiddleware(logger *slog.Logger, sessions *SessionStore, redirectTargetURL string, maxSessionAge time.Duration) func(next http.Handler) http.Handler {
 	//redirectTargetURL =  Config.WebRoot+"/auth/login"
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -256,12 +256,10 @@ func AuthMiddleware(logger *slog.Logger, sessions *SessionStore, redirectTargetU
 				http.Redirect(w, r, redirectTargetURL, http.StatusFound)
 				return
 			}
-			if maxAge, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
-				if maxAge.Abs() > 0 && se.LastUsed.Add(maxAge).Before(time.Now()) {
-					sessions.DeleteSessionEntry(sessionID)
-					http.Redirect(w, r, redirectTargetURL, http.StatusFound)
-					return
-				}
+			if se.LastUsed.Add(maxSessionAge).Before(time.Now()) {
+				sessions.DeleteSessionEntry(sessionID)
+				http.Redirect(w, r, redirectTargetURL, http.StatusFound)
+				return
 			}
 			//We are good! Proceed to use the session
 			sessions.TouchLastUsed(sessionID)
