@@ -43,7 +43,7 @@ func main() {
 	}
 	sessions = NewSessionStoreFromFile(Config.SessionFile)
 	if maxDur, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
-		go sessions.StartPeriodicPruning(ctx, maxDur, 5*time.Second)
+		go sessions.StartPeriodicPruning(ctx, maxDur, 15*time.Minute)
 	}
 
 	webRootURL, err := url.Parse(Config.WebRoot)
