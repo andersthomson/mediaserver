@@ -25,8 +25,6 @@ import (
 	slogctx "github.com/veqryn/slog-context"
 )
 
-var Config config
-
 type PrettyID struct {
 	Id        string
 	ShortName string
@@ -240,25 +238,25 @@ func LoggingMiddleware(logger *slog.Logger) func(next http.Handler) http.Handler
 	}
 }
 
-func AuthMiddleware(logger *slog.Logger, sessions *SessionStore, redirectTargetURL string, maxSessionAge time.Duration) func(next http.Handler) http.Handler {
-	//redirectTargetURL =  Config.WebRoot+"/auth/login"
+func AuthMiddleware(logger *slog.Logger, sessions *SessionStore, loginPageURL string, maxSessionAge time.Duration) func(next http.Handler) http.Handler {
+	//loginPageURL =  Config.WebRoot+"/auth/login"
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			sessionID, err := getSessionCookie(r)
 			if err != nil {
 				logger.Error("No session cookie", "err", err)
-				http.Redirect(w, r, redirectTargetURL, http.StatusFound)
+				http.Redirect(w, r, loginPageURL, http.StatusFound)
 				return
 			}
 			se, hasSession := sessions.GetSessionEntry(sessionID)
 			if !hasSession {
-				http.Redirect(w, r, redirectTargetURL, http.StatusFound)
+				http.Redirect(w, r, loginPageURL, http.StatusFound)
 				return
 			}
 			if se.LastUsed.Add(maxSessionAge).Before(time.Now()) {
 				sessions.DeleteSessionEntry(sessionID)
-				http.Redirect(w, r, redirectTargetURL, http.StatusFound)
+				http.Redirect(w, r, loginPageURL, http.StatusFound)
 				return
 			}
 			//We are good! Proceed to use the session

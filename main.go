@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/andersthomson/mediaserver/scrape"
-	tmdb "github.com/cyruzin/golang-tmdb"
 	slogctx "github.com/veqryn/slog-context"
 )
 
@@ -29,6 +28,7 @@ type Application struct {
 	IDPManager         *IDPManager
 	Router             *http.ServeMux
 	Logger             *slog.Logger
+	AuthMW             Middleware
 }
 
 func setupLogger() *slog.Logger {
@@ -44,7 +44,10 @@ func main() {
 	logger := setupLogger()
 	var sessions *SessionStore
 	rand.Seed(time.Now().UnixNano())
-	Config.ReadFromFile("config")
+	Config, err := ReadConfigFromFile("config")
+	if err != nil {
+		panic(err)
+	}
 	tmdbClient, err := scrape.TmdbInit(Config.Tmdb.ApiKey, Config.Tmdb.CacheDir)
 	if err != nil {
 		slog.Error("Failed to initn tmdb client", "err", err)
@@ -64,11 +67,11 @@ func main() {
 	IDPRoot := webRootURL.Path + "/auth"
 	idpManager := NewIDPManager()
 	if slices.Contains(Config.IDProviders, "GoogleOAuth") {
-		googleIDP := NewGoogleIDP(logger, sessions, Config.GoogleOAuth.ClientID, Config.GoogleOAuth.ClientSecret, Config.WebRoot, IDPRoot, Config.GoogleOAuth.AllowedUsers)
+		googleIDP := NewGoogleIDP(logger, sessions, Config.GoogleOAuth.ClientID, Config.GoogleOAuth.ClientSecret, Config.WebRoot, IDPRoot, Config.GoogleOAuth.AllowedUsers, Config.WebRoot+"/auth/login", Config.WebRoot)
 		idpManager.Register(googleIDP)
 	}
 	if slices.Contains(Config.IDProviders, "InternalIDP") {
-		internalIDP := NewInternalIDP(logger, sessions, Config.WebRoot, IDPRoot)
+		internalIDP := NewInternalIDP(logger, sessions, Config.WebRoot, IDPRoot, Config.InternalIDP, Config.WebRoot+"/auth/login")
 		idpManager.Register(internalIDP)
 	}
 	wt, err := NewWatcherThingy()
@@ -93,7 +96,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	app := BuildApp(logger, tmdbClient, mssCache, sessions, maxSessionAgeDur, webRootURL.Path, idpManager)
+	//Adaptors to the Application
+	tmdbCache := &scrape.TmdbCache{
+		Client: tmdbClient,
+		Path:   Config.Tmdb.CacheDir,
+	}
+
+	authMW := AuthMiddleware(logger, sessions, Config.WebRoot+"/auth/login", maxSessionAgeDur)
+	app := BuildApp(logger, tmdbCache, mssCache, sessions, maxSessionAgeDur, webRootURL.Path, idpManager, authMW, Config.WebRoot)
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Starting", "Listening at", listenaddr)
@@ -150,11 +160,7 @@ func main() {
 	logger.Info("Application exited cleanly.")
 }
 
-func BuildApp(logger *slog.Logger, tmdbClient *tmdb.Client, mssCache *scrape.MssCache, sessions *SessionStore, maxSessionAge time.Duration, webRootURLPath string, idpManager *IDPManager) *Application {
-	tmdbCache := &scrape.TmdbCache{
-		Client: tmdbClient,
-		Path:   Config.Tmdb.CacheDir,
-	}
+func BuildApp(logger *slog.Logger, tmdbCache *scrape.TmdbCache, mssCache *scrape.MssCache, sessions *SessionStore, maxSessionAge time.Duration, webRootURLPath string, idpManager *IDPManager, authMW Middleware, webRoot string) *Application {
 
 	posterResolver := &scrape.PosterResolver{
 		MssCache:  mssCache,
@@ -203,7 +209,7 @@ func BuildApp(logger *slog.Logger, tmdbClient *tmdb.Client, mssCache *scrape.Mss
 	}
 	viewModelGenerator := &ViewModelGenerator{
 		Logger:       logger,
-		WebRoot:      Config.WebRoot,
+		WebRoot:      webRoot,
 		Orchestrator: orchestrator,
 		MssCache:     mssCache,
 	}
@@ -224,6 +230,7 @@ func BuildApp(logger *slog.Logger, tmdbClient *tmdb.Client, mssCache *scrape.Mss
 		IDPManager:         idpManager,
 		Router:             http.NewServeMux(),
 		Logger:             logger,
+		AuthMW:             authMW,
 	}
 
 	app.routes()
@@ -232,8 +239,8 @@ func BuildApp(logger *slog.Logger, tmdbClient *tmdb.Client, mssCache *scrape.Mss
 
 func (app *Application) routes() {
 	logMW := LoggingMiddleware(app.Logger)
-	authMW := AuthMiddleware(app.Logger, app.Sessions, Config.WebRoot+"/auth/login", app.MaxSessionAge)
 	corsMW := CORS(app.Logger)
+	authMW := app.AuthMW
 
 	app.Router.Handle(app.WebRootURLPath+"/auth/", http.StripPrefix(app.WebRootURLPath+"/auth", app.IDPManager.ServeMux()))
 	app.Router.Handle(app.WebRootURLPath+"/auth/login", Chain(logMW)(app.IDPManager))

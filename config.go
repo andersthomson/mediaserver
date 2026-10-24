@@ -41,16 +41,17 @@ type config struct {
 	SessionFile   string
 }
 
-func (c *config) ReadFromFile(f string) {
+func ReadConfigFromFile(f string) (*config, error) {
 	buf, err := os.ReadFile(f)
 	if err != nil {
 		slog.Info("Using DefaultConfig. Failed to read configfile", "filename", f, "error", err)
-		*c = DefaultConfig
-		return
+		return &DefaultConfig, nil
 	}
-	if err := json.Unmarshal(buf, c); err != nil {
-		panic(err)
+	var c config
+	if err := json.Unmarshal(buf, &c); err != nil {
+		return nil, err
 	}
+	return &c, nil
 }
 
 var DefaultConfig = config{

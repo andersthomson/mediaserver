@@ -23,16 +23,20 @@ func (i InternalIDPUser) IDProvider() string {
 type InternalIDP struct {
 	logger                    *slog.Logger
 	sessions                  *SessionStore
+	loginPageURL              string
 	postAuthenticateTargetURL string
 	idpRoot                   string
+	accounts                  []InternalIDPAccount
 }
 
-func NewInternalIDP(logger *slog.Logger, sessions *SessionStore, postAuthenticateTargetURL string, idpRoot string) *InternalIDP {
+func NewInternalIDP(logger *slog.Logger, sessions *SessionStore, postAuthenticateTargetURL string, idpRoot string, accounts []InternalIDPAccount, loginPageURL string) *InternalIDP {
 	return &InternalIDP{
 		logger:                    logger,
 		sessions:                  sessions,
 		postAuthenticateTargetURL: postAuthenticateTargetURL,
 		idpRoot:                   idpRoot,
+		accounts:                  accounts,
+		loginPageURL:              loginPageURL,
 	}
 }
 
@@ -81,8 +85,8 @@ func (i *InternalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Username: username,
 		Password: password,
 	}
-	if !slices.Contains(Config.InternalIDP, u) {
-		http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
+	if !slices.Contains(i.accounts, u) {
+		http.Redirect(w, r, i.loginPageURL, http.StatusFound)
 		i.logger.WarnContext(ctx, "User not found", "user", username, "password", password)
 		return
 	}

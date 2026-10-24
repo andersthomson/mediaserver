@@ -35,13 +35,14 @@ type GoogleIDP struct {
 	idpRoot                   string
 	logger                    *slog.Logger
 	AllowedUsers              []string
+	loginPageURL              string
 }
 
-func NewGoogleIDP(logger *slog.Logger, sessionStore *SessionStore, oauthClientID string, oauthClientSecret string, postAuthenticateTargetURL string, IDPRoot string, allowedUsers []string) *GoogleIDP {
+func NewGoogleIDP(logger *slog.Logger, sessionStore *SessionStore, oauthClientID string, oauthClientSecret string, postAuthenticateTargetURL string, IDPRoot string, allowedUsers []string, loginPageURL string, webRoot string) *GoogleIDP {
 	oauthConfig := &oauth2.Config{
 		ClientID:     oauthClientID,
 		ClientSecret: oauthClientSecret,
-		RedirectURL:  Config.WebRoot + "/auth/google/callback",
+		RedirectURL:  webRoot + "/auth/google/callback",
 		Scopes:       []string{"openid", "email", "profile"},
 		Endpoint:     google.Endpoint,
 	}
@@ -52,6 +53,7 @@ func NewGoogleIDP(logger *slog.Logger, sessionStore *SessionStore, oauthClientID
 		postAuthenticateTargetURL: postAuthenticateTargetURL,
 		idpRoot:                   IDPRoot,
 		AllowedUsers:              allowedUsers,
+		loginPageURL:              loginPageURL,
 	}
 }
 
@@ -112,7 +114,7 @@ func (g *GoogleIDP) googleOAuthCallbackHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if !slices.Contains(g.AllowedUsers, returnedUser.Email) {
-		http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
+		http.Redirect(w, r, g.loginPageURL, http.StatusFound)
 		g.logger.Warn("User not authorized", "user", returnedUser)
 		return
 	}
