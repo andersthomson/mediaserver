@@ -5,8 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
 type InternalIDPUser struct {
@@ -74,7 +72,6 @@ func (i *InternalIDP) LoginPageFragment(w http.ResponseWriter) {
 }
 
 func (i *InternalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	spew.Dump(r)
 	r.ParseForm()
 	username := r.FormValue("username")
 	password := r.FormValue("password")
@@ -98,7 +95,6 @@ func (i *InternalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Username:    username,
 	}
 	i.sessions.AddSessionEntry(sessionID, NewSessionEntry(user))
-	i.sessions.Add(sessionID, user)
 	i.logger.Info("Session created for", "user", username, "session", sessionID)
 	i.logger.Info("Redirecting to", "URL", i.postAuthenticateTargetURL)
 	http.Redirect(w, r, i.postAuthenticateTargetURL, http.StatusFound)
