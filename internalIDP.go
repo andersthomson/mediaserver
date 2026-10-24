@@ -24,12 +24,15 @@ func (i InternalIDPUser) IDProvider() string {
 
 type InternalIDP struct {
 	logger                    *slog.Logger
+	sessions                  *SessionStore
 	postAuthenticateTargetURL string
 	idpRoot                   string
 }
 
-func NewInternalIDP(logger *slog.Logger, postAuthenticateTargetURL string, idpRoot string) *InternalIDP {
+func NewInternalIDP(logger *slog.Logger, sessions *SessionStore, postAuthenticateTargetURL string, idpRoot string) *InternalIDP {
 	return &InternalIDP{
+		logger:                    logger,
+		sessions:                  sessions,
 		postAuthenticateTargetURL: postAuthenticateTargetURL,
 		idpRoot:                   idpRoot,
 	}
@@ -77,13 +80,6 @@ func (i *InternalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	ctx := r.Context()
 
-	sessions := SessionStoreFromContext(ctx)
-	if sessions == nil {
-		i.logger.Error("No sessionStore in context")
-		http.Error(w, "No sessionStore in context", http.StatusInternalServerError)
-		return
-	}
-
 	u := InternalIDPAccount{
 		Username: username,
 		Password: password,
@@ -101,7 +97,8 @@ func (i *InternalIDP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		IdProvider_: "internalIDP",
 		Username:    username,
 	}
-	sessions.Add(sessionID, user)
+	i.sessions.AddSessionEntry(sessionID, NewSessionEntry(user))
+	i.sessions.Add(sessionID, user)
 	i.logger.Info("Session created for", "user", username, "session", sessionID)
 	i.logger.Info("Redirecting to", "URL", i.postAuthenticateTargetURL)
 	http.Redirect(w, r, i.postAuthenticateTargetURL, http.StatusFound)

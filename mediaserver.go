@@ -240,25 +240,7 @@ func LoggingMiddleware(logger *slog.Logger) func(next http.Handler) http.Handler
 	}
 }
 
-func SessionStoreFromContext(ctx context.Context) *SessionStore {
-	if ss := ctx.Value("sessionStore"); ss != nil {
-		return ss.(*SessionStore)
-	}
-	return nil
-}
-
-func SessionStoreToContext(sessions *SessionStore) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		f := func(w http.ResponseWriter, r *http.Request) {
-			ctx := r.Context()
-			ctx = context.WithValue(ctx, "sessionStore", sessions)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		}
-		return http.HandlerFunc(f)
-	}
-}
-
-func AuthMiddleware(logger *slog.Logger) func(next http.Handler) http.Handler {
+func AuthMiddleware(logger *slog.Logger, sessions *SessionStore) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -266,12 +248,6 @@ func AuthMiddleware(logger *slog.Logger) func(next http.Handler) http.Handler {
 			if err != nil {
 				logger.Error("No session cookie", "err", err)
 				http.Redirect(w, r, Config.WebRoot+"/auth/login", http.StatusFound)
-				return
-			}
-			sessions := SessionStoreFromContext(ctx)
-			if sessions == nil {
-				logger.Error("No sessionStore in context")
-				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			se, hasSession := sessions.GetSessionEntry(sessionID)

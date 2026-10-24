@@ -67,7 +67,7 @@ func main() {
 		idpManager.Register(googleIDP)
 	}
 	if slices.Contains(Config.IDProviders, "InternalIDP") {
-		internalIDP := NewInternalIDP(logger, Config.WebRoot, IDPRoot)
+		internalIDP := NewInternalIDP(logger, sessions, Config.WebRoot, IDPRoot)
 		idpManager.Register(internalIDP)
 	}
 	wt, err := NewWatcherThingy()
@@ -192,6 +192,7 @@ func BuildApp(logger *slog.Logger, tmdbClient *tmdb.Client, mssCache *scrape.Mss
 		TmdbCache:        tmdbCache,
 	}
 	viewModelGenerator := &ViewModelGenerator{
+		Logger:       logger,
 		WebRoot:      Config.WebRoot,
 		Orchestrator: orchestrator,
 		MssCache:     mssCache,
@@ -220,19 +221,18 @@ func BuildApp(logger *slog.Logger, tmdbClient *tmdb.Client, mssCache *scrape.Mss
 
 func (app *Application) routes() {
 	logMW := LoggingMiddleware(app.Logger)
-	sessMW := SessionStoreToContext(app.Sessions)
-	authMW := AuthMiddleware(app.Logger)
+	authMW := AuthMiddleware(app.Logger, app.Sessions)
 	corsMW := CORS(app.Logger)
 
 	app.Router.Handle(app.WebRootURLPath+"/auth/", http.StripPrefix(app.WebRootURLPath+"/auth", app.IDPManager.ServeMux()))
 	app.Router.Handle(app.WebRootURLPath+"/auth/login", Chain(logMW)(app.IDPManager))
 
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "view/cast/{item}"), Chain(logMW, sessMW, authMW, corsMW)(HandleCast(app.ViewModelGenerator)))
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/html5/{item}"), Chain(logMW, sessMW, authMW, corsMW)(HandleHtml5(app.ViewModelGenerator)))
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/shaka/{item}"), Chain(logMW, sessMW, authMW, corsMW)(HandleShaka(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "view/cast/{item}"), Chain(logMW, authMW, corsMW)(HandleCast(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/html5/{item}"), Chain(logMW, authMW, corsMW)(HandleHtml5(app.ViewModelGenerator)))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/view/shaka/{item}"), Chain(logMW, authMW, corsMW)(HandleShaka(app.ViewModelGenerator)))
 
-	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/item/{item}/part/{subPath...}"), Chain(logMW, sessMW, corsMW)(app.DataSourceServer))
+	app.Router.Handle("GET "+path.Join(app.WebRootURLPath, "/item/{item}/part/{subPath...}"), Chain(logMW, corsMW)(app.DataSourceServer))
 
-	app.Router.Handle("POST "+path.Join(app.WebRootURLPath, "/search"), Chain(logMW, sessMW, authMW, corsMW)(HandleSearch(app.ViewModelGenerator)))
-	app.Router.Handle(app.WebRootURLPath+"/", Chain(logMW, sessMW, authMW, corsMW)(HandleIndex(app.ViewModelGenerator)))
+	app.Router.Handle("POST "+path.Join(app.WebRootURLPath, "/search"), Chain(logMW, authMW, corsMW)(HandleSearch(app.ViewModelGenerator)))
+	app.Router.Handle(app.WebRootURLPath+"/", Chain(logMW, authMW, corsMW)(HandleIndex(app.ViewModelGenerator)))
 }
