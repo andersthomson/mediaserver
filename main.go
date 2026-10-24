@@ -19,41 +19,17 @@ import (
 	slogctx "github.com/veqryn/slog-context"
 )
 
-type Application struct {
-	WebRootURLPath     string
-	Sessions           *SessionStore
-	MaxSessionAge      time.Duration
-	DataSourceServer   *DataSourceServer
-	ViewModelGenerator *ViewModelGenerator
-	IDPManager         *IDPManager
-	Router             *http.ServeMux
-	Logger             *slog.Logger
-	AuthMW             Middleware
-}
-
-func setupLogger() *slog.Logger {
-	customHandler := slogctx.NewHandler(slog.Default().Handler(), nil)
-	logger := slog.New(customHandler)
-	return logger
-}
-
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop() // Restores default OS signal behavior if called twice
 
-	logger := setupLogger()
-	var sessions *SessionStore
+	logger := slog.New(slogctx.NewHandler(slog.Default().Handler(), nil))
 	rand.Seed(time.Now().UnixNano())
 	Config, err := ReadConfigFromFile("config")
 	if err != nil {
 		panic(err)
 	}
-	tmdbClient, err := scrape.TmdbInit(Config.Tmdb.ApiKey, Config.Tmdb.CacheDir)
-	if err != nil {
-		slog.Error("Failed to initn tmdb client", "err", err)
-		os.Exit(1)
-	}
-	sessions = NewSessionStoreFromFile(logger, Config.SessionFile)
+	sessions := NewSessionStoreFromFile(logger, Config.SessionFile)
 	if maxDur, err := time.ParseDuration(Config.MaxSessionAge); err == nil {
 		go sessions.StartPeriodicPruning(ctx, maxDur, 15*time.Minute)
 	}
@@ -97,13 +73,18 @@ func main() {
 	}
 
 	//Adaptors to the Application
+	tmdbClient, err := scrape.TmdbInit(Config.Tmdb.ApiKey, Config.Tmdb.CacheDir)
+	if err != nil {
+		slog.Error("Failed to initn tmdb client", "err", err)
+		os.Exit(1)
+	}
 	tmdbCache := &scrape.TmdbCache{
 		Client: tmdbClient,
 		Path:   Config.Tmdb.CacheDir,
 	}
 
 	authMW := AuthMiddleware(logger, sessions, Config.WebRoot+"/auth/login", maxSessionAgeDur)
-	app := BuildApp(logger, tmdbCache, mssCache, sessions, maxSessionAgeDur, webRootURL.Path, idpManager, authMW, Config.WebRoot)
+	app := BuildApp(logger, tmdbCache, mssCache, webRootURL.Path, idpManager, authMW, Config.WebRoot)
 
 	listenaddr := Config.IP_Address + ":" + strconv.Itoa(int(Config.Port))
 	logger.Info("Starting", "Listening at", listenaddr)
@@ -160,7 +141,17 @@ func main() {
 	logger.Info("Application exited cleanly.")
 }
 
-func BuildApp(logger *slog.Logger, tmdbCache *scrape.TmdbCache, mssCache *scrape.MssCache, sessions *SessionStore, maxSessionAge time.Duration, webRootURLPath string, idpManager *IDPManager, authMW Middleware, webRoot string) *Application {
+type Application struct {
+	WebRootURLPath     string
+	DataSourceServer   *DataSourceServer
+	ViewModelGenerator *ViewModelGenerator
+	IDPManager         *IDPManager
+	Router             *http.ServeMux
+	Logger             *slog.Logger
+	AuthMW             Middleware
+}
+
+func BuildApp(logger *slog.Logger, tmdbCache *scrape.TmdbCache, mssCache *scrape.MssCache, webRootURLPath string, idpManager *IDPManager, authMW Middleware, webRoot string) *Application {
 
 	posterResolver := &scrape.PosterResolver{
 		MssCache:  mssCache,
@@ -222,8 +213,6 @@ func BuildApp(logger *slog.Logger, tmdbCache *scrape.TmdbCache, mssCache *scrape
 	}
 
 	app := Application{
-		Sessions:           sessions,
-		MaxSessionAge:      maxSessionAge,
 		WebRootURLPath:     webRootURLPath,
 		ViewModelGenerator: viewModelGenerator,
 		DataSourceServer:   dataSourceServer,
