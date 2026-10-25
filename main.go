@@ -54,14 +54,14 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	sDirs := NewSourceDirectories(wt, mssCache)
+	sDirs := NewSourceDirectories(logger, wt, mssCache)
 	for _, d := range Config.Directories {
 		err = sDirs.Add(d.Name)
 		if err != nil {
 			panic(err)
 		}
 	}
-	sDirs.StartMonitor(context.TODO())
+	sDirs.StartMonitor(ctx)
 
 	maxSessionAgeDur, err := time.ParseDuration(Config.MaxSessionAge)
 	if err != nil {

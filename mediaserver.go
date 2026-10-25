@@ -160,11 +160,13 @@ type SourceDirectories struct {
 	sync.Mutex
 	WT       *WatcherThingy
 	MssCache *scrape.MssCache
+	logger   *slog.Logger
 }
 
-func NewSourceDirectories(wt *WatcherThingy, mssCache *scrape.MssCache) *SourceDirectories {
+func NewSourceDirectories(logger *slog.Logger, wt *WatcherThingy, mssCache *scrape.MssCache) *SourceDirectories {
 	s := &SourceDirectories{}
 	s.WT = wt
+	s.logger = logger
 	s.MssCache = mssCache
 	return s
 }
@@ -204,6 +206,7 @@ func (s *SourceDirectories) StartMonitor(ctx context.Context) {
 					MssCacheRemoveFile(s.MssCache, ce.Path)
 				}
 			case <-ctx.Done():
+				s.logger.Info("[SourceDirectories] Stopping monitor")
 				return
 			}
 		}
