@@ -73,7 +73,7 @@ func main() {
 	}
 
 	//Adaptors to the Application
-	tmdbClient, err := scrape.TmdbInit(Config.Tmdb.ApiKey, Config.Tmdb.CacheDir)
+	tmdbClient, err := scrape.TmdbInit(Config.Tmdb.ApiKey)
 	if err != nil {
 		slog.Error("Failed to initn tmdb client", "err", err)
 		os.Exit(1)

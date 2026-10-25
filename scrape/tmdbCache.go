@@ -17,7 +17,7 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-func TmdbInit(apiKey string, cacheDir string) (*tmdb.Client, error) {
+func TmdbInit(apiKey string) (*tmdb.Client, error) {
 	tmdbClient, err := tmdb.InitV4(apiKey)
 	if err != nil {
 		panic(err)
