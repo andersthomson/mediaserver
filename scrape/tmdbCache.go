@@ -2,6 +2,7 @@ package scrape
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -89,8 +90,8 @@ func (t *TmdbCache) Image(key string, size string) (string, error) {
 		}
 		u := tmdb.GetImageURL(key, size)
 		slog.Info("TMDB fetch", "type", "file", "url", u, "key", key, "size", size)
-		if err := os.Mkdir(t.Path, 0700); err != nil {
-			return nil, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
+		if err := os.Mkdir(t.Path, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+			return "", fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
 		}
 		if err := DownloadFile(fnameLong, u); err != nil {
 			slog.Error("Download failed", "source", "tmdb", "err", err)
@@ -128,8 +129,8 @@ func (t *TmdbCache) CollectionDetails(id CollectionID) (*tmdb.CollectionDetails,
 		if err != nil {
 			return resp, err
 		}
-		if err := os.Mkdir(t.Path, 0700); err != nil {
-			return nil, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
+		if err := os.Mkdir(t.Path, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+			return resp, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
 		}
 		if os.WriteFile(fnameLong, body, 0644) != nil {
 			return resp, err
@@ -166,8 +167,8 @@ func (t *TmdbCache) MovieDetails(id MovieID) (*tmdb.MovieDetails, error) {
 		if err != nil {
 			return resp, err
 		}
-		if err := os.Mkdir(t.Path, 0700); err != nil {
-			return nil, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
+		if err := os.Mkdir(t.Path, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+			return resp, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
 		}
 		if os.WriteFile(fnameLong, body, 0644) != nil {
 			return resp, err
@@ -204,11 +205,11 @@ func (t *TmdbCache) TVDetails(id int) (*tmdb.TVDetails, error) {
 		if err != nil {
 			return resp, err
 		}
-		if err := os.Mkdir(t.Path, 0700); err != nil {
-			return nil, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
+		if err := os.Mkdir(t.Path, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+			return resp, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
 		}
 		if os.WriteFile(fnameLong, body, 0644) != nil {
-			return nil, err
+			return resp, err
 		}
 		return resp, err
 	})
@@ -242,8 +243,8 @@ func (t *TmdbCache) TVSeasonDetails(id int, seasonNumber int) (*tmdb.TVSeasonDet
 		if err != nil {
 			return resp, err
 		}
-		if err := os.Mkdir(t.Path, 0700); err != nil {
-			return nil, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
+		if err := os.Mkdir(t.Path, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+			return resp, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
 		}
 		if os.WriteFile(fnameLong, body, 0644) != nil {
 			return resp, err
@@ -280,8 +281,8 @@ func (t *TmdbCache) TVEpisodeDetails(id int, seasonNumber int, episodeNumber int
 		if err != nil {
 			return resp, err
 		}
-		if err := os.Mkdir(t.Path, 0700); err != nil {
-			return nil, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
+		if err := os.Mkdir(t.Path, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+			return resp, fmt.Errorf("Failed to create cache dir. dir=%s err=%w", t.Path, err)
 		}
 		if os.WriteFile(fnameLong, body, 0644) != nil {
 			return resp, err
