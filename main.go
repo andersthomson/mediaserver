@@ -134,7 +134,7 @@ func main() {
 		logger.Error("Failed to write sessionfile", "err", err)
 	}*/
 	if err := sessions.Flush(); err != nil {
-		logger.Error("Critical: Error flushing data during exit: %v", err)
+		logger.Error("Critical: Error flushing data during exit", "err", err)
 		os.Exit(1)
 	}
 

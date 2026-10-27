@@ -179,7 +179,7 @@ func (s *SourceDirectories) Add(dir string) error {
 	defer s.Unlock()
 
 	if err := s.WT.addWatchRecursive(absDir); err != nil {
-		return fmt.Errorf("Failed to add watch dir=%s err=%w", err, absDir, err)
+		return fmt.Errorf("Failed to add watch dir=%s err=%w", absDir, err)
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -666,7 +666,7 @@ func (g *ViewModelGenerator) AssembleShakaViewModel(ctx context.Context, id stri
 	manifest, err := g.Orchestrator.GetUnifiedManifest(id)
 	if err != nil {
 		slog.Error("Failed to get manifest", "id", id, "err", err)
-		return ShakaViewModel{}, fmt.Errorf("Failed to get manifest", "id", id, "err", err)
+		return ShakaViewModel{}, fmt.Errorf("Failed to get manifest id=%v err=%v", id, err)
 	}
 
 	data := ShakaViewModel{
@@ -688,7 +688,7 @@ func (g *ViewModelGenerator) AssembleHtml5ViewModel(ctx context.Context, id stri
 	manifest, err := g.Orchestrator.GetUnifiedManifest(id)
 	if err != nil {
 		slog.Error("Failed to get manifest", "id", id, "err", err)
-		return Html5ViewModel{}, fmt.Errorf("Failed to get manifest", "id", id, "err", err)
+		return Html5ViewModel{}, fmt.Errorf("Failed to get manifest id=%v err=%v", id, err)
 	}
 
 	data := Html5ViewModel{
@@ -714,7 +714,7 @@ func (g *ViewModelGenerator) AssembleCastViewModel(ctx context.Context, id strin
 	manifest, err := g.Orchestrator.GetUnifiedManifest(id)
 	if err != nil {
 		slog.Error("Failed to get manifest", "id", id, "err", err)
-		return CastViewModel{}, fmt.Errorf("Failed to get manifest", "id", id, "err", err)
+		return CastViewModel{}, fmt.Errorf("Failed to get manifest id=%v err=%v", id, err)
 	}
 
 	data := CastViewModel{
