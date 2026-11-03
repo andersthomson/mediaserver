@@ -961,7 +961,7 @@ func HandleShaka(viewModelGenerator *ViewModelGenerator) http.HandlerFunc {
 
     // Configure UI for Cast and CC visibility
     ui.configure({
-      'controlPanelElements': ['play_pause', 'time_and_duration', 'spacer', 'mute', 'volume','captions', 'cast', 'fullscreen']
+      'controlPanelElements': ['play_pause', 'time_and_duration', 'spacer', 'mute', 'volume','captions', 'cast', 'fullscreen','overflow_menu']
     });
 
     try {
