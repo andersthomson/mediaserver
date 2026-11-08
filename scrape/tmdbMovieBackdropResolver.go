@@ -42,7 +42,7 @@ func (pr *BackdropResolver) ResolveBackdropState(id string) (BackdropMetadata, e
 
 	backdropPath := TmdbMovieBackdropPath(movieDetails)
 	if backdropPath == "" {
-		return BackdropMetadata{HasBackdrop: false}, fmt.Errorf("No posterpath found")
+		return BackdropMetadata{HasBackdrop: false}, nil
 	}
 
 	localFilename, err := pr.TmdbCache.Image(backdropPath, "w500")
