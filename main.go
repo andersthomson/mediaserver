@@ -191,12 +191,12 @@ func BuildApp(logger *slog.Logger, tmdbCache *scrape.TmdbCache, mssCache *scrape
 		Logger:      logger,
 	}
 	orchestrator := &MetadataOrchestrator{
-		PosterResolver:   posterResolver,
-		BackdropResolver: backdropResolver,
-		DashResolver:     dashResolver,
-		MP4Resolver:      mp4Resolver,
-		MssCache:         mssCache,
-		TmdbCache:        tmdbCache,
+		MoviePosterResolver:   posterResolver,
+		MovieBackdropResolver: backdropResolver,
+		DashResolver:          dashResolver,
+		MP4Resolver:           mp4Resolver,
+		MssCache:              mssCache,
+		TmdbCache:             tmdbCache,
 	}
 	viewModelGenerator := &ViewModelGenerator{
 		Logger:       logger,

@@ -32,7 +32,7 @@ type PosterResolver struct {
 func (pr *PosterResolver) ResolvePosterState(id string) (PosterMetadata, error) {
 	movieID, ok := pr.MssCache.MovieId(id)
 	if !ok {
-		return PosterMetadata{HasPoster: false}, fmt.Errorf("Id %s not i mss cache", id)
+		return PosterMetadata{HasPoster: false}, fmt.Errorf("Id %s not in mss cache", id)
 	}
 
 	movieDetails, err := pr.TmdbCache.MovieDetails(movieID)

@@ -12,8 +12,6 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
 // CustomEvent matches your exact user interface signature
@@ -138,7 +136,7 @@ func (wt *WatcherThingy) readEventsLoop() {
 			if err := binary.Read(reader, binary.LittleEndian, &rawEvent); err != nil {
 				break // Corrupt data window
 			}
-			spew.Dump(rawEvent)
+			//spew.Dump(rawEvent)
 			nameLen := rawEvent.Len
 			var name string
 			if nameLen > 0 {

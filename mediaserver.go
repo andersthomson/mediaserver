@@ -360,12 +360,12 @@ type MediaManifest struct {
 }
 
 type MetadataOrchestrator struct {
-	PosterResolver   *scrape.PosterResolver
-	BackdropResolver *scrape.BackdropResolver
-	DashResolver     *scrape.DashResolver
-	MP4Resolver      *scrape.MP4Resolver
-	MssCache         *scrape.MssCache
-	TmdbCache        *scrape.TmdbCache
+	MoviePosterResolver   *scrape.PosterResolver
+	MovieBackdropResolver *scrape.BackdropResolver
+	DashResolver          *scrape.DashResolver
+	MP4Resolver           *scrape.MP4Resolver
+	MssCache              *scrape.MssCache
+	TmdbCache             *scrape.TmdbCache
 }
 
 func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, error) {
@@ -405,15 +405,15 @@ func (m *MetadataOrchestrator) GetUnifiedManifest(id string) (MediaManifest, err
 			res.Collection = collectionDetails.Name
 			res.Tags["collection"] = []string{res.Collection}
 		}
-	}
-	res.Poster, err = m.PosterResolver.ResolvePosterState(id)
-	if err != nil {
-		return MediaManifest{}, fmt.Errorf("orchestrator poster matching crash: %w", err)
-	}
+		res.Poster, err = m.MoviePosterResolver.ResolvePosterState(id)
+		if err != nil {
+			return MediaManifest{}, fmt.Errorf("orchestrator poster matching crash: %w", err)
+		}
 
-	res.Backdrop, err = m.BackdropResolver.ResolveBackdropState(id)
-	if err != nil {
-		return MediaManifest{}, fmt.Errorf("orchestrator backdrop matching crash: %w", err)
+		res.Backdrop, err = m.MovieBackdropResolver.ResolveBackdropState(id)
+		if err != nil {
+			return MediaManifest{}, fmt.Errorf("orchestrator backdrop matching crash: %w", err)
+		}
 	}
 
 	res.Dash, err = m.DashResolver.ResolveDashState(id)
